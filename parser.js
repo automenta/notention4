@@ -1,8 +1,10 @@
 // Combined Semantic Parser Plugin (Core, Heuristic, LLM, UI concepts integrated)
 "use strict";
 
-import {injectCSS, Utils as utils} from './util.js';
-import { SLOT_EDITOR_BELOW_CONTENT } from './ui.js';
+import {Utils as utils} from './util.js';
+import {SLOT_EDITOR_BELOW_CONTENT} from './ui.js';
+
+import './parser.css';
 
 /**
  * Represents a suggested property extracted from note content.
@@ -22,9 +24,7 @@ import { SLOT_EDITOR_BELOW_CONTENT } from './ui.js';
 export const SemanticParserPlugin = {
     id: 'parser',
     name: 'Semantic Parser',
-    dependencies: ['ontology', 'properties'], // Required
-    // Optional dependencies (will check for their services)
-    optionalDependencies: ['llm', 'editor'],
+    dependencies: ['ontology', 'properties', 'llm', 'editor'],
 
     coreAPI: null,
     ontologyService: null,
@@ -54,6 +54,7 @@ export const SemanticParserPlugin = {
 
         // Optional services
         this.llmService = coreAPI.getService('LLMService'); // May be null
+
         this.editorService = coreAPI.getService('EditorService'); // May be null
 
         console.log(`ParserPlugin: Initialized. LLM support: ${this.llmService ? 'Enabled' : 'Disabled'}, Editor Integration: ${this.editorService ? 'Enabled' : 'Disabled'}`);
@@ -94,7 +95,7 @@ export const SemanticParserPlugin = {
                 // Clear suggestions for the note being deselected
                 if (previousNoteId && previousNoteId !== newlySelectedNoteId) {
                     // Dispatch clearing action immediately
-                    storeApi.dispatch({ type: 'PARSER_CLEAR_SUGGESTIONS', payload: { noteId: previousNoteId } });
+                    storeApi.dispatch({type: 'PARSER_CLEAR_SUGGESTIONS', payload: {noteId: previousNoteId}});
                 }
 
                 // Trigger parsing for the newly selected note (if it exists)
@@ -109,7 +110,7 @@ export const SemanticParserPlugin = {
             // 3. Intercept confirmation action if UI layer dispatches it
             // This allows adding the property *and* updating suggestion state atomically
             if (action.type === 'PARSER_CONFIRM_SUGGESTION') {
-                const { noteId, suggestion } = action.payload;
+                const {noteId, suggestion} = action.payload;
                 const existingProp = pluginInstance._findExistingProperty(storeApi.getState, noteId, suggestion.property.key);
 
                 if (existingProp) {
@@ -119,7 +120,7 @@ export const SemanticParserPlugin = {
                         payload: {
                             noteId: noteId,
                             propertyId: existingProp.id,
-                            changes: { value: suggestion.property.value, type: suggestion.property.type } // Update value and type
+                            changes: {value: suggestion.property.value, type: suggestion.property.type} // Update value and type
                         }
                     });
                 } else {
@@ -149,20 +150,20 @@ export const SemanticParserPlugin = {
         return (draft, action) => {
             // Initialize state structure if it doesn't exist
             if (!draft.pluginRuntimeState[pluginId]) {
-                draft.pluginRuntimeState[pluginId] = { suggestions: {} }; // { [noteId]: ParserSuggestion[] }
+                draft.pluginRuntimeState[pluginId] = {suggestions: {}}; // { [noteId]: ParserSuggestion[] }
             }
             const parserState = draft.pluginRuntimeState[pluginId];
 
             switch (action.type) {
                 case 'PARSER_SUGGESTIONS_RECEIVED': {
-                    const { noteId, suggestions } = action.payload;
+                    const {noteId, suggestions} = action.payload;
                     // console.log(`ParserReducer: Received ${suggestions.length} suggestions for note ${noteId}`);
                     // Replace existing suggestions for simplicity. Could merge later.
                     parserState.suggestions[noteId] = suggestions || [];
                     break;
                 }
                 case 'PARSER_CLEAR_SUGGESTIONS': {
-                    const { noteId } = action.payload;
+                    const {noteId} = action.payload;
                     if (parserState.suggestions[noteId]) {
                         // console.log(`ParserReducer: Clearing suggestions for note ${noteId}`);
                         delete parserState.suggestions[noteId];
@@ -170,7 +171,7 @@ export const SemanticParserPlugin = {
                     break;
                 }
                 case 'PARSER_CONFIRM_SUGGESTION': {
-                    const { noteId, suggestion } = action.payload;
+                    const {noteId, suggestion} = action.payload;
                     const noteSuggestions = parserState.suggestions[noteId];
                     if (noteSuggestions) {
                         const suggestionIndex = noteSuggestions.findIndex(s => s.id === suggestion.id);
@@ -184,7 +185,7 @@ export const SemanticParserPlugin = {
                     break;
                 }
                 case 'PARSER_IGNORE_SUGGESTION': {
-                    const { noteId, suggestionId } = action.payload;
+                    const {noteId, suggestionId} = action.payload;
                     const noteSuggestions = parserState.suggestions[noteId];
                     if (noteSuggestions) {
                         const suggestionIndex = noteSuggestions.findIndex(s => s.id === suggestionId);
@@ -200,7 +201,7 @@ export const SemanticParserPlugin = {
 
                 // Clean up suggestions if a note is deleted
                 case 'CORE_DELETE_NOTE': {
-                    const { noteId } = action.payload;
+                    const {noteId} = action.payload;
                     if (parserState.suggestions[noteId]) {
                         //  console.log(`ParserReducer: Clearing suggestions for deleted note ${noteId}`);
                         delete parserState.suggestions[noteId];
@@ -228,7 +229,7 @@ export const SemanticParserPlugin = {
 
         return {
             [SLOT_EDITOR_BELOW_CONTENT]: (props) => {
-                const { state, dispatch, noteId, html } = props;
+                const {state, dispatch, noteId, html} = props;
                 const suggestions = state.pluginRuntimeState?.parser?.suggestions?.[noteId] || [];
                 const pendingSuggestions = suggestions.filter(s => s.status === 'pending');
 
@@ -241,14 +242,14 @@ export const SemanticParserPlugin = {
                     // Dispatch action intercepted by middleware to add/update property
                     dispatch({
                         type: 'PARSER_CONFIRM_SUGGESTION',
-                        payload: { noteId, suggestion }
+                        payload: {noteId, suggestion}
                     });
                 };
 
                 const handleIgnore = (suggestionId) => {
                     dispatch({
                         type: 'PARSER_IGNORE_SUGGESTION',
-                        payload: { noteId, suggestionId }
+                        payload: {noteId, suggestionId}
                     });
                 };
 
@@ -260,13 +261,19 @@ export const SemanticParserPlugin = {
                             ${pendingSuggestions.map(s => html`
                                 <div class="suggestion-item">
                                     <span class="suggestion-text">
-                                        Add property: <strong class="suggestion-key">${s.property.key}</strong> = <em class="suggestion-value">${s.displayText || s.property.value}</em>?
-                                        <span class="suggestion-source">(${s.source}${s.confidence ? ` ${Math.round(s.confidence * 100)}%` : ''})</span>
+                                        Add property: <strong class="suggestion-key">${s.property.key}</strong> = <em
+                                            class="suggestion-value">${s.displayText || s.property.value}</em>?
+                                        <span class="suggestion-source">(${s.source}${s.confidence ? ` ${Math.round(s.confidence * 100)}%` : ''}
+                                            )</span>
                                     </span>
                                     <div class="suggestion-actions">
-                                        <button class="suggestion-confirm" @click=${() => handleConfirm(s)} title="Confirm">✓</button>
-                                        <button class="suggestion-ignore" @click=${() => handleIgnore(s.id)} title="Ignore">✕</button>
-                                     </div>
+                                        <button class="suggestion-confirm" @click=${() => handleConfirm(s)}
+                                                title="Confirm">✓
+                                        </button>
+                                        <button class="suggestion-ignore" @click=${() => handleIgnore(s.id)}
+                                                title="Ignore">✕
+                                        </button>
+                                    </div>
                                 </div>
                             `)}
                         </div>
@@ -291,7 +298,7 @@ export const SemanticParserPlugin = {
                 parsePropertyValue: (value, nameHint) => {
                     if (!this.ontologyService) {
                         console.warn("SemanticParserService: Cannot parse value, OntologyService unavailable.");
-                        return { structuredValue: value, type: 'text', state: 'is' }; // Fallback
+                        return {structuredValue: value, type: 'text', state: 'is'}; // Fallback
                     }
                     const inferredType = this.ontologyService.inferType(value, nameHint);
                     let structuredValue = value;
@@ -305,7 +312,7 @@ export const SemanticParserPlugin = {
                         structuredValue = ['true', 'yes', '1'].includes(String(value).toLowerCase());
                     }
 
-                    return { structuredValue, type: inferredType, state: 'is' }; // 'state' seems less relevant here? Defaulting to 'is'.
+                    return {structuredValue, type: inferredType, state: 'is'}; // 'state' seems less relevant here? Defaulting to 'is'.
                 }
             }
         };
@@ -317,7 +324,7 @@ export const SemanticParserPlugin = {
      * Debounced function to trigger parsing.
      * @type {Function}
      */
-    _debouncedParse: utils.debounce(function(noteId, content) { // Use function() to bind `this` correctly if needed, or ensure arrow function context
+    _debouncedParse: utils.debounce(function (noteId, content) { // Use function() to bind `this` correctly if needed, or ensure arrow function context
         // `this` inside debounce refers to the SemanticParserPlugin instance
         this._triggerParse(noteId, content);
     }, 750), // Adjust debounce time as needed (e.g., 750ms)
@@ -340,13 +347,16 @@ export const SemanticParserPlugin = {
                     id: s.id || utils.generateUUID(),
                     status: s.status || 'pending'
                 }));
-                this.coreAPI.dispatch({ type: 'PARSER_SUGGESTIONS_RECEIVED', payload: { noteId, suggestions: processedSuggestions } });
+                this.coreAPI.dispatch({
+                    type: 'PARSER_SUGGESTIONS_RECEIVED',
+                    payload: {noteId, suggestions: processedSuggestions}
+                });
             })
             .catch(err => {
-                console.error("Parser: Error during parsing", { noteId, error: err });
+                console.error("Parser: Error during parsing", {noteId, error: err});
                 this.coreAPI.showGlobalStatus("Error parsing note content.", "error");
                 // Clear suggestions on error?
-                this.coreAPI.dispatch({ type: 'PARSER_CLEAR_SUGGESTIONS', payload: { noteId } });
+                this.coreAPI.dispatch({type: 'PARSER_CLEAR_SUGGESTIONS', payload: {noteId}});
             });
     },
 
@@ -388,7 +398,7 @@ export const SemanticParserPlugin = {
                     suggestions.push({
                         id: utils.generateUUID(),
                         source: 'heuristic',
-                        property: { key, value, type: inferredType },
+                        property: {key, value, type: inferredType},
                         status: 'pending',
                         location: location,
                     });
@@ -414,6 +424,7 @@ export const SemanticParserPlugin = {
 
         // --- Construct Prompt ---
         // Get hints from ontology about expected properties
+        // TODO enable 'json' output mode
         const hints = this.ontologyService.getHints() || {};
         const keywords = this.ontologyService.getKeywords() || {};
         let ontologyContext = "Consider the following potential property types:\n";
@@ -452,11 +463,13 @@ JSON Output:
 
         try {
             this.coreAPI.showGlobalStatus("Parsing with AI...", "info", 3000); // Show temp status
-            const response = await this.llmService.prompt(prompt);
+            let response = await this.llmService.prompt(prompt);
             this.coreAPI.showGlobalStatus("AI Parsing complete.", "success", 1500);
 
             // --- Parse LLM Response ---
             if (!response) throw new Error("LLM response was empty.");
+
+            response = response.choices[0].message.content;
 
             // Attempt to extract JSON from the response (might be wrapped in markdown etc.)
             const jsonMatch = response.match(/```(?:json)?\s*([\s\S]*?)\s*```|(\[.*\]|\{.*\})/);
@@ -466,7 +479,7 @@ JSON Output:
                 try {
                     parsedJson = JSON.parse(jsonString);
                 } catch (jsonError) {
-                    console.error("Parser: Failed to parse JSON extracted from LLM response.", { jsonString, jsonError });
+                    console.error("Parser: Failed to parse JSON extracted from LLM response.", {jsonString, jsonError});
                     throw new Error("LLM response contained invalid JSON.");
                 }
             } else {
@@ -474,7 +487,7 @@ JSON Output:
                 try {
                     parsedJson = JSON.parse(response);
                 } catch (jsonError) {
-                    console.error("Parser: Failed to parse entire LLM response as JSON.", { response, jsonError });
+                    console.error("Parser: Failed to parse entire LLM response as JSON.", {response, jsonError});
                     throw new Error("LLM response was not valid JSON or wrapped JSON.");
                 }
             }
@@ -495,7 +508,7 @@ JSON Output:
                     return {
                         id: utils.generateUUID(),
                         source: 'llm',
-                        property: { key, value, type: inferredType },
+                        property: {key, value, type: inferredType},
                         status: 'pending',
                         confidence: item.confidence, // If LLM provides it
                         // Location info is hard to get accurately from LLM without specific instructions
@@ -525,7 +538,7 @@ JSON Output:
         const selectedNote = this.coreAPI.getSelectedNote();
         if (selectedNote) {
             // Clear existing suggestions for the note before re-parsing
-            this.coreAPI.dispatch({ type: 'PARSER_CLEAR_SUGGESTIONS', payload: { noteId: selectedNote.id } });
+            this.coreAPI.dispatch({type: 'PARSER_CLEAR_SUGGESTIONS', payload: {noteId: selectedNote.id}});
             this._triggerParse(selectedNote.id, selectedNote.content);
         }
     },
@@ -551,4 +564,3 @@ JSON Output:
     }
 };
 
-injectCSS('parser.css');

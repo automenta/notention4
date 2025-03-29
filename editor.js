@@ -4,48 +4,80 @@
  */
 "use strict";
 
-import { Editor } from 'https://esm.sh/@tiptap/core';
-import StarterKit from 'https://esm.sh/@tiptap/starter-kit';
-import { html, render as litRender } from 'https://esm.sh/lit-html';
+import {Editor} from '@tiptap/core';
+import StarterKit from '@tiptap/starter-kit';
+import {html, render as litRender} from 'lit';
 
 // Assuming SLOT_EDITOR_CONTENT_AREA is defined elsewhere (e.g., in ui.js)
 // Example: export const SLOT_EDITOR_CONTENT_AREA = 'editorContentArea';
-import { SLOT_EDITOR_CONTENT_AREA } from './ui.js';
+import {SLOT_EDITOR_CONTENT_AREA} from './ui.js';
 
 // --- Abstract Base Class (Optional but good practice) ---
 class AbstractEditorLibrary {
     _element = null;
     _content = '';
-    _onChange = () => {};
     _onSelectionUpdateCallback = null;
     _isUpdatingInternally = false;
 
     constructor(selectorOrElement, config = {}) {
-        if (new.target === AbstractEditorLibrary) {
+        if (new.target === AbstractEditorLibrary)
             throw new TypeError("Cannot construct AbstractEditorLibrary instances directly");
-        }
+
         this._element = typeof selectorOrElement === 'string'
             ? document.querySelector(selectorOrElement)
             : selectorOrElement;
 
-        if (!this._element) {
+        if (!this._element)
             throw new Error(`Editor mount point not found: '${selectorOrElement}'`);
-        }
+
         this._content = config.content || '';
-        this._onChange = config.onChange || (() => {});
+        this._onChange = config.onChange || (() => {
+        });
         this._onSelectionUpdateCallback = config.onSelectionUpdate || null;
     }
 
-    setContent(content) { throw new Error("Method 'setContent()' must be implemented."); }
-    getContent() { throw new Error("Method 'getContent()' must be implemented."); }
-    getSelection() { throw new Error("Method 'getSelection()' must be implemented."); }
-    applyDecoration(range, attributes) { throw new Error("Method 'applyDecoration()' must be implemented."); }
-    focus() { throw new Error("Method 'focus()' must be implemented."); }
-    blur() { throw new Error("Method 'blur()' must be implemented."); }
-    hasFocus() { throw new Error("Method 'hasFocus()' must be implemented."); }
-    destroy() { throw new Error("Method 'destroy()' must be implemented."); }
-    isActive(name, attributes) { throw new Error("Method 'isActive()' must be implemented."); }
-    can(name) { throw new Error("Method 'can()' must be implemented."); }
+    _onChange = () => {
+    };
+
+    setContent(content) {
+        throw new Error("Method 'setContent()' must be implemented.");
+    }
+
+    getContent() {
+        throw new Error("Method 'getContent()' must be implemented.");
+    }
+
+    getSelection() {
+        throw new Error("Method 'getSelection()' must be implemented.");
+    }
+
+    applyDecoration(range, attributes) {
+        throw new Error("Method 'applyDecoration()' must be implemented.");
+    }
+
+    focus() {
+        throw new Error("Method 'focus()' must be implemented.");
+    }
+
+    blur() {
+        throw new Error("Method 'blur()' must be implemented.");
+    }
+
+    hasFocus() {
+        throw new Error("Method 'hasFocus()' must be implemented.");
+    }
+
+    destroy() {
+        throw new Error("Method 'destroy()' must be implemented.");
+    }
+
+    isActive(name, attributes) {
+        throw new Error("Method 'isActive()' must be implemented.");
+    }
+
+    can(name) {
+        throw new Error("Method 'can()' must be implemented.");
+    }
 }
 
 // --- Tiptap Concrete Implementation ---
@@ -77,7 +109,7 @@ class TiptapEditor extends AbstractEditorLibrary {
                 editable: editorOptions.editable ?? true,
                 autofocus: editorOptions.autofocus ?? false,
 
-                onUpdate: ({ editor }) => {
+                onUpdate: ({editor}) => {
                     if (this._isUpdatingInternally) return; // Prevent loops during programmatic updates
 
                     const newContent = this.getContent(); // Use own method
@@ -98,7 +130,7 @@ class TiptapEditor extends AbstractEditorLibrary {
                     }
                 },
 
-                onSelectionUpdate: ({ editor }) => {
+                onSelectionUpdate: ({editor}) => {
                     if (this._onSelectionUpdateCallback) {
                         this._onSelectionUpdateCallback(editor);
                     }
@@ -118,7 +150,7 @@ class TiptapEditor extends AbstractEditorLibrary {
     }
 
     setContent(content) {
-        if (!this._tiptapInstance || this._tiptapInstance.isDestroyed) return;
+        if (this.inactive()) return;
 
         const contentToSet = content || '';
         let currentContent;
@@ -151,7 +183,7 @@ class TiptapEditor extends AbstractEditorLibrary {
     }
 
     getContent() {
-        if (!this._tiptapInstance || this._tiptapInstance.isDestroyed) return this._content || '';
+        if (this.inactive()) return this._content || '';
         try {
             return this._tiptapInstance.getHTML();
         } catch (error) {
@@ -161,10 +193,10 @@ class TiptapEditor extends AbstractEditorLibrary {
     }
 
     getSelection() {
-        if (!this._tiptapInstance || this._tiptapInstance.isDestroyed) return null;
+        if (this.inactive()) return null;
         try {
-            const { from, to, empty } = this._tiptapInstance.state.selection;
-            return { from, to, empty };
+            const {from, to, empty} = this._tiptapInstance.state.selection;
+            return {from, to, empty};
         } catch (error) {
             console.error("TiptapEditor.getSelection Error:", error);
             return null;
@@ -172,13 +204,12 @@ class TiptapEditor extends AbstractEditorLibrary {
     }
 
     applyDecoration(range = null, attributes = {}) {
-        if (!this._tiptapInstance || this._tiptapInstance.isDestroyed || !attributes.style) return;
+        if (this.inactive() || !attributes.style) return;
 
         try {
             let commandChain = this._tiptapInstance.chain().focus(); // Always focus first
-            if (range && typeof range.from === 'number' && typeof range.to === 'number') {
+            if (range && typeof range.from === 'number' && typeof range.to === 'number')
                 commandChain = commandChain.setTextSelection(range);
-            }
 
             // Map style attribute to Tiptap commands
             const styleActions = {
@@ -188,7 +219,7 @@ class TiptapEditor extends AbstractEditorLibrary {
                 'code': () => commandChain.toggleCode().run(),
                 'heading': () => {
                     const level = attributes.level && [1, 2, 3, 4, 5, 6].includes(attributes.level) ? attributes.level : 1;
-                    commandChain.toggleHeading({ level }).run();
+                    commandChain.toggleHeading({level}).run();
                 },
                 'paragraph': () => commandChain.setParagraph().run(),
                 'bulletList': () => commandChain.toggleBulletList().run(),
@@ -211,27 +242,40 @@ class TiptapEditor extends AbstractEditorLibrary {
     }
 
     focus(position = 'end') {
-        if (!this._tiptapInstance || this._tiptapInstance.isDestroyed) return;
-        try { this._tiptapInstance.commands.focus(position, { scrollIntoView: true }); }
-        catch (error) { console.error("TiptapEditor.focus Error:", error); }
+        if (this.inactive()) return;
+        try {
+            this._tiptapInstance.commands.focus(position, {scrollIntoView: true});
+        } catch (error) {
+            console.error("TiptapEditor.focus Error:", error);
+        }
     }
 
     blur() {
-        if (!this._tiptapInstance || this._tiptapInstance.isDestroyed) return;
-        try { this._tiptapInstance.commands.blur(); }
-        catch (error) { console.error("TiptapEditor.blur Error:", error); }
+        if (this.inactive()) return;
+        try {
+            this._tiptapInstance.commands.blur();
+        } catch (error) {
+            console.error("TiptapEditor.blur Error:", error);
+        }
     }
 
     hasFocus() {
-        if (!this._tiptapInstance || this._tiptapInstance.isDestroyed) return false;
-        try { return this._tiptapInstance.isFocused; }
-        catch (error) { console.error("TiptapEditor.hasFocus Error:", error); return false; }
+        if (this.inactive()) return false;
+        try {
+            return this._tiptapInstance.isFocused;
+        } catch (error) {
+            console.error("TiptapEditor.hasFocus Error:", error);
+            return false;
+        }
     }
 
     destroy() {
         if (this._tiptapInstance && !this._tiptapInstance.isDestroyed) {
-            try { this._tiptapInstance.destroy(); }
-            catch (error) { console.error("TiptapEditor.destroy Error:", error); }
+            try {
+                this._tiptapInstance.destroy();
+            } catch (error) {
+                console.error("TiptapEditor.destroy Error:", error);
+            }
         }
         this._tiptapInstance = null;
         // Optionally clear the mount point, but the plugin might handle this
@@ -242,7 +286,7 @@ class TiptapEditor extends AbstractEditorLibrary {
     }
 
     isActive(name, attributes = {}) {
-        if (!this._tiptapInstance || this._tiptapInstance.isDestroyed) return false;
+        if (this.inactive()) return false;
         try {
             return this._tiptapInstance.isActive(name, attributes);
         } catch (error) {
@@ -252,7 +296,7 @@ class TiptapEditor extends AbstractEditorLibrary {
     }
 
     can(name) {
-        if (!this._tiptapInstance || this._tiptapInstance.isDestroyed) return false;
+        if (this.inactive()) return false;
         try {
             if (name === 'undo') return this._tiptapInstance.can().undo();
             if (name === 'redo') return this._tiptapInstance.can().redo();
@@ -263,6 +307,10 @@ class TiptapEditor extends AbstractEditorLibrary {
             console.error(`TiptapEditor.can Error for ${name}:`, error);
             return false;
         }
+    }
+
+    inactive() {
+        return !this._tiptapInstance || this._tiptapInstance.isDestroyed;
     }
 }
 
@@ -281,43 +329,61 @@ function renderToolbarContent(editorInstance) {
 
     // Template for the toolbar's inner content
     return html`
-        <button title="Undo (Ctrl+Z)" class="toolbar-button" @click=${() => tiptap.applyDecoration(null, { style: 'undo' })} .disabled=${btnDisabled('undo')}>↺</button>
-        <button title="Redo (Ctrl+Y)" class="toolbar-button" @click=${() => tiptap.applyDecoration(null, { style: 'redo' })} .disabled=${btnDisabled('redo')}>↻</button>
+        <button title="Undo (Ctrl+Z)" class="toolbar-button"
+                @click=${() => tiptap.applyDecoration(null, {style: 'undo'})} .disabled=${btnDisabled('undo')}>↺
+        </button>
+        <button title="Redo (Ctrl+Y)" class="toolbar-button"
+                @click=${() => tiptap.applyDecoration(null, {style: 'redo'})} .disabled=${btnDisabled('redo')}>↻
+        </button>
         <span class="toolbar-divider"></span>
-        <button title="Bold (Ctrl+B)" class=${btnClass('bold')} @click=${() => tiptap.applyDecoration(null, { style: 'bold' })}><b>B</b></button>
-        <button title="Italic (Ctrl+I)" class=${btnClass('italic')} @click=${() => tiptap.applyDecoration(null, { style: 'italic' })}><i>I</i></button>
-        <button title="Strikethrough" class=${btnClass('strike')} @click=${() => tiptap.applyDecoration(null, { style: 'strike' })}><s>S</s></button>
-        <button title="Code" class=${btnClass('code')} @click=${() => tiptap.applyDecoration(null, { style: 'code' })}></></button>
+        <button title="Bold (Ctrl+B)" class=${btnClass('bold')}
+                @click=${() => tiptap.applyDecoration(null, {style: 'bold'})}><b>B</b></button>
+        <button title="Italic (Ctrl+I)" class=${btnClass('italic')}
+                @click=${() => tiptap.applyDecoration(null, {style: 'italic'})}><i>I</i></button>
+        <button title="Strikethrough" class=${btnClass('strike')}
+                @click=${() => tiptap.applyDecoration(null, {style: 'strike'})}><s>S</s></button>
+        <button title="Code" class=${btnClass('code')}
+                @click=${() => tiptap.applyDecoration(null, {style: 'code'})}></></button>
         <span class="toolbar-divider"></span>
         <select title="Text Style" class="toolbar-select" @change=${(e) => {
-        const style = e.target.value;
-        if (style.startsWith('heading')) {
-            const level = parseInt(style.split('-')[1], 10);
-            tiptap.applyDecoration(null, { style: 'heading', level });
-        } else if (style === 'paragraph') {
-            tiptap.applyDecoration(null, { style: 'paragraph'});
-        }
-        // Optional: Reset selection visually, though Tiptap's isActive should handle the <option> selected state
-        // e.target.value = '';
-    }}>
+            const style = e.target.value;
+            if (style.startsWith('heading')) {
+                const level = parseInt(style.split('-')[1], 10);
+                tiptap.applyDecoration(null, {style: 'heading', level});
+            } else if (style === 'paragraph') {
+                tiptap.applyDecoration(null, {style: 'paragraph'});
+            }
+            // Optional: Reset selection visually, though Tiptap's isActive should handle the <option> selected state
+            // e.target.value = '';
+        }}>
             <option value="paragraph" ?selected=${tiptap.isActive('paragraph')}>Paragraph</option>
-            <option value="heading-1" ?selected=${tiptap.isActive('heading', { level: 1 })}>Heading 1</option>
-            <option value="heading-2" ?selected=${tiptap.isActive('heading', { level: 2 })}>Heading 2</option>
-            <option value="heading-3" ?selected=${tiptap.isActive('heading', { level: 3 })}>Heading 3</option>
+            <option value="heading-1" ?selected=${tiptap.isActive('heading', {level: 1})}>Heading 1</option>
+            <option value="heading-2" ?selected=${tiptap.isActive('heading', {level: 2})}>Heading 2</option>
+            <option value="heading-3" ?selected=${tiptap.isActive('heading', {level: 3})}>Heading 3</option>
             <!-- Add more heading levels or block types as needed -->
         </select>
         <span class="toolbar-divider"></span>
-        <button title="Bullet List" class=${btnClass('bulletList')} @click=${() => tiptap.applyDecoration(null, { style: 'bulletList' })}>• List</button>
-        <button title="Ordered List" class=${btnClass('orderedList')} @click=${() => tiptap.applyDecoration(null, { style: 'orderedList' })}>1. List</button>
-        <button title="Blockquote" class=${btnClass('blockquote')} @click=${() => tiptap.applyDecoration(null, { style: 'blockquote' })}>" Quote</button>
-        <button title="Code Block" class=${btnClass('codeBlock')} @click=${() => tiptap.applyDecoration(null, { style: 'codeBlock' })}>{} Block</button>
-        <button title="Horizontal Rule" class="toolbar-button" @click=${() => tiptap.applyDecoration(null, { style: 'horizontalRule' })}>- Rule</button>
+        <button title="Bullet List" class=${btnClass('bulletList')}
+                @click=${() => tiptap.applyDecoration(null, {style: 'bulletList'})}>• List
+        </button>
+        <button title="Ordered List" class=${btnClass('orderedList')}
+                @click=${() => tiptap.applyDecoration(null, {style: 'orderedList'})}>1. List
+        </button>
+        <button title="Blockquote" class=${btnClass('blockquote')}
+                @click=${() => tiptap.applyDecoration(null, {style: 'blockquote'})}>" Quote
+        </button>
+        <button title="Code Block" class=${btnClass('codeBlock')}
+                @click=${() => tiptap.applyDecoration(null, {style: 'codeBlock'})}>{} Block
+        </button>
+        <button title="Horizontal Rule" class="toolbar-button"
+                @click=${() => tiptap.applyDecoration(null, {style: 'horizontalRule'})}>- Rule
+        </button>
     `;
 }
 
 // --- Rich Text Editor Plugin Definition ---
 export const RichTextEditorPlugin = {
-    id: 'richTextEditor', // Use a more specific ID if multiple editors exist
+    id: 'editor', // TODO Use a more specific ID if multiple editors exist?
     name: 'Rich Text Editor (Tiptap)',
     dependencies: [], // Add core API or other plugin dependencies if needed
     _editorInstance: null, // Holds the TiptapEditor instance
@@ -374,7 +440,7 @@ export const RichTextEditorPlugin = {
     registerUISlots() {
         return {
             [SLOT_EDITOR_CONTENT_AREA]: (props) => {
-                const { state, dispatch, noteId } = props;
+                const {state, dispatch, noteId} = props;
                 const note = noteId ? state.notes[noteId] : null;
                 const editorSettings = this.coreAPI.getPluginSettings(this.id) || {};
                 const debounceTime = editorSettings.debounceTime ?? 500;
@@ -406,7 +472,10 @@ export const RichTextEditorPlugin = {
                                     if (noteInState && currentEditorContent !== noteInState.content) {
                                         dispatch({
                                             type: 'CORE_UPDATE_NOTE',
-                                            payload: { noteId: this._currentNoteId, changes: { content: currentEditorContent } }
+                                            payload: {
+                                                noteId: this._currentNoteId,
+                                                changes: {content: currentEditorContent}
+                                            }
                                         });
                                     }
                                 }, debounceTime),
@@ -476,87 +545,150 @@ export const RichTextEditorPlugin = {
                 // The toolbar *content* is rendered dynamically by _updateToolbarUI
                 return html`
                     <div class="editor-container" style="display: flex; flex-direction: column; height: 100%;">
-                        <div id="editor-toolbar-container" class="editor-toolbar" role="toolbar" aria-label="Text Formatting">
+                        <div id="editor-toolbar-container" class="editor-toolbar" role="toolbar"
+                             aria-label="Text Formatting">
                             <!-- Toolbar content rendered here by _updateToolbarUI -->
                         </div>
-                        <div id="editor-mount-point" style="flex-grow: 1; overflow-y: auto; border: 1px solid var(--border-color, #ccc); border-top: none; border-radius: 0 0 4px 4px; padding: 10px;" class="tiptap-editor-content">
+                        <div id="editor-mount-point"
+                             style="flex-grow: 1; overflow-y: auto; border: 1px solid var(--border-color, #ccc); border-top: none; border-radius: 0 0 4px 4px; padding: 10px;"
+                             class="tiptap-editor-content">
                             <!-- Tiptap editor attaches here -->
-                            ${!note && !this._editorInstance ? html`<div style="color: var(--secondary-text-color); padding: 10px;">Select or create a note.</div>` : ''}
+                            ${!note && !this._editorInstance ? html`
+                                <div style="color: var(--secondary-text-color); padding: 10px;">Select or create a
+                                    note.
+                                </div>` : ''}
                         </div>
                     </div>
                     <style>
-                      .editor-toolbar {
-                        display: flex; flex-wrap: wrap; align-items: center;
-                        padding: 4px 8px;
-                        border: 1px solid var(--border-color, #ccc);
-                        border-radius: 4px 4px 0 0;
-                        background-color: var(--toolbar-bg, #f0f0f0);
-                        min-height: 34px; /* Ensure consistent height */
-                      }
-                      .toolbar-button, .toolbar-select {
-                        background: transparent; border: 1px solid transparent; border-radius: 3px;
-                        padding: 4px 6px; margin: 2px; cursor: pointer;
-                        font-size: 1em; line-height: 1; min-width: 28px; text-align: center;
-                        color: var(--text-color, #333);
-                      }
-                      .toolbar-button:hover:not(:disabled) {
-                        background-color: var(--button-hover-bg, #e0e0e0);
-                        border-color: var(--border-color, #ccc);
-                      }
-                      .toolbar-button.is-active {
-                        background-color: var(--accent-color-muted, #cce5ff);
-                        border-color: var(--accent-color, #99caff);
-                        color: var(--accent-text-color, #004085);
-                      }
-                      .toolbar-button:disabled { opacity: 0.5; cursor: not-allowed; }
-                      .toolbar-select {
-                        padding: 3px 4px; margin: 2px 4px;
-                        border: 1px solid var(--border-color, #ccc);
-                        background-color: var(--input-bg, #fff);
-                        color: var(--text-color, #333);
-                      }
-                      .toolbar-divider {
-                        display: inline-block; width: 1px; height: 20px;
-                        background-color: var(--border-color, #ccc);
-                        margin: 0 8px; vertical-align: middle;
-                      }
-                      /* Basic Tiptap content styling */
-                      .tiptap-editor-content .tiptap { /* Target Tiptap's contenteditable */
-                          outline: none; min-height: 100px; /* Ensure it takes some space */
-                      }
-                      .tiptap-editor-content .tiptap > * + * { margin-top: 0.75em; }
-                      .tiptap-editor-content .tiptap ul,
-                      .tiptap-editor-content .tiptap ol { padding: 0 1rem; margin: 0.5em 0; }
-                      .tiptap-editor-content .tiptap h1, h2, h3, h4, h5, h6 { line-height: 1.2; margin: 1em 0 0.5em; }
-                      .tiptap-editor-content .tiptap p { margin: 0; } /* Tiptap often handles P margins well */
-                      .tiptap-editor-content .tiptap code:not(pre code) {
-                          background-color: rgba(97, 97, 97, 0.1); color: #616161;
-                          padding: .1em .3em; border-radius: .2em; font-size: 0.9em;
-                      }
-                      .tiptap-editor-content .tiptap pre {
-                          background: #0D0D0D; color: #FFF;
-                          font-family: 'JetBrainsMono', monospace; white-space: pre-wrap;
-                          padding: 0.75rem 1rem; border-radius: 0.5rem; margin: 1em 0;
-                      }
-                      .tiptap-editor-content .tiptap pre code {
-                          color: inherit; padding: 0; background: none; font-size: 0.9em;
-                      }
-                      .tiptap-editor-content .tiptap blockquote {
-                          padding-left: 1rem; border-left: 3px solid rgba(13, 13, 13, 0.1);
-                          margin: 1em 0;
-                      }
-                      .tiptap-editor-content .tiptap hr {
-                          border: none; border-top: 2px solid rgba(13, 13, 13, 0.1);
-                          margin: 2rem 0;
-                      }
-                      /* Placeholder Styling (if using Tiptap Placeholder extension) */
-                       .tiptap-editor-content .tiptap p.is-editor-empty:first-child::before {
-                          content: attr(data-placeholder);
-                          float: left;
-                          color: #adb5bd;
-                          pointer-events: none;
-                          height: 0;
-                       }
+                        .editor-toolbar {
+                            display: flex;
+                            flex-wrap: wrap;
+                            align-items: center;
+                            padding: 4px 8px;
+                            border: 1px solid var(--border-color, #ccc);
+                            border-radius: 4px 4px 0 0;
+                            background-color: var(--toolbar-bg, #f0f0f0);
+                            min-height: 34px; /* Ensure consistent height */
+                        }
+
+                        .toolbar-button, .toolbar-select {
+                            background: transparent;
+                            border: 1px solid transparent;
+                            border-radius: 3px;
+                            padding: 4px 6px;
+                            margin: 2px;
+                            cursor: pointer;
+                            font-size: 1em;
+                            line-height: 1;
+                            min-width: 28px;
+                            text-align: center;
+                            color: var(--text-color, #333);
+                        }
+
+                        .toolbar-button:hover:not(:disabled) {
+                            background-color: var(--button-hover-bg, #e0e0e0);
+                            border-color: var(--border-color, #ccc);
+                        }
+
+                        .toolbar-button.is-active {
+                            background-color: var(--accent-color-muted, #cce5ff);
+                            border-color: var(--accent-color, #99caff);
+                            color: var(--accent-text-color, #004085);
+                        }
+
+                        .toolbar-button:disabled {
+                            opacity: 0.5;
+                            cursor: not-allowed;
+                        }
+
+                        .toolbar-select {
+                            padding: 3px 4px;
+                            margin: 2px 4px;
+                            border: 1px solid var(--border-color, #ccc);
+                            background-color: var(--input-bg, #fff);
+                            color: var(--text-color, #333);
+                        }
+
+                        .toolbar-divider {
+                            display: inline-block;
+                            width: 1px;
+                            height: 20px;
+                            background-color: var(--border-color, #ccc);
+                            margin: 0 8px;
+                            vertical-align: middle;
+                        }
+
+                        /* Basic Tiptap content styling */
+                        .tiptap-editor-content .tiptap { /* Target Tiptap's contenteditable */
+                            outline: none;
+                            min-height: 100px; /* Ensure it takes some space */
+                        }
+
+                        .tiptap-editor-content .tiptap > * + * {
+                            margin-top: 0.75em;
+                        }
+
+                        .tiptap-editor-content .tiptap ul,
+                        .tiptap-editor-content .tiptap ol {
+                            padding: 0 1rem;
+                            margin: 0.5em 0;
+                        }
+
+                        .tiptap-editor-content .tiptap h1, h2, h3, h4, h5, h6 {
+                            line-height: 1.2;
+                            margin: 1em 0 0.5em;
+                        }
+
+                        .tiptap-editor-content .tiptap p {
+                            margin: 0;
+                        }
+
+                        /* Tiptap often handles P margins well */
+                        .tiptap-editor-content .tiptap code:not(pre code) {
+                            background-color: rgba(97, 97, 97, 0.1);
+                            color: #616161;
+                            padding: .1em .3em;
+                            border-radius: .2em;
+                            font-size: 0.9em;
+                        }
+
+                        .tiptap-editor-content .tiptap pre {
+                            background: #0D0D0D;
+                            color: #FFF;
+                            font-family: 'JetBrainsMono', monospace;
+                            white-space: pre-wrap;
+                            padding: 0.75rem 1rem;
+                            border-radius: 0.5rem;
+                            margin: 1em 0;
+                        }
+
+                        .tiptap-editor-content .tiptap pre code {
+                            color: inherit;
+                            padding: 0;
+                            background: none;
+                            font-size: 0.9em;
+                        }
+
+                        .tiptap-editor-content .tiptap blockquote {
+                            padding-left: 1rem;
+                            border-left: 3px solid rgba(13, 13, 13, 0.1);
+                            margin: 1em 0;
+                        }
+
+                        .tiptap-editor-content .tiptap hr {
+                            border: none;
+                            border-top: 2px solid rgba(13, 13, 13, 0.1);
+                            margin: 2rem 0;
+                        }
+
+                        /* Placeholder Styling (if using Tiptap Placeholder extension) */
+                        .tiptap-editor-content .tiptap p.is-editor-empty:first-child::before {
+                            content: attr(data-placeholder);
+                            float: left;
+                            color: #adb5bd;
+                            pointer-events: none;
+                            height: 0;
+                        }
                     </style>
                 `;
             }

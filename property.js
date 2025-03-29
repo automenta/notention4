@@ -1,5 +1,7 @@
-import { injectCSS } from './util.js';
-import { SLOT_EDITOR_BELOW_CONTENT } from './ui.js';
+import {SLOT_EDITOR_BELOW_CONTENT} from './ui.js';
+
+import './parser.css';
+
 
 export const PropertiesPlugin = {
     id: 'properties',
@@ -35,7 +37,7 @@ export const PropertiesPlugin = {
                             }
                             // Initialize this plugin's specific data structure
                             if (!note.pluginData[pluginId]) {
-                                note.pluginData[pluginId] = { properties: [] };
+                                note.pluginData[pluginId] = {properties: []};
                                 // console.log(`PropertiesPlugin: Initialized data for new note ${newNoteId}`);
                             }
                         } else {
@@ -49,7 +51,7 @@ export const PropertiesPlugin = {
                 }
 
                 case 'PROPERTY_ADD': { // payload: { noteId, propertyData: { key, value, type? } }
-                    const { noteId, propertyData } = action.payload;
+                    const {noteId, propertyData} = action.payload;
                     const note = draft.notes[noteId];
 
                     // Ensure the note and plugin data structure exist
@@ -58,7 +60,7 @@ export const PropertiesPlugin = {
                         break;
                     }
                     if (!note.pluginData) note.pluginData = {}; // Initialize pluginData if somehow missing
-                    if (!note.pluginData[pluginId]) note.pluginData[pluginId] = { properties: [] }; // Initialize properties if missing
+                    if (!note.pluginData[pluginId]) note.pluginData[pluginId] = {properties: []}; // Initialize properties if missing
 
                     const propsArray = note.pluginData[pluginId].properties;
 
@@ -83,7 +85,7 @@ export const PropertiesPlugin = {
                 }
 
                 case 'PROPERTY_UPDATE': { // payload: { noteId, propertyId, changes: { key?, value?, type? } }
-                    const { noteId, propertyId, changes } = action.payload;
+                    const {noteId, propertyId, changes} = action.payload;
                     const note = draft.notes[noteId];
                     if (!note?.pluginData?.[pluginId]?.properties) {
                         console.warn(`PropertiesPlugin: PROPERTY_UPDATE - Note or properties data not found for note ${noteId}`);
@@ -99,7 +101,7 @@ export const PropertiesPlugin = {
                     }
 
                     // Apply allowed changes, ensuring key is trimmed if updated
-                    const updatedProp = { ...propsArray[propIndex] };
+                    const updatedProp = {...propsArray[propIndex]};
                     let hasChanged = false;
                     if (changes.hasOwnProperty('key') && typeof changes.key === 'string' && changes.key.trim() !== updatedProp.key) {
                         updatedProp.key = changes.key.trim();
@@ -114,7 +116,7 @@ export const PropertiesPlugin = {
                         hasChanged = true;
                     }
 
-                    if(hasChanged) {
+                    if (hasChanged) {
                         updatedProp.updatedAt = Date.now();
                         propsArray[propIndex] = updatedProp; // Replace the old property object
                         note.updatedAt = Date.now(); // Mark note as updated
@@ -124,7 +126,7 @@ export const PropertiesPlugin = {
                 }
 
                 case 'PROPERTY_DELETE': { // payload: { noteId, propertyId }
-                    const { noteId, propertyId } = action.payload;
+                    const {noteId, propertyId} = action.payload;
                     const note = draft.notes[noteId];
                     const propsArray = note?.pluginData?.[pluginId]?.properties;
 
@@ -164,7 +166,7 @@ export const PropertiesPlugin = {
 
         return {
             [SLOT_EDITOR_BELOW_CONTENT]: (props) => {
-                const { state, dispatch, noteId, html } = props;
+                const {state, dispatch, noteId, html} = props;
                 const note = state.notes[noteId];
                 const propertiesData = note?.pluginData?.[pluginId]?.properties || [];
 
@@ -179,7 +181,7 @@ export const PropertiesPlugin = {
                             type: 'PROPERTY_ADD',
                             payload: {
                                 noteId: noteId,
-                                propertyData: { key: key.trim(), value: value || '' } // Default value if prompt cancelled
+                                propertyData: {key: key.trim(), value: value || ''} // Default value if prompt cancelled
                             }
                         });
                     }
@@ -199,8 +201,8 @@ export const PropertiesPlugin = {
                                     noteId: noteId,
                                     propertyId: prop.id,
                                     changes: {
-                                        ...(newKey !== null && { key: newKey }), // Only include key if changed
-                                        ...(newValue !== null && { value: newValue }) // Only include value if changed
+                                        ...(newKey !== null && {key: newKey}), // Only include key if changed
+                                        ...(newValue !== null && {value: newValue}) // Only include value if changed
                                     }
                                 }
                             });
@@ -209,7 +211,7 @@ export const PropertiesPlugin = {
                         if (confirm(`Are you sure you want to delete property "${prop.key}"?`)) {
                             dispatch({
                                 type: 'PROPERTY_DELETE',
-                                payload: { noteId: noteId, propertyId: prop.id }
+                                payload: {noteId: noteId, propertyId: prop.id}
                             });
                         }
                     }
@@ -223,9 +225,9 @@ export const PropertiesPlugin = {
                             <div class="properties-list">
                                 ${propertiesData.map(prop => html`
                                     <button
-                                        class="property-pill"
-                                        @click=${() => handlePropertyClick(prop)}
-                                        title="Click to edit/delete\nType: ${prop.type || 'text'}\nCreated: ${coreAPI.utils.formatDate(prop.createdAt)}\nUpdated: ${coreAPI.utils.formatDate(prop.updatedAt)}"
+                                            class="property-pill"
+                                            @click=${() => handlePropertyClick(prop)}
+                                            title="Click to edit/delete\nType: ${prop.type || 'text'}\nCreated: ${coreAPI.utils.formatDate(prop.createdAt)}\nUpdated: ${coreAPI.utils.formatDate(prop.updatedAt)}"
                                     >
                                         <span class="property-key">${prop.key}:</span>
                                         <span class="property-value">${prop.value}</span>
@@ -257,6 +259,3 @@ export const PropertiesPlugin = {
         };
     }
 };
-
-
-injectCSS('property.css');

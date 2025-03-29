@@ -1,4 +1,5 @@
-This version incorporates the feedback, clarifies implementation details, adds mechanisms for configuration (System Notes) and editor integration, ensures better support for all plugin types, and emphasizes robustness.
+This version incorporates the feedback, clarifies implementation details, adds mechanisms for configuration (System
+Notes) and editor integration, ensures better support for all plugin types, and emphasizes robustness.
 
 ```javascript
 /**
@@ -105,11 +106,11 @@ class StateManager {
     }
 
     _buildDispatchChain() {
-       console.log(`StateManager: Rebuilding dispatch chain with ${this._middleware.length} middleware.`);
-       return this._middleware.reduceRight(
-           (next, mw) => mw(this.getStoreApi())(next),
-           this._baseDispatch.bind(this)
-       );
+        console.log(`StateManager: Rebuilding dispatch chain with ${this._middleware.length} middleware.`);
+        return this._middleware.reduceRight(
+            (next, mw) => mw(this.getStoreApi())(next),
+            this._baseDispatch.bind(this)
+        );
     }
 
     _baseDispatch(action) {
@@ -121,19 +122,19 @@ class StateManager {
             try {
                 nextState = this._coreReducers[action.type](nextState, action);
             } catch (error) {
-                 console.error(`StateManager: Error in core reducer for action [${action.type}]`, error, action);
-                 // Optionally dispatch an error action
+                console.error(`StateManager: Error in core reducer for action [${action.type}]`, error, action);
+                // Optionally dispatch an error action
             }
         }
 
         // Apply all plugin reducers (they receive the *full* state)
         Object.entries(this._pluginReducers).forEach(([pluginId, reducerFn]) => {
-             try {
-                 nextState = reducerFn(nextState, action); // Plugin reducer handles relevant changes
-             } catch (error) {
-                 console.error(`StateManager: Error in plugin reducer for [${pluginId}] on action [${action.type}]`, error, action);
-                 // Optionally dispatch an error action, disable plugin?
-             }
+            try {
+                nextState = reducerFn(nextState, action); // Plugin reducer handles relevant changes
+            } catch (error) {
+                console.error(`StateManager: Error in plugin reducer for [${pluginId}] on action [${action.type}]`, error, action);
+                // Optionally dispatch an error action, disable plugin?
+            }
         });
 
 
@@ -148,12 +149,12 @@ class StateManager {
     }
 
     dispatch(action) {
-       // Input validation for action? { type: string } must exist.
-       if (!action || typeof action.type !== 'string') {
-           console.error("StateManager: Invalid action dispatched.", action);
-           return;
-       }
-       return this._dispatchChain(action);
+        // Input validation for action? { type: string } must exist.
+        if (!action || typeof action.type !== 'string') {
+            console.error("StateManager: Invalid action dispatched.", action);
+            return;
+        }
+        return this._dispatchChain(action);
     }
 
     // --- Methods called by PluginManager ---
@@ -207,9 +208,9 @@ class PluginManager {
     }
 
     _calculateLoadOrder() {
-       // TODO: Implement topological sort based on `dependencies` in plugin definitions.
-       // For now, assume registration order is okay or manually ensure correct order.
-       this._pluginLoadOrder = Array.from(this._pluginRegistry.keys());
+        // TODO: Implement topological sort based on `dependencies` in plugin definitions.
+        // For now, assume registration order is okay or manually ensure correct order.
+        this._pluginLoadOrder = Array.from(this._pluginRegistry.keys());
     }
 
     activatePlugins() {
@@ -251,7 +252,7 @@ class PluginManager {
                     if (typeof reducer === 'function') {
                         this._stateManager.registerReducer(pluginId, reducer);
                     } else {
-                         console.warn(`PluginManager: Plugin [${pluginId}] registerReducer did not return a function.`);
+                        console.warn(`PluginManager: Plugin [${pluginId}] registerReducer did not return a function.`);
                     }
                 }
 
@@ -266,11 +267,11 @@ class PluginManager {
                 // 4. Register UI Slots
                 if (typeof entry.instance.registerUISlots === 'function') {
                     const slots = entry.instance.registerUISlots() || {};
-                     Object.entries(slots).forEach(([slotName, renderFn]) => {
+                    Object.entries(slots).forEach(([slotName, renderFn]) => {
                         if (typeof renderFn === 'function') {
-                           this._uiRenderer.registerSlotComponent(pluginId, slotName, renderFn);
+                            this._uiRenderer.registerSlotComponent(pluginId, slotName, renderFn);
                         } else {
-                           console.warn(`PluginManager: Invalid render function provided for slot [${slotName}] by plugin [${pluginId}]`);
+                            console.warn(`PluginManager: Invalid render function provided for slot [${slotName}] by plugin [${pluginId}]`);
                         }
                     });
                 }
@@ -285,25 +286,25 @@ class PluginManager {
 
                 // 6. Get Plugin's Exposed API
                 if (typeof entry.instance.getAPI === 'function') {
-                   entry.api = entry.instance.getAPI();
+                    entry.api = entry.instance.getAPI();
                 }
 
                 // 7. Call onActivate lifecycle hook
                 if (typeof entry.instance.onActivate === 'function') {
-                   entry.instance.onActivate();
+                    entry.instance.onActivate();
                 }
 
                 entry.isActive = true;
                 entry.status = 'active';
                 console.log(`PluginManager: Successfully activated plugin [${pluginId}]`);
-                this._eventBus.publish('PLUGIN_STATUS_CHANGED', { pluginId, status: 'active' });
+                this._eventBus.publish('PLUGIN_STATUS_CHANGED', {pluginId, status: 'active'});
 
             } catch (error) {
                 console.error(`PluginManager: Failed to activate plugin [${pluginId}]`, error);
                 entry.status = 'error';
                 entry.error = error;
                 entry.isActive = false;
-                this._eventBus.publish('PLUGIN_STATUS_CHANGED', { pluginId, status: 'error', error: error.message });
+                this._eventBus.publish('PLUGIN_STATUS_CHANGED', {pluginId, status: 'error', error: error.message});
                 // Optional: Clean up partially registered stuff (reducers, middleware, slots?) - complex
             }
         });
@@ -316,10 +317,10 @@ class PluginManager {
             return;
         }
         if (this._services.has(serviceName)) {
-             const existingProvider = this._services.get(serviceName).providerPluginId;
-             console.warn(`PluginManager: Service [${serviceName}] already registered by plugin [${existingProvider}]. Overwriting by plugin [${pluginId}].`);
+            const existingProvider = this._services.get(serviceName).providerPluginId;
+            console.warn(`PluginManager: Service [${serviceName}] already registered by plugin [${existingProvider}]. Overwriting by plugin [${pluginId}].`);
         }
-        this._services.set(serviceName, { instance: serviceInstance, providerPluginId: pluginId });
+        this._services.set(serviceName, {instance: serviceInstance, providerPluginId: pluginId});
         console.log(`PluginManager: Registered service [${serviceName}] from plugin [${pluginId}]`);
     }
 
@@ -343,8 +344,8 @@ class PersistenceService {
     constructor(stateManager) {
         this._stateManager = stateManager;
         if (!this._localForage) {
-             console.error("PersistenceService: localForage not found. Persistence disabled.");
-             return; // Disable persistence if library isn't loaded
+            console.error("PersistenceService: localForage not found. Persistence disabled.");
+            return; // Disable persistence if library isn't loaded
         }
         this._stateManager.subscribe(Utils.debounce(this.handleStateChange.bind(this), 1000));
     }
@@ -355,33 +356,33 @@ class PersistenceService {
     }
 
     async saveState(state) {
-         if (!this._localForage) return;
-         if (this._isSaving) return;
-         this._isSaving = true;
-         try {
-             const stateToSave = this.filterStateForSaving(state);
-             await this._localForage.setItem(this._storageKey, stateToSave);
-             // console.log('PersistenceService: State saved.');
-         } catch (error) {
-             console.error('PersistenceService: Error saving state', error);
-         } finally {
-             this._isSaving = false;
-         }
+        if (!this._localForage) return;
+        if (this._isSaving) return;
+        this._isSaving = true;
+        try {
+            const stateToSave = this.filterStateForSaving(state);
+            await this._localForage.setItem(this._storageKey, stateToSave);
+            // console.log('PersistenceService: State saved.');
+        } catch (error) {
+            console.error('PersistenceService: Error saving state', error);
+        } finally {
+            this._isSaving = false;
+        }
     }
 
-     filterStateForSaving(state) {
-         // Explicitly exclude transient state
-         const {
-             uiState,             // Exclude all transient UI state
-             pluginRuntimeState,  // Exclude all plugin runtime state
-             ...stateToSave        // Keep the rest
-         } = state;
+    filterStateForSaving(state) {
+        // Explicitly exclude transient state
+        const {
+            uiState,             // Exclude all transient UI state
+            pluginRuntimeState,  // Exclude all plugin runtime state
+            ...stateToSave        // Keep the rest
+        } = state;
 
-         // Optionally, filter parts of uiState if some ARE persistent (e.g., sidebar width)
-         // For now, exclude all of it for simplicity.
+        // Optionally, filter parts of uiState if some ARE persistent (e.g., sidebar width)
+        // For now, exclude all of it for simplicity.
 
-         return stateToSave;
-     }
+        return stateToSave;
+    }
 }
 
 /**
@@ -406,12 +407,12 @@ class UIRenderer {
     }
 
     renderSlots(state) {
-         Object.entries(this._slotRegistry).forEach(([slotName, components]) => {
+        Object.entries(this._slotRegistry).forEach(([slotName, components]) => {
             // Find potentially multiple elements matching the slot selector
             const slotContainers = this._rootElement.querySelectorAll(`[data-slot="${slotName}"]`);
             slotContainers.forEach(slotContainer => {
                 slotContainer.innerHTML = ''; // Clear previous content
-                components.forEach(({ pluginId, renderFn }) => {
+                components.forEach(({pluginId, renderFn}) => {
                     try {
                         // Pass relevant props based on slot context if needed
                         const props = {
@@ -426,7 +427,7 @@ class UIRenderer {
                         } else if (typeof element === 'string') {
                             slotContainer.insertAdjacentHTML('beforeend', element);
                         } else if (element) {
-                             console.warn(`UIRenderer: Slot [${slotName}] renderFn from [${pluginId}] returned non-renderable type:`, element);
+                            console.warn(`UIRenderer: Slot [${slotName}] renderFn from [${pluginId}] returned non-renderable type:`, element);
                         }
                     } catch (error) {
                         console.error(`UIRenderer: Error rendering slot [${slotName}] by plugin [${pluginId}]`, error);
@@ -476,7 +477,7 @@ class UIRenderer {
     // renderNoteListItems, renderEditorArea, renderWelcomeMessage similar...
 
     renderSettingsModal(state) {
-         return `
+        return `
             <div id="modal-backdrop" class="modal-backdrop"></div>
             <div id="settings-view" class="modal-content settings-view" role="dialog" aria-modal="true" aria-labelledby="settings-title">
                  <h2 id="settings-title">Settings</h2>
@@ -509,7 +510,7 @@ class UIRenderer {
         // Handle modal backdrop clicks specifically if needed (or via delegation)
         const modalBackdrop = this._rootElement.querySelector('#modal-backdrop');
         if (modalBackdrop) {
-            modalBackdrop.onclick = () => this._stateManager.dispatch({ type: 'CORE_CLOSE_MODAL' });
+            modalBackdrop.onclick = () => this._stateManager.dispatch({type: 'CORE_CLOSE_MODAL'});
         }
     }
 
@@ -522,38 +523,38 @@ class UIRenderer {
         const listItem = target.closest('.note-list-item');
         if (listItem && listItem.dataset.noteId) {
             event.preventDefault();
-            this._stateManager.dispatch({ type: 'CORE_SELECT_NOTE', payload: { noteId: listItem.dataset.noteId } });
+            this._stateManager.dispatch({type: 'CORE_SELECT_NOTE', payload: {noteId: listItem.dataset.noteId}});
             return;
         }
         // Add Note Button
         if (target.matches('#core-add-note')) {
-            this._stateManager.dispatch({ type: 'CORE_ADD_NOTE' });
+            this._stateManager.dispatch({type: 'CORE_ADD_NOTE'});
             return;
         }
         // Settings Buttons
         if (target.matches('#core-open-settings')) {
-             this._stateManager.dispatch({ type: 'CORE_OPEN_MODAL', payload: { modalId: 'settings' } });
-             return;
+            this._stateManager.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
+            return;
         }
-         if (target.matches('#core-close-settings') || target.closest('#core-close-settings')) {
-             this._stateManager.dispatch({ type: 'CORE_CLOSE_MODAL' });
-             return;
-         }
+        if (target.matches('#core-close-settings') || target.closest('#core-close-settings')) {
+            this._stateManager.dispatch({type: 'CORE_CLOSE_MODAL'});
+            return;
+        }
         // Archive Button
         const archiveBtn = target.closest('.core-archive-note');
         if (archiveBtn && archiveBtn.dataset.noteId) {
-             const noteId = archiveBtn.dataset.noteId;
-             this._stateManager.dispatch({ type: 'CORE_ARCHIVE_NOTE', payload: { noteId: noteId } });
-             return;
+            const noteId = archiveBtn.dataset.noteId;
+            this._stateManager.dispatch({type: 'CORE_ARCHIVE_NOTE', payload: {noteId: noteId}});
+            return;
         }
         // Delete Button
         const deleteBtn = target.closest('.core-delete-note');
         if (deleteBtn && deleteBtn.dataset.noteId) {
             const noteId = deleteBtn.dataset.noteId;
-             if (confirm(`Are you sure you want to delete note "${state.notes[noteId]?.name || 'Untitled'}"?`)) {
-                 this._stateManager.dispatch({ type: 'CORE_DELETE_NOTE', payload: { noteId: noteId } });
-             }
-             return;
+            if (confirm(`Are you sure you want to delete note "${state.notes[noteId]?.name || 'Untitled'}"?`)) {
+                this._stateManager.dispatch({type: 'CORE_DELETE_NOTE', payload: {noteId: noteId}});
+            }
+            return;
         }
         // Add other core button handlers...
     }
@@ -562,46 +563,46 @@ class UIRenderer {
         const target = event.target;
         const state = this._stateManager.getState(); // Get fresh state
 
-         // Search Input
-         if (target.matches('#core-search')) {
-             Utils.debounce(() => {
-                 this._stateManager.dispatch({ type: 'CORE_SEARCH_TERM_CHANGED', payload: { searchTerm: target.value } });
-             }, 300)();
-             return;
-         }
-         // Editor Title Input
-         if (target.matches('.editor-title-input') && target.dataset.noteId) {
-             const noteId = target.dataset.noteId;
-             Utils.debounce(() => {
-                 this._stateManager.dispatch({
-                     type: 'CORE_UPDATE_NOTE',
-                     payload: { noteId: noteId, changes: { name: target.value } }
-                 });
-             }, 500)();
-             return;
-         }
-         // Core Content Textarea
-         if (target.matches('.core-content-editor') && target.dataset.noteId) {
-              const noteId = target.dataset.noteId;
-              Utils.debounce(() => {
-                 this._stateManager.dispatch({
-                     type: 'CORE_UPDATE_NOTE',
-                     payload: { noteId: noteId, changes: { content: target.value } }
-                 });
-             }, 500)();
-             return;
-         }
-          // Core Settings Inputs (Example for Theme)
-          if (target.matches('#core-theme-select') && target.dataset.settingKey) {
-              const key = target.dataset.settingKey;
-              const value = target.value;
-              this._stateManager.dispatch({ type: 'CORE_SET_CORE_SETTING', payload: { key, value } });
-              // Apply theme change immediately? Or via state subscription effect
-              document.documentElement.setAttribute('data-theme', value); // Example immediate effect
-              return;
-          }
+        // Search Input
+        if (target.matches('#core-search')) {
+            Utils.debounce(() => {
+                this._stateManager.dispatch({type: 'CORE_SEARCH_TERM_CHANGED', payload: {searchTerm: target.value}});
+            }, 300)();
+            return;
+        }
+        // Editor Title Input
+        if (target.matches('.editor-title-input') && target.dataset.noteId) {
+            const noteId = target.dataset.noteId;
+            Utils.debounce(() => {
+                this._stateManager.dispatch({
+                    type: 'CORE_UPDATE_NOTE',
+                    payload: {noteId: noteId, changes: {name: target.value}}
+                });
+            }, 500)();
+            return;
+        }
+        // Core Content Textarea
+        if (target.matches('.core-content-editor') && target.dataset.noteId) {
+            const noteId = target.dataset.noteId;
+            Utils.debounce(() => {
+                this._stateManager.dispatch({
+                    type: 'CORE_UPDATE_NOTE',
+                    payload: {noteId: noteId, changes: {content: target.value}}
+                });
+            }, 500)();
+            return;
+        }
+        // Core Settings Inputs (Example for Theme)
+        if (target.matches('#core-theme-select') && target.dataset.settingKey) {
+            const key = target.dataset.settingKey;
+            const value = target.value;
+            this._stateManager.dispatch({type: 'CORE_SET_CORE_SETTING', payload: {key, value}});
+            // Apply theme change immediately? Or via state subscription effect
+            document.documentElement.setAttribute('data-theme', value); // Example immediate effect
+            return;
+        }
 
-         // Add other core input handlers...
+        // Add other core input handlers...
     }
 
     // registerSlotComponent, renderEphemeralComponent similar...
@@ -611,7 +612,7 @@ class UIRenderer {
  * Event Bus (No major changes needed)
  */
 class EventBus {
-   // ... implementation similar ...
+    // ... implementation similar ...
 }
 
 /**
@@ -623,34 +624,34 @@ const Utils = {
         // **IMPORTANT**: Replace this with DOMPurify in a real application!
         // This placeholder is NOT secure.
         if (typeof DOMPurify !== 'undefined') {
-             return DOMPurify.sanitize(dirtyHTMLString);
+            return DOMPurify.sanitize(dirtyHTMLString);
         } else {
             console.warn("Utils.sanitizeHTML: DOMPurify not found. Falling back to basic text conversion (UNSAFE).");
-             const temp = document.createElement('div');
-             temp.textContent = dirtyHTMLString; // Convert HTML to text content
-             return temp.innerHTML;
+            const temp = document.createElement('div');
+            temp.textContent = dirtyHTMLString; // Convert HTML to text content
+            return temp.innerHTML;
         }
     },
-     // Add other needed utils: throttle, date formatting, deepClone, etc.
-     throttle: (func, limit) => {
-         let lastFunc;
-         let lastRan;
-         return function(...args) {
-             const context = this;
-             if (!lastRan) {
-                 func.apply(context, args);
-                 lastRan = Date.now();
-             } else {
-                 clearTimeout(lastFunc);
-                 lastFunc = setTimeout(function() {
-                     if ((Date.now() - lastRan) >= limit) {
-                         func.apply(context, args);
-                         lastRan = Date.now();
-                     }
-                 }, limit - (Date.now() - lastRan));
-             }
-         }
-     },
+    // Add other needed utils: throttle, date formatting, deepClone, etc.
+    throttle: (func, limit) => {
+        let lastFunc;
+        let lastRan;
+        return function (...args) {
+            const context = this;
+            if (!lastRan) {
+                func.apply(context, args);
+                lastRan = Date.now();
+            } else {
+                clearTimeout(lastFunc);
+                lastFunc = setTimeout(function () {
+                    if ((Date.now() - lastRan) >= limit) {
+                        func.apply(context, args);
+                        lastRan = Date.now();
+                    }
+                }, limit - (Date.now() - lastRan));
+            }
+        }
+    },
 };
 
 // ==========================================================================
@@ -662,7 +663,7 @@ const initialAppState = { // Default structure
     noteOrder: [],
     systemNoteIndex: {},
     settings: {
-        core: { theme: 'light', userId: null },
+        core: {theme: 'light', userId: null},
         plugins: {}
     },
     uiState: {
@@ -681,24 +682,24 @@ const coreReducer = (state = initialAppState, action) => {
         case 'CORE_STATE_LOADED': {
             const loaded = action.payload.loadedState || {};
             // Carefully merge, ensuring all expected keys exist and transient state is reset
-             return {
-                 ...initialAppState, // Start with defaults
-                 // Merge persisted parts
-                 notes: loaded.notes || {},
-                 noteOrder: loaded.noteOrder || [],
-                 systemNoteIndex: loaded.systemNoteIndex || {}, // Load index if persisted
-                 settings: {
-                     core: { ...initialAppState.settings.core, ...(loaded.settings?.core || {}) },
-                     plugins: loaded.settings?.plugins || {}
-                 },
-                 runtimeCache: loaded.runtimeCache || {}, // Load cache
-                 // Reset transient parts explicitly
-                 uiState: {
-                     ...initialAppState.uiState,
-                     // Potentially restore some non-sensitive UI state if desired, e.g., sidebar state
-                 },
-                 pluginRuntimeState: {}, // Always reset plugin runtime state
-             };
+            return {
+                ...initialAppState, // Start with defaults
+                // Merge persisted parts
+                notes: loaded.notes || {},
+                noteOrder: loaded.noteOrder || [],
+                systemNoteIndex: loaded.systemNoteIndex || {}, // Load index if persisted
+                settings: {
+                    core: {...initialAppState.settings.core, ...(loaded.settings?.core || {})},
+                    plugins: loaded.settings?.plugins || {}
+                },
+                runtimeCache: loaded.runtimeCache || {}, // Load cache
+                // Reset transient parts explicitly
+                uiState: {
+                    ...initialAppState.uiState,
+                    // Potentially restore some non-sensitive UI state if desired, e.g., sidebar state
+                },
+                pluginRuntimeState: {}, // Always reset plugin runtime state
+            };
         }
 
         case 'CORE_ADD_NOTE': {
@@ -712,31 +713,31 @@ const coreReducer = (state = initialAppState, action) => {
                 updatedAt: now,
                 isArchived: false,
                 systemType: action.payload?.systemType || null, // Allow setting system type on creation
-                 // Core doesn't add pluginData here. Plugins react via their reducers.
+                // Core doesn't add pluginData here. Plugins react via their reducers.
             };
-            const newNotes = { ...state.notes, [newNoteId]: newNote };
+            const newNotes = {...state.notes, [newNoteId]: newNote};
             const newNoteOrder = [newNoteId, ...state.noteOrder];
-             const newSystemNoteIndex = newNote.systemType
-                 ? { ...state.systemNoteIndex, [newNote.systemType]: newNoteId }
-                 : state.systemNoteIndex;
+            const newSystemNoteIndex = newNote.systemType
+                ? {...state.systemNoteIndex, [newNote.systemType]: newNoteId}
+                : state.systemNoteIndex;
 
             return {
                 ...state,
                 notes: newNotes,
                 noteOrder: newNoteOrder,
                 systemNoteIndex: newSystemNoteIndex,
-                uiState: { ...state.uiState, selectedNoteId: newNoteId }
+                uiState: {...state.uiState, selectedNoteId: newNoteId}
             };
         }
 
         case 'CORE_SELECT_NOTE': {
-            const { noteId } = action.payload;
+            const {noteId} = action.payload;
             if (!state.notes[noteId] || state.uiState.selectedNoteId === noteId) return state;
-            return { ...state, uiState: { ...state.uiState, selectedNoteId: noteId } };
+            return {...state, uiState: {...state.uiState, selectedNoteId: noteId}};
         }
 
         case 'CORE_UPDATE_NOTE': {
-            const { noteId, changes } = action.payload;
+            const {noteId, changes} = action.payload;
             if (!state.notes[noteId]) return state;
             // Core only updates core fields + updatedAt
             const coreChanges = {};
@@ -744,9 +745,9 @@ const coreReducer = (state = initialAppState, action) => {
             if (changes.hasOwnProperty('content')) coreChanges.content = changes.content;
             if (changes.hasOwnProperty('isArchived')) coreChanges.isArchived = changes.isArchived;
             // SystemType changes require index update
-             const oldSystemType = state.notes[noteId].systemType;
-             const newSystemType = changes.hasOwnProperty('systemType') ? changes.systemType : oldSystemType;
-             if (changes.hasOwnProperty('systemType')) coreChanges.systemType = newSystemType;
+            const oldSystemType = state.notes[noteId].systemType;
+            const newSystemType = changes.hasOwnProperty('systemType') ? changes.systemType : oldSystemType;
+            if (changes.hasOwnProperty('systemType')) coreChanges.systemType = newSystemType;
 
             if (Object.keys(coreChanges).length === 0) return state; // No core changes
 
@@ -755,37 +756,37 @@ const coreReducer = (state = initialAppState, action) => {
                 ...coreChanges,
                 updatedAt: Date.now()
             };
-             const newNotes = { ...state.notes, [noteId]: updatedNote };
-             let newSystemNoteIndex = state.systemNoteIndex;
-             if (newSystemType !== oldSystemType) {
-                 newSystemNoteIndex = { ...state.systemNoteIndex };
-                 if (oldSystemType) delete newSystemNoteIndex[oldSystemType];
-                 if (newSystemType) newSystemNoteIndex[newSystemType] = noteId;
-             }
+            const newNotes = {...state.notes, [noteId]: updatedNote};
+            let newSystemNoteIndex = state.systemNoteIndex;
+            if (newSystemType !== oldSystemType) {
+                newSystemNoteIndex = {...state.systemNoteIndex};
+                if (oldSystemType) delete newSystemNoteIndex[oldSystemType];
+                if (newSystemType) newSystemNoteIndex[newSystemType] = noteId;
+            }
 
-            return { ...state, notes: newNotes, systemNoteIndex: newSystemNoteIndex };
+            return {...state, notes: newNotes, systemNoteIndex: newSystemNoteIndex};
             // Note: Plugin fields are NOT handled here. Plugins handle their own data via their reducers.
         }
 
         case 'CORE_ARCHIVE_NOTE': {
-             // Delegate to CORE_UPDATE_NOTE for consistency
-             return coreReducer(state, {
+            // Delegate to CORE_UPDATE_NOTE for consistency
+            return coreReducer(state, {
                 type: 'CORE_UPDATE_NOTE',
-                payload: { noteId: action.payload.noteId, changes: { isArchived: true } }
-             });
+                payload: {noteId: action.payload.noteId, changes: {isArchived: true}}
+            });
         }
 
         case 'CORE_DELETE_NOTE': {
-            const { noteId } = action.payload;
+            const {noteId} = action.payload;
             if (!state.notes[noteId]) return state;
             const noteToDelete = state.notes[noteId];
-            const { [noteId]: _, ...remainingNotes } = state.notes;
+            const {[noteId]: _, ...remainingNotes} = state.notes;
             const newNoteOrder = state.noteOrder.filter(id => id !== noteId);
-             let newSystemNoteIndex = state.systemNoteIndex;
-             if (noteToDelete.systemType && state.systemNoteIndex[noteToDelete.systemType] === noteId) {
-                 newSystemNoteIndex = { ...state.systemNoteIndex };
-                 delete newSystemNoteIndex[noteToDelete.systemType];
-             }
+            let newSystemNoteIndex = state.systemNoteIndex;
+            if (noteToDelete.systemType && state.systemNoteIndex[noteToDelete.systemType] === noteId) {
+                newSystemNoteIndex = {...state.systemNoteIndex};
+                delete newSystemNoteIndex[noteToDelete.systemType];
+            }
 
             return {
                 ...state,
@@ -800,79 +801,79 @@ const coreReducer = (state = initialAppState, action) => {
         }
 
         case 'CORE_SEARCH_TERM_CHANGED': {
-             return { ...state, uiState: { ...state.uiState, searchTerm: action.payload.searchTerm } };
+            return {...state, uiState: {...state.uiState, searchTerm: action.payload.searchTerm}};
         }
 
         case 'CORE_OPEN_MODAL': {
-            return { ...state, uiState: { ...state.uiState, activeModal: action.payload.modalId } };
+            return {...state, uiState: {...state.uiState, activeModal: action.payload.modalId}};
         }
         case 'CORE_CLOSE_MODAL': {
             if (!state.uiState.activeModal) return state;
-            return { ...state, uiState: { ...state.uiState, activeModal: null } };
+            return {...state, uiState: {...state.uiState, activeModal: null}};
         }
 
         case 'CORE_SET_CORE_SETTING': {
-            const { key, value } = action.payload;
-             // Basic validation: ensure key is allowed?
-             // const allowedKeys = ['theme', 'userId']; if (!allowedKeys.includes(key)) return state;
+            const {key, value} = action.payload;
+            // Basic validation: ensure key is allowed?
+            // const allowedKeys = ['theme', 'userId']; if (!allowedKeys.includes(key)) return state;
             return {
                 ...state,
                 settings: {
                     ...state.settings,
-                    core: { ...state.settings.core, [key]: value }
+                    core: {...state.settings.core, [key]: value}
                 }
             };
         }
 
-         case 'CORE_SET_PLUGIN_SETTING': { // For plugins to save their own static settings
-             const { pluginId, key, value } = action.payload;
-             if (!pluginId || !key) return state; // Basic validation
-             return {
-                 ...state,
-                 settings: {
-                     ...state.settings,
-                     plugins: {
-                         ...state.settings.plugins,
-                         [pluginId]: {
-                             ...(state.settings.plugins[pluginId] || {}),
-                             [key]: value
-                         }
-                     }
-                 }
-             };
-         }
+        case 'CORE_SET_PLUGIN_SETTING': { // For plugins to save their own static settings
+            const {pluginId, key, value} = action.payload;
+            if (!pluginId || !key) return state; // Basic validation
+            return {
+                ...state,
+                settings: {
+                    ...state.settings,
+                    plugins: {
+                        ...state.settings.plugins,
+                        [pluginId]: {
+                            ...(state.settings.plugins[pluginId] || {}),
+                            [key]: value
+                        }
+                    }
+                }
+            };
+        }
 
-         case 'CORE_SET_GLOBAL_STATUS': {
-             const { message, type = 'info', duration = 5000 } = action.payload;
-             return {
-                 ...state,
-                 uiState: {
-                     ...state.uiState,
-                     globalStatus: { message, type, duration }
-                 }
-             };
-         }
-         case 'CORE_CLEAR_GLOBAL_STATUS': {
-             if (!state.uiState.globalStatus) return state;
-             return { ...state, uiState: { ...state.uiState, globalStatus: null } };
-         }
+        case 'CORE_SET_GLOBAL_STATUS': {
+            const {message, type = 'info', duration = 5000} = action.payload;
+            return {
+                ...state,
+                uiState: {
+                    ...state.uiState,
+                    globalStatus: {message, type, duration}
+                }
+            };
+        }
+        case 'CORE_CLEAR_GLOBAL_STATUS': {
+            if (!state.uiState.globalStatus) return state;
+            return {...state, uiState: {...state.uiState, globalStatus: null}};
+        }
 
-         case 'CORE_SET_RUNTIME_CACHE': { // For plugins to manage cached data (e.g., profiles)
-              const { key, value } = action.payload;
-              return {
-                  ...state,
-                  runtimeCache: {
-                      ...state.runtimeCache,
-                      [key]: value
-                  }
-              };
-         }
-         case 'CORE_DELETE_RUNTIME_CACHE': {
-               const { key } = action.payload;
-               if (!state.runtimeCache.hasOwnProperty(key)) return state;
-               const { [key]: _, ...remainingCache } = state.runtimeCache;
-               return { ...state, runtimeCache: remainingCache };
-         }
+        case 'CORE_SET_RUNTIME_CACHE': { // For plugins to manage cached data (e.g., profiles)
+            const {key, value} = action.payload;
+            return {
+                ...state,
+                runtimeCache: {
+                    ...state.runtimeCache,
+                    [key]: value
+                }
+            };
+        }
+        case 'CORE_DELETE_RUNTIME_CACHE': {
+            const {key} = action.payload;
+            if (!state.runtimeCache.hasOwnProperty(key)) return state;
+            const {[key]: _, ...remainingCache} = state.runtimeCache;
+            return {...state, runtimeCache: remainingCache};
+        }
 
 
         default:
@@ -892,9 +893,13 @@ class CoreAPI {
     // ... constructor similar ...
 
     // --- State Management ---
-    dispatch(action) { /* ... */ }
-    getState() { /* ... */ } // Returns full state (read-only convention)
-    subscribe(listener) { /* ... */ }
+    dispatch(action) { /* ... */
+    }
+
+    getState() { /* ... */
+    } // Returns full state (read-only convention)
+    subscribe(listener) { /* ... */
+    }
 
     /**
      * Helper to get a specific note by ID.
@@ -909,61 +914,68 @@ class CoreAPI {
      * @returns {CoreNote | null}
      */
     getSelectedNote() {
-         const state = this.getState();
-         return state.uiState.selectedNoteId ? state.notes[state.uiState.selectedNoteId] : null;
+        const state = this.getState();
+        return state.uiState.selectedNoteId ? state.notes[state.uiState.selectedNoteId] : null;
     }
 
-     /**
-      * Helper to get a System Note by its type.
-      * Returns the full note object. Plugins can read content/properties.
-      * @param {string} systemType - e.g., 'plugin/nostr/relays'
-      * @returns {CoreNote | null}
-      */
-     getSystemNoteByType(systemType) {
-         const state = this.getState();
-         const noteId = state.systemNoteIndex[systemType];
-         return noteId ? state.notes[noteId] : null;
-     }
+    /**
+     * Helper to get a System Note by its type.
+     * Returns the full note object. Plugins can read content/properties.
+     * @param {string} systemType - e.g., 'plugin/nostr/relays'
+     * @returns {CoreNote | null}
+     */
+    getSystemNoteByType(systemType) {
+        const state = this.getState();
+        const noteId = state.systemNoteIndex[systemType];
+        return noteId ? state.notes[noteId] : null;
+    }
 
-     /**
-      * Helper to get a specific plugin's settings.
-      * @param {string} pluginId
-      * @returns {any} The settings object for the plugin, or an empty object.
-      */
-     getPluginSettings(pluginId) {
-          return this.getState().settings.plugins[pluginId] || {};
-     }
+    /**
+     * Helper to get a specific plugin's settings.
+     * @param {string} pluginId
+     * @returns {any} The settings object for the plugin, or an empty object.
+     */
+    getPluginSettings(pluginId) {
+        return this.getState().settings.plugins[pluginId] || {};
+    }
 
-     /**
-      * Helper to get a value from the runtime cache.
-      * @param {string} key
-      * @returns {any | undefined}
-      */
-     getRuntimeCache(key) {
-         return this.getState().runtimeCache[key];
-     }
+    /**
+     * Helper to get a value from the runtime cache.
+     * @param {string} key
+     * @returns {any | undefined}
+     */
+    getRuntimeCache(key) {
+        return this.getState().runtimeCache[key];
+    }
 
     // --- Event Bus ---
-    publishEvent(eventType, payload) { /* ... */ }
-    subscribeToEvent(eventType, handler) { /* ... */ }
+    publishEvent(eventType, payload) { /* ... */
+    }
+
+    subscribeToEvent(eventType, handler) { /* ... */
+    }
 
     // --- UI Rendering ---
     // registerUISlot is removed - registration happens via Plugin Definition
-    renderEphemeralComponent(component) { /* ... */ }
+    renderEphemeralComponent(component) { /* ... */
+    }
 
     /**
      * Utility to show a standardized global status message.
      */
     showGlobalStatus(message, type = 'info', duration = 5000) {
-        this.dispatch({ type: 'CORE_SET_GLOBAL_STATUS', payload: { message, type, duration } });
+        this.dispatch({type: 'CORE_SET_GLOBAL_STATUS', payload: {message, type, duration}});
         if (duration > 0) {
-            setTimeout(() => this.dispatch({ type: 'CORE_CLEAR_GLOBAL_STATUS' }), duration);
+            setTimeout(() => this.dispatch({type: 'CORE_CLEAR_GLOBAL_STATUS'}), duration);
         }
     }
 
     // --- Services & Plugin Interaction ---
-    getService(serviceName) { /* ... */ }
-    getPluginAPI(pluginId) { /* ... */ }
+    getService(serviceName) { /* ... */
+    }
+
+    getPluginAPI(pluginId) { /* ... */
+    }
 
     // --- Utilities ---
     utils = Utils;
@@ -987,76 +999,112 @@ const MyPlugin = {
          console.log(`MyPlugin [${this.id}] activated.`);
          // Start background tasks, listeners, etc.
          const editorService = this.coreAPI.getService('EditorService');
-         if (editorService) { /* interact */ }
-    },
+         if (editorService) { /* interact */
+}
+},
 
-    onDeactivate: () => {
-        console.log(`MyPlugin [${this.id}] deactivated.`);
-        // Cleanup resources, unsubscribe, stop timers.
-    },
+onDeactivate: () => {
+    console.log(`MyPlugin [${this.id}] deactivated.`);
+    // Cleanup resources, unsubscribe, stop timers.
+},
 
     // --- Capability Registration Methods ---
 
     // No more extendNoteModel/extendSettingsModel - handled by the plugin's reducer
 
-    registerReducer: () => {
-        // Return ONE reducer function for this plugin.
-        // This function receives the *entire* app state and the action.
-        // It's responsible for updating *all* state slices relevant to this plugin
-        // (e.g., note.pluginData.myPlugin, pluginRuntimeState.myPlugin, settings.plugins.myPlugin)
-        // Use Immer or similar libraries for easier immutable updates.
-        return (state, action) => {
-            let nextState = state; // Start with current state
+    registerReducer
+:
+() => {
+    // Return ONE reducer function for this plugin.
+    // This function receives the *entire* app state and the action.
+    // It's responsible for updating *all* state slices relevant to this plugin
+    // (e.g., note.pluginData.myPlugin, pluginRuntimeState.myPlugin, settings.plugins.myPlugin)
+    // Use Immer or similar libraries for easier immutable updates.
+    return (state, action) => {
+        let nextState = state; // Start with current state
 
-            switch (action.type) {
-                case 'CORE_ADD_NOTE':
-                    // Initialize plugin-specific data for the newly added note
-                    const newNoteId = state.noteOrder[0]; // Assumes core reducer added it to the front
-                    if (!nextState.notes[newNoteId].pluginData) {
-                        nextState = { ...nextState, notes: { ...nextState.notes, [newNoteId]: { ...nextState.notes[newNoteId], pluginData: {} } } };
+        switch (action.type) {
+            case 'CORE_ADD_NOTE':
+                // Initialize plugin-specific data for the newly added note
+                const newNoteId = state.noteOrder[0]; // Assumes core reducer added it to the front
+                if (!nextState.notes[newNoteId].pluginData) {
+                    nextState = {
+                        ...nextState,
+                        notes: {...nextState.notes, [newNoteId]: {...nextState.notes[newNoteId], pluginData: {}}}
+                    };
+                }
+                nextState = {
+                    ...nextState,
+                    notes: {
+                        ...nextState.notes,
+                        [newNoteId]: {
+                            ...nextState.notes[newNoteId],
+                            pluginData: {...nextState.notes[newNoteId].pluginData, [this.id]: {initialized: true}}
+                        }
                     }
-                    nextState = { ...nextState, notes: { ...nextState.notes, [newNoteId]: { ...nextState.notes[newNoteId], pluginData: { ...nextState.notes[newNoteId].pluginData, [this.id]: { initialized: true } } } } };
-                    break;
+                };
+                break;
 
-                case 'MY_PLUGIN_SPECIFIC_ACTION':
-                    // Update pluginRuntimeState or note pluginData etc.
-                    nextState = { ...nextState, pluginRuntimeState: { ...nextState.pluginRuntimeState, [this.id]: { someValue: action.payload.value } } };
-                    break;
+            case 'MY_PLUGIN_SPECIFIC_ACTION':
+                // Update pluginRuntimeState or note pluginData etc.
+                nextState = {
+                    ...nextState,
+                    pluginRuntimeState: {...nextState.pluginRuntimeState, [this.id]: {someValue: action.payload.value}}
+                };
+                break;
 
-                case 'CORE_UPDATE_NOTE':
-                     // React if needed, e.g., update internal cache if note content changed
-                     break;
+            case 'CORE_UPDATE_NOTE':
+                // React if needed, e.g., update internal cache if note content changed
+                break;
 
-                case 'CORE_DELETE_NOTE':
-                     // Clean up plugin runtime state if it was related to the deleted note
-                     const deletedNoteId = action.payload.noteId;
-                     if (nextState.pluginRuntimeState[this.id]?.activeThing === deletedNoteId) {
-                         nextState = { ...nextState, pluginRuntimeState: { ...nextState.pluginRuntimeState, [this.id]: { ...nextState.pluginRuntimeState[this.id], activeThing: null } } };
-                     }
-                     break;
-                 // Handle CORE_SET_PLUGIN_SETTING if this plugin defines settings this way (alternative to dedicated actions)
-            }
+            case 'CORE_DELETE_NOTE':
+                // Clean up plugin runtime state if it was related to the deleted note
+                const deletedNoteId = action.payload.noteId;
+                if (nextState.pluginRuntimeState[this.id]?.activeThing === deletedNoteId) {
+                    nextState = {
+                        ...nextState,
+                        pluginRuntimeState: {
+                            ...nextState.pluginRuntimeState,
+                            [this.id]: {...nextState.pluginRuntimeState[this.id], activeThing: null}
+                        }
+                    };
+                }
+                break;
+            // Handle CORE_SET_PLUGIN_SETTING if this plugin defines settings this way (alternative to dedicated actions)
+        }
 
-            // IMPORTANT: Return the potentially modified state
-            return nextState;
-        };
-    },
+        // IMPORTANT: Return the potentially modified state
+        return nextState;
+    };
+},
 
-    registerMiddleware: () => { /* ... similar ... */ },
-    registerUISlots: () => { /* ... similar ... */ },
-    providesServices: () => {
-        // Example: Editor Plugin
-        // return {
-        //     'EditorService': {
-        //         getContent: () => { /*...*/ },
-        //         getSelection: () => { /*...*/ },
-        //         applyDecoration: (range, style) => { /*...*/ },
-        //         // etc.
-        //     }
-        // }
-    },
-    getAPI: () => { /* ... similar ... */ }
-};
+    registerMiddleware
+:
+() => { /* ... similar ... */
+},
+    registerUISlots
+:
+() => { /* ... similar ... */
+},
+    providesServices
+:
+() => {
+    // Example: Editor Plugin
+    // return {
+    //     'EditorService': {
+    //         getContent: () => { /*...*/ },
+    //         getSelection: () => { /*...*/ },
+    //         applyDecoration: (range, style) => { /*...*/ },
+    //         // etc.
+    //     }
+    // }
+},
+    getAPI
+:
+() => { /* ... similar ... */
+}
+}
+;
 */
 
 // ==========================================================================
@@ -1080,7 +1128,7 @@ async function main() {
 
     // 2. Load Initial State
     const loadedState = await persistenceService.loadState();
-    stateManager.dispatch({ type: 'CORE_STATE_LOADED', payload: { loadedState } });
+    stateManager.dispatch({type: 'CORE_STATE_LOADED', payload: {loadedState}});
 
     // Add basic theme application from loaded state
     document.documentElement.setAttribute('data-theme', stateManager.getState().settings.core.theme);
@@ -1112,14 +1160,29 @@ document.addEventListener('DOMContentLoaded', main);
 
 **Key Refinements in v10.1:**
 
-1.  **Plugin Reducer Strategy:** Plugins now register *one* main reducer function responsible for handling *all* relevant actions and updating *all* parts of the state they manage (their `pluginRuntimeState`, `note.pluginData`, `settings.plugins`, reacting to core actions, etc.). This simplifies registration and gives plugins full control over their state domains. Core reducers focus solely on core state slices.
-2.  **System Notes:** Added `AppState.systemNoteIndex` and `CoreAPI.getSystemNoteByType` to provide a standard way for plugins (like Ontology, Nostr, LLM) to access configuration stored in notes with a specific `systemType`. The core reducers manage this index when notes with `systemType` are added, updated, or deleted.
-3.  **Editor Service:** Explicitly stated that the `EditorPlugin` should provide an `EditorService` for other plugins (like `SemanticParser`) to interact with it programmatically.
-4.  **Plugin Runtime State:** Added `AppState.pluginRuntimeState` as a dedicated, non-persisted slice for plugins to manage complex transient state (like the AI Interview chat).
-5.  **State Filtering:** `PersistenceService.filterStateForSaving` now explicitly excludes `uiState` and `pluginRuntimeState`.
-6.  **Robust Initialization & Error Handling:** Added more detailed status tracking and error handling concepts in `PluginManager` and `UIRenderer`.
-7.  **API Refinements:** Added helper methods to `CoreAPI` (`getNoteById`, `getSelectedNote`, `getSystemNoteByType`, `getPluginSettings`, `getRuntimeCache`, `showGlobalStatus`) for convenience and better encapsulation. Removed `registerUISlot` from `CoreAPI` as it's handled via the plugin definition.
-8.  **Core State/Reducers:** Refined core state structure (`systemNoteIndex`) and core reducers to handle `systemType` correctly and delegate plugin data management entirely to plugin reducers. Added core settings action. Added runtime cache actions. Added global status actions.
-9.  **UI:** Added `SLOT_APP_STATUS_BAR`, core settings trigger button, and refined modal rendering structure. Uses event delegation for core listeners.
-10. **Sanitization:** Added `Utils.sanitizeHTML` placeholder with a strong warning to use a proper library like DOMPurify.
+1. **Plugin Reducer Strategy:** Plugins now register *one* main reducer function responsible for handling *all* relevant
+   actions and updating *all* parts of the state they manage (their `pluginRuntimeState`, `note.pluginData`,
+   `settings.plugins`, reacting to core actions, etc.). This simplifies registration and gives plugins full control over
+   their state domains. Core reducers focus solely on core state slices.
+2. **System Notes:** Added `AppState.systemNoteIndex` and `CoreAPI.getSystemNoteByType` to provide a standard way for
+   plugins (like Ontology, Nostr, LLM) to access configuration stored in notes with a specific `systemType`. The core
+   reducers manage this index when notes with `systemType` are added, updated, or deleted.
+3. **Editor Service:** Explicitly stated that the `EditorPlugin` should provide an `EditorService` for other plugins (
+   like `SemanticParser`) to interact with it programmatically.
+4. **Plugin Runtime State:** Added `AppState.pluginRuntimeState` as a dedicated, non-persisted slice for plugins to
+   manage complex transient state (like the AI Interview chat).
+5. **State Filtering:** `PersistenceService.filterStateForSaving` now explicitly excludes `uiState` and
+   `pluginRuntimeState`.
+6. **Robust Initialization & Error Handling:** Added more detailed status tracking and error handling concepts in
+   `PluginManager` and `UIRenderer`.
+7. **API Refinements:** Added helper methods to `CoreAPI` (`getNoteById`, `getSelectedNote`, `getSystemNoteByType`,
+   `getPluginSettings`, `getRuntimeCache`, `showGlobalStatus`) for convenience and better encapsulation. Removed
+   `registerUISlot` from `CoreAPI` as it's handled via the plugin definition.
+8. **Core State/Reducers:** Refined core state structure (`systemNoteIndex`) and core reducers to handle `systemType`
+   correctly and delegate plugin data management entirely to plugin reducers. Added core settings action. Added runtime
+   cache actions. Added global status actions.
+9. **UI:** Added `SLOT_APP_STATUS_BAR`, core settings trigger button, and refined modal rendering structure. Uses event
+   delegation for core listeners.
+10. **Sanitization:** Added `Utils.sanitizeHTML` placeholder with a strong warning to use a proper library like
+    DOMPurify.
 11. **Clarity:** Improved comments and pseudocode structure to better reflect the intended implementation flow.

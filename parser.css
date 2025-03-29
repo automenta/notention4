@@ -33,6 +33,7 @@
     font-weight: bold;
     color: var(--accent-color); /* Or specific color */
 }
+
 .suggestion-value {
     font-style: italic;
     color: var(--secondary-text-color); /* Or specific color */
@@ -43,6 +44,7 @@
     display: inline-block; /* Needed for ellipsis */
     vertical-align: bottom; /* Align with key */
 }
+
 .suggestion-source {
     font-size: 0.8em;
     color: var(--secondary-text-color);
@@ -68,6 +70,7 @@
 .suggestion-confirm {
     color: var(--success-color);
 }
+
 .suggestion-confirm:hover {
     color: var(--success-color-darker); /* Define this variable */
 }
@@ -75,6 +78,7 @@
 .suggestion-ignore {
     color: var(--danger-color);
 }
+
 .suggestion-ignore:hover {
     color: var(--danger-color-darker); /* Define this variable */
 }

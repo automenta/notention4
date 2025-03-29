@@ -6,11 +6,9 @@
 
     <title>Netention</title>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/immer/9.0.21/immer.umd.production.min.js"></script>
     <script type="module">
-        import {html, render} from 'https://cdn.jsdelivr.net/gh/lit/dist@2/core/lit-core.min.js';
+        import {html, render} from 'lit';
+
         window.litHtml = {html, render}; // Expose globally for UIRenderer
     </script>
 
@@ -18,12 +16,12 @@
 </head>
 
 <body>
-    <div id="app">
-        <!-- TODO loading indicator, and its removal -->
-    </div>
+<div id="app">
+    <!-- TODO loading indicator, and its removal -->
+</div>
 
-    <script src="error.js"></script>
+<script src="error.js"></script>
 
-    <script type="module" src="core.js"></script>
+<script src="core.js" type="module"></script>
 </body>
 </html>

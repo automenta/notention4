@@ -1,40 +1,45 @@
-//Core API
 "use strict";
 
+import localforage from "localforage";
+//import { DOMPurify } from "dompurify";
+import {produce} from "immer";
+
 //Util imports
-import { Utils } from './util.js';
-import { EventBus } from './event.js';
+import {Utils} from './util.js';
+import {EventBus} from './event.js';
 import {
-    SLOT_MAIN_LAYOUT,
-    SLOT_SIDEBAR_HEADER,
-    SLOT_SIDEBAR_NOTE_LIST_ACTIONS,
-    SLOT_NOTE_LIST_ITEM_STATUS,
-    SLOT_NOTE_LIST_ITEM_META,
-    SLOT_EDITOR_HEADER_ACTIONS,
-    SLOT_EDITOR_CONTENT_AREA,
+    SLOT_APP_STATUS_BAR,
     SLOT_EDITOR_BELOW_CONTENT,
+    SLOT_EDITOR_CONTENT_AREA,
+    SLOT_EDITOR_HEADER_ACTIONS,
     SLOT_EDITOR_PLUGIN_PANELS,
+    SLOT_NOTE_LIST_ITEM_META,
+    SLOT_NOTE_LIST_ITEM_STATUS,
     SLOT_SETTINGS_PANEL_SECTION,
-    SLOT_APP_STATUS_BAR
+    SLOT_SIDEBAR_HEADER,
+    SLOT_SIDEBAR_NOTE_LIST_ACTIONS
 } from './ui.js';
 
 
 //Plugin imports
-import { PropertiesPlugin } from './property.js';
-import { OntologyPlugin } from './ontology.js';
-import { SemanticParserPlugin } from "./parser.js";
-import { RichTextEditorPlugin } from "./editor.js";
+import {PropertiesPlugin} from './property.js';
+import {OntologyPlugin} from './ontology.js';
+import {SemanticParserPlugin} from "./parser.js";
+import {RichTextEditorPlugin} from "./editor.js";
+import {NostrPlugin} from "./nostr.js";
+import {LLMPlugin} from "./llm.js";
 
-let PLUGINS = [
+const PLUGINS = [
     PropertiesPlugin,
     OntologyPlugin,
     SemanticParserPlugin,
-    RichTextEditorPlugin
+    RichTextEditorPlugin,
+    NostrPlugin,
+    LLMPlugin
 ];
 
 
 const {html, render} = window.litHtml;
-const produce = window.immer.produce;
 
 // --- 3. Core State Manager (with Immer) ---
 class StateManager {
@@ -331,12 +336,12 @@ class UIRenderer {
             console.error("UIRenderer: CRITICAL ERROR during renderApp!", error);
             // Render an error message directly using lit-html
             render(html`
-                    <div class="error-display">
-                        <h1>Application Render Error</h1>
-                        <p>An unexpected error occurred while rendering the UI.</p>
-                        <pre>${Utils.sanitizeHTML(error.stack)}</pre>
-                        <p>Please check the console for details. You may need to reload or clear application data.</p>
-                    </div>`, this._rootElement);
+                <div class="error-display">
+                    <h1>Application Render Error</h1>
+                    <p>An unexpected error occurred while rendering the UI.</p>
+                    <pre>${Utils.sanitizeHTML(error.stack)}</pre>
+                    <p>Please check the console for details. You may need to reload or clear application data.</p>
+                </div>`, this._rootElement);
         } finally {
             this._restoreScrollPositions(); // Restore scroll after DOM updates
             // console.timeEnd("renderApp");
@@ -351,51 +356,51 @@ class UIRenderer {
         const globalStatus = state.uiState.globalStatus;
 
         return html`
-                <div class="app-container">
-                    <div id="sidebar" class="sidebar">
-                        <div class="sidebar-header">
-                            <button id="core-open-settings" title="Settings" @click=${this._handleOpenSettings}
-                                    aria-label="Open Settings">⚙️
-                            </button>
-                            <input type="search" id="core-search" placeholder="Search..."
-                                   .value=${state.uiState.searchTerm || ''} @input=${this._handleSearchInput}
-                                   aria-label="Search Notes">
-                            <!-- Slot for plugin buttons -->
-                            <div data-slot="${SLOT_SIDEBAR_HEADER}">${this._renderSlot(state, SLOT_SIDEBAR_HEADER)}
-                            </div>
+            <div class="app-container">
+                <div id="sidebar" class="sidebar">
+                    <div class="sidebar-header">
+                        <button id="core-open-settings" title="Settings" @click=${this._handleOpenSettings}
+                                aria-label="Open Settings">⚙️
+                        </button>
+                        <input type="search" id="core-search" placeholder="Search..."
+                               .value=${state.uiState.searchTerm || ''} @input=${this._handleSearchInput}
+                               aria-label="Search Notes">
+                        <!-- Slot for plugin buttons -->
+                        <div data-slot="${SLOT_SIDEBAR_HEADER}">${this._renderSlot(state, SLOT_SIDEBAR_HEADER)}
                         </div>
-                        <div class="sidebar-actions">
-                            <button id="core-add-note" title="Add New Note" @click=${this._handleAddNote}>➕ Add Note
-                            </button>
-                            <!-- Slot for actions below Add Note -->
-                            <div data-slot="${SLOT_SIDEBAR_NOTE_LIST_ACTIONS}">
-                                ${this._renderSlot(state, SLOT_SIDEBAR_NOTE_LIST_ACTIONS)}
-                            </div>
-                        </div>
-                        <ul id="note-list" class="note-list" @keydown=${this._handleNoteListKeyDown}
-                            aria-label="Note List">
-                            ${this._renderNoteListItems(state)}
-                        </ul>
                     </div>
-                    <div id="main-content-area" class="main-content-area">
-                        <div id="editor-area" class="editor-area" role="main" aria-live="polite">
-                            ${selectedNote ? this._renderEditorArea(state, selectedNote) : this._renderWelcomeMessage(state)}
+                    <div class="sidebar-actions">
+                        <button id="core-add-note" title="Add New Note" @click=${this._handleAddNote}>➕ Add Note
+                        </button>
+                        <!-- Slot for actions below Add Note -->
+                        <div data-slot="${SLOT_SIDEBAR_NOTE_LIST_ACTIONS}">
+                            ${this._renderSlot(state, SLOT_SIDEBAR_NOTE_LIST_ACTIONS)}
                         </div>
-                        <div id="status-bar" class="status-bar" role="status">
+                    </div>
+                    <ul id="note-list" class="note-list" @keydown=${this._handleNoteListKeyDown}
+                        aria-label="Note List">
+                        ${this._renderNoteListItems(state)}
+                    </ul>
+                </div>
+                <div id="main-content-area" class="main-content-area">
+                    <div id="editor-area" class="editor-area" role="main" aria-live="polite">
+                        ${selectedNote ? this._renderEditorArea(state, selectedNote) : this._renderWelcomeMessage(state)}
+                    </div>
+                    <div id="status-bar" class="status-bar" role="status">
                                 <span class="core-status ${globalStatus?.type || 'info'}"
                                       title=${globalStatus?.message || ''}>
                                     ${globalStatus?.message || 'Ready'}
                                 </span>
-                            <div data-slot="${SLOT_APP_STATUS_BAR}">${this._renderSlot(state, SLOT_APP_STATUS_BAR)}
-                            </div>
+                        <div data-slot="${SLOT_APP_STATUS_BAR}">${this._renderSlot(state, SLOT_APP_STATUS_BAR)}
                         </div>
                     </div>
-                    <div id="modal-root">
-                        ${state.uiState.activeModal === 'settings' ? this._renderSettingsModal(state) : ''}
-                        <!-- Other modals rendered here -->
-                    </div>
                 </div>
-            `;
+                <div id="modal-root">
+                    ${state.uiState.activeModal === 'settings' ? this._renderSettingsModal(state) : ''}
+                    <!-- Other modals rendered here -->
+                </div>
+            </div>
+        `;
     }
 
     _renderNoteListItems(state) {
@@ -412,35 +417,35 @@ class UIRenderer {
 
         if (filteredNoteIds.length === 0) {
             return html`
-                    <li style="padding: 1rem; color: var(--secondary-text-color);">
-                        ${searchTerm ? 'No matching notes.' : 'No notes yet.'}
-                    </li>`;
+                <li style="padding: 1rem; color: var(--secondary-text-color);">
+                    ${searchTerm ? 'No matching notes.' : 'No notes yet.'}
+                </li>`;
         }
 
         return filteredNoteIds.map(noteId => {
             const note = notes[noteId];
             const isSelected = noteId === selectedNoteId;
             return html`
-                    <li
-                            class="note-list-item ${isSelected ? 'selected' : ''}"
-                            data-note-id="${noteId}"
-                            role="option"
-                            tabindex="0"
-                            aria-selected="${isSelected}"
-                            @click=${() => this._handleSelectNote(noteId)}
-                            title=${`Updated: ${Utils.formatDate(note.updatedAt)}`}
-                    >
-                        <div class="note-list-item-title">${note.name || 'Untitled Note'}</div>
-                        <div class="note-list-item-meta">
+                <li
+                        class="note-list-item ${isSelected ? 'selected' : ''}"
+                        data-note-id="${noteId}"
+                        role="option"
+                        tabindex="0"
+                        aria-selected="${isSelected}"
+                        @click=${() => this._handleSelectNote(noteId)}
+                        title=${`Updated: ${Utils.formatDate(note.updatedAt)}`}
+                >
+                    <div class="note-list-item-title">${note.name || 'Untitled Note'}</div>
+                    <div class="note-list-item-meta">
                             <span data-slot="${SLOT_NOTE_LIST_ITEM_META}"
                                   data-note-id=${noteId}>${this._renderSlot(state, SLOT_NOTE_LIST_ITEM_META, noteId)}</span>
-                        </div>
-                        <div class="note-list-item-status" data-slot="${SLOT_NOTE_LIST_ITEM_STATUS}"
-                             data-note-id=${noteId}>
-                            ${this._renderSlot(state, SLOT_NOTE_LIST_ITEM_STATUS, noteId)}
-                        </div>
-                    </li>
-                `;
+                    </div>
+                    <div class="note-list-item-status" data-slot="${SLOT_NOTE_LIST_ITEM_STATUS}"
+                         data-note-id=${noteId}>
+                        ${this._renderSlot(state, SLOT_NOTE_LIST_ITEM_STATUS, noteId)}
+                    </div>
+                </li>
+            `;
         });
     }
 
@@ -465,26 +470,36 @@ class UIRenderer {
                         @input=${(e) => this._handleTitleInput(note.id, e.target.value)}
                 >
                 <div class="editor-header-actions" data-slot="${SLOT_EDITOR_HEADER_ACTIONS}" data-note-id=${note.id}>
-                    <button class="core-archive-note" @click=${() => this._handleArchiveNote(note.id)} title="Archive Note" aria-label="Archive Note">Archive</button>
-                    <button class="core-delete-note" @click=${() => this._handleDeleteNote(note.id, note.name)} title="Delete Note" aria-label="Delete Note">Delete</button>
+                    <button class="core-archive-note" @click=${() => this._handleArchiveNote(note.id)}
+                            title="Archive Note" aria-label="Archive Note">Archive
+                    </button>
+                    <button class="core-delete-note" @click=${() => this._handleDeleteNote(note.id, note.name)}
+                            title="Delete Note" aria-label="Delete Note">Delete
+                    </button>
                     ${this._renderSlot(state, SLOT_EDITOR_HEADER_ACTIONS, note.id)}
                 </div>
             </div>
-            <div class="editor-content-wrapper" style="flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;">
+            <div class="editor-content-wrapper"
+                 style="flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;">
                 ${hasPluginContent
-                        ? html`<div class="editor-content-area plugin-controlled" data-slot="${SLOT_EDITOR_CONTENT_AREA}" data-note-id=${note.id} style="flex-grow: 1; display: flex; flex-direction: column; overflow-y: auto;">
-                          ${slotContent}
-                       </div>`
-                        : html`<div class="editor-content-area core-controlled" style="flex-grow: 1; display: flex; flex-direction: column;">
+                        ? html`
+                            <div class="editor-content-area plugin-controlled" data-slot="${SLOT_EDITOR_CONTENT_AREA}"
+                                 data-note-id=${note.id}
+                                 style="flex-grow: 1; display: flex; flex-direction: column; overflow-y: auto;">
+                                ${slotContent}
+                            </div>`
+                        : html`
+                            <div class="editor-content-area core-controlled"
+                                 style="flex-grow: 1; display: flex; flex-direction: column;">
                            <textarea
-                                class="core-content-editor"
-                                aria-label="Note Content"
-                                placeholder="Start writing..."
-                                .value=${note.content}
-                                @input=${(e) => this._handleContentInput(note.id, e.target.value)}
-                                style="flex-grow: 1; width: 100%; border: none; padding: 10px; font-family: inherit; font-size: inherit; resize: none; outline: none;"
-                            ></textarea>
-                       </div>`
+                                   class="core-content-editor"
+                                   aria-label="Note Content"
+                                   placeholder="Start writing..."
+                                   .value=${note.content}
+                                   @input=${(e) => this._handleContentInput(note.id, e.target.value)}
+                                   style="flex-grow: 1; width: 100%; border: none; padding: 10px; font-family: inherit; font-size: inherit; resize: none; outline: none;"
+                           ></textarea>
+                            </div>`
                 }
             </div>
             <div class="editor-below-content" data-slot="${SLOT_EDITOR_BELOW_CONTENT}" data-note-id=${note.id}>
@@ -504,47 +519,47 @@ class UIRenderer {
             ? 'Select a note or click "➕ Add Note".'
             : 'Click "➕ Add Note" to get started!';
         return html`
-                <div class="welcome-message"><h2>Welcome!</h2>
-                    <p>${message}</p></div>`;
+            <div class="welcome-message"><h2>Welcome!</h2>
+                <p>${message}</p></div>`;
     }
 
     _renderSettingsModal(state) {
         return html`
-                <div id="modal-backdrop" class="modal-backdrop" @click=${this._handleCloseModal}></div>
-                <div id="settings-view" class="modal-content settings-view" role="dialog" aria-modal="true"
-                     aria-labelledby="settings-title">
-                    <button id="core-close-settings" class="modal-close-button" @click=${this._handleCloseModal}
-                            aria-label="Close Settings" title="Close Settings">×
-                    </button>
-                    <h2 id="settings-title">Settings</h2>
-                    <div class="settings-core">
-                        <h3>Core Settings</h3>
-                        <label for="core-theme-select">Theme:</label>
-                        <select id="core-theme-select" data-setting-key="theme"
-                                @change=${this._handleCoreSettingChange}>
-                            <option value="light" ?selected=${state.settings.core.theme === 'light'}>Light</option>
-                            <option value="dark" ?selected=${state.settings.core.theme === 'dark'}>Dark</option>
-                        </select>
-                    </div>
-                    <div class="settings-plugins">
-                        <h3>Plugin Settings</h3>
-                        <div data-slot="${SLOT_SETTINGS_PANEL_SECTION}">
-                            ${this._renderSlot(state, SLOT_SETTINGS_PANEL_SECTION)}
-                            ${!this._slotRegistry.has(SLOT_SETTINGS_PANEL_SECTION) || this._slotRegistry.get(SLOT_SETTINGS_PANEL_SECTION).length === 0
-            ? html`<p style="color: var(--secondary-text-color)">No plugin settings
-                                        available.</p>`
-            : ''}
-                        </div>
-                    </div>
-                    <div class="settings-advanced"
-                         style="margin-top: 20px; padding-top: 10px; border-top: 1px dashed var(--border-color)">
-                        <h3>Advanced</h3>
-                        <button id="core-clear-state" @click=${this._handleClearState}
-                                style="background-color: var(--danger-color);">Clear All Local Data
-                        </button>
+            <div id="modal-backdrop" class="modal-backdrop" @click=${this._handleCloseModal}></div>
+            <div id="settings-view" class="modal-content settings-view" role="dialog" aria-modal="true"
+                 aria-labelledby="settings-title">
+                <button id="core-close-settings" class="modal-close-button" @click=${this._handleCloseModal}
+                        aria-label="Close Settings" title="Close Settings">×
+                </button>
+                <h2 id="settings-title">Settings</h2>
+                <div class="settings-core">
+                    <h3>Core Settings</h3>
+                    <label for="core-theme-select">Theme:</label>
+                    <select id="core-theme-select" data-setting-key="theme"
+                            @change=${this._handleCoreSettingChange}>
+                        <option value="light" ?selected=${state.settings.core.theme === 'light'}>Light</option>
+                        <option value="dark" ?selected=${state.settings.core.theme === 'dark'}>Dark</option>
+                    </select>
+                </div>
+                <div class="settings-plugins">
+                    <h3>Plugin Settings</h3>
+                    <div data-slot="${SLOT_SETTINGS_PANEL_SECTION}">
+                        ${this._renderSlot(state, SLOT_SETTINGS_PANEL_SECTION)}
+                        ${!this._slotRegistry.has(SLOT_SETTINGS_PANEL_SECTION) || this._slotRegistry.get(SLOT_SETTINGS_PANEL_SECTION).length === 0
+                                ? html`<p style="color: var(--secondary-text-color)">No plugin settings
+                                    available.</p>`
+                                : ''}
                     </div>
                 </div>
-            `;
+                <div class="settings-advanced"
+                     style="margin-top: 20px; padding-top: 10px; border-top: 1px dashed var(--border-color)">
+                    <h3>Advanced</h3>
+                    <button id="core-clear-state" @click=${this._handleClearState}
+                            style="background-color: var(--danger-color);">Clear All Local Data
+                    </button>
+                </div>
+            </div>
+        `;
     }
 
     _renderSlot(state, slotName, noteId = null) {
@@ -565,7 +580,7 @@ class UIRenderer {
             } catch (error) {
                 console.error(`UIRenderer: Error rendering slot [${slotName}] by plugin [${pluginId}]`, error);
                 return html`
-                        <div style="color:var(--danger-color); font-size: 0.8em;">! Err:${pluginId}</div>`;
+                    <div style="color:var(--danger-color); font-size: 0.8em;">! Err:${pluginId}</div>`;
             }
         });
     }
@@ -1274,15 +1289,16 @@ async function main() {
         const appRoot = document.getElementById('app');
         if (appRoot) {
             render(html`
-                    <div class="error-display">
-                        <h1>Initialization Failed</h1>
-                        <p>The application could not start due to a critical error.</p>
-                        <pre>${Utils.sanitizeHTML(error.stack)}</pre>
-                        <p>Please check the console for more details or try clearing application data.</p>
-                    </div>`, appRoot);
+                <div class="error-display">
+                    <h1>Initialization Failed</h1>
+                    <p>The application could not start due to a critical error.</p>
+                    <pre>${Utils.sanitizeHTML(error.stack)}</pre>
+                    <p>Please check the console for more details or try clearing application data.</p>
+                </div>`, appRoot);
         }
     }
 }
 
 
-/* START */ if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', main); else main(); // DOM already ready
+/* START */
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', main); else main(); // DOM already ready

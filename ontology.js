@@ -1,21 +1,24 @@
 "use strict";
 
-import { SLOT_SETTINGS_PANEL_SECTION } from './ui.js'; // Assuming ui.js exports it
+import {SLOT_SETTINGS_PANEL_SECTION} from './ui.js'; // Assuming ui.js exports it
 
 // Default ontology
 const ONTOLOGY = {
     hints: {
-        "exampleHint": { description: "An example hint definition" }
+        "exampleHint": {description: "An example hint definition"}
     },
     rules: [
-        { pattern: "^\\d+$", type: "integer", description: "Detects whole numbers" }
+        {pattern: "^\\d+$", type: "integer", description: "Detects whole numbers"}
     ],
     templates: [
-        { name: "Meeting Notes", content: "# Meeting Notes\n\n**Date:** {{date}}\n**Attendees:** \n\n## Agenda\n\n## Notes\n\n## Action Items\n\n" }
+        {
+            name: "Meeting Notes",
+            content: "# Meeting Notes\n\n**Date:** {{date}}\n**Attendees:** \n\n## Agenda\n\n## Notes\n\n## Action Items\n\n"
+        }
     ],
     uiHints: {
-        "date": { icon: "📅", color: "#3498db" },
-        "url": { icon: "🔗", color: "#2ecc71" }
+        "date": {icon: "📅", color: "#3498db"},
+        "url": {icon: "🔗", color: "#2ecc71"}
     },
     keywords: {
         categories: ["Work", "Personal", "Research", "Ideas"],
@@ -110,7 +113,10 @@ export const OntologyPlugin = {
                 this.coreAPI.publishEvent('ONTOLOGY_LOADED', this._ontologyData);
 
             } catch (e) {
-                console.error("OntologyPlugin: Failed to parse config note content.", { noteId: configNote?.id, error: e });
+                console.error("OntologyPlugin: Failed to parse config note content.", {
+                    noteId: configNote?.id,
+                    error: e
+                });
                 this.coreAPI.showGlobalStatus(`Error loading ontology: ${e.message}`, "error", 10000);
                 // Reset data on error to prevent using stale/corrupt data
                 if (this._ontologyData !== null) {
@@ -138,7 +144,7 @@ export const OntologyPlugin = {
      * Provides the OntologyService to other plugins.
      * @returns {object} An object containing the service definition.
      */
-    providesServices: function() { // Use function() to ensure 'this' refers to the plugin instance
+    providesServices: function () { // Use function() to ensure 'this' refers to the plugin instance
         return {
             'OntologyService': {
                 /**
@@ -186,7 +192,7 @@ export const OntologyPlugin = {
                 getUIHints: (propertyOrType) => {
                     // TODO: Implement logic using this._ontologyData?.uiHints
                     // Example: Look up propertyOrType in this._ontologyData.uiHints
-                    const defaultHints = { icon: '📝', color: '#888' }; // Default icon and color
+                    const defaultHints = {icon: '📝', color: '#888'}; // Default icon and color
                     return this._ontologyData?.uiHints?.[propertyOrType] || defaultHints;
                 },
 
@@ -204,7 +210,7 @@ export const OntologyPlugin = {
      * Registers UI components for specific slots.
      * @returns {object} A map of slot names to render functions.
      */
-    registerUISlots: function() { // Use function() to ensure 'this' refers to the plugin instance
+    registerUISlots: function () { // Use function() to ensure 'this' refers to the plugin instance
         return {
             [SLOT_SETTINGS_PANEL_SECTION]: (props) => {
                 // Render function needs access to coreAPI, likely via props or global scope
@@ -225,8 +231,8 @@ export const OntologyPlugin = {
                             <p>Configuration is stored in the 'config/ontology' system note.</p>
                             <button
                                 @click=${() => {
-                        this.coreAPI.dispatch({ type: 'CORE_SELECT_NOTE', payload: { noteId: noteId } });
-                        this.coreAPI.dispatch({ type: 'CORE_CLOSE_MODAL' });
+                        this.coreAPI.dispatch({type: 'CORE_SELECT_NOTE', payload: {noteId: noteId}});
+                        this.coreAPI.dispatch({type: 'CORE_CLOSE_MODAL'});
                     }}>
                                 Edit Ontology Config Note
                             </button>

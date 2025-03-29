@@ -1,0 +1,92 @@
+.llm-settings {
+    padding: 15px;
+    border: 1px solid var(--vscode-settings-rowHoverBackground, #eee);
+    border-radius: 4px;
+    margin-bottom: 20px;
+}
+
+.llm-settings h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.settings-description {
+    font-size: 0.9em;
+    color: var(--vscode-descriptionForeground, #666);
+    margin-bottom: 15px;
+}
+
+.settings-description.info { /* Style for info messages */
+    color: var(--vscode-textInfo-foreground, #337ab7); /* Example color */
+    background-color: var(--vscode-textInfo-background, #d9edf7); /* Example color */
+    padding: 5px 8px;
+    border-radius: 3px;
+    display: inline-block; /* Fit content */
+}
+
+.settings-description.warning { /* Style for warning messages */
+    color: var(--vscode-textWarning-foreground, #8a6d3b); /* Example color */
+    background-color: var(--vscode-textWarning-background, #fcf8e3); /* Example color */
+    padding: 5px 8px;
+    border-radius: 3px;
+    display: block; /* Take full width */
+    margin-top: 10px;
+}
+
+.setting-item {
+    margin-bottom: 15px;
+    display: flex;
+    flex-direction: column; /* Stack label, input, hint vertically */
+}
+
+.setting-item label {
+    font-weight: bold;
+    margin-bottom: 5px;
+    display: block; /* Ensure label takes full width */
+    color: var(--vscode-settings-headerForeground, #333);
+}
+
+.setting-item label .required-indicator {
+    color: var(--vscode-errorForeground, #d9534f);
+    margin-left: 4px;
+}
+
+.setting-item input[type="text"],
+.setting-item input[type="url"],
+.setting-item input[type="password"],
+.setting-item input[type="number"] {
+    width: 100%; /* Make input take full width of container */
+    padding: 8px;
+    border: 1px solid var(--vscode-input-border, #ccc);
+    border-radius: 3px;
+    background-color: var(--vscode-input-background, #fff);
+    color: var(--vscode-input-foreground, #000);
+    box-sizing: border-box; /* Include padding and border in element's total width and height */
+}
+
+.setting-item input:focus {
+    outline: none;
+    border-color: var(--vscode-focusBorder, #007acc);
+    box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007acc);
+}
+
+.field-hint {
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground, #777);
+    margin-top: 5px;
+}
+
+.save-status {
+    font-size: 0.9em;
+    transition: opacity 0.3s ease-in-out;
+    opacity: 0;
+    color: var(--vscode-terminal-ansiGreen, green);
+    font-weight: normal;
+}
+
+.save-status.visible {
+    opacity: 1;
+}
