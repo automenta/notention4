@@ -1,3 +1,4 @@
+import { injectCSS } from './util.js';
 import { SLOT_EDITOR_BELOW_CONTENT } from './ui.js';
 
 export const PropertiesPlugin = {
@@ -258,8 +259,4 @@ export const PropertiesPlugin = {
 };
 
 
-// Inject CSS
-const style = document.createElement('style');
-style.setAttribute('href','property.css');
-style.setAttribute('rel', 'stylesheet');
-document.head.appendChild(style);
+injectCSS('property.css');

@@ -1,8 +1,9 @@
+//Core API
 "use strict";
 
-const {html, render} = window.litHtml;
-const produce = window.immer.produce;
-
+//Util imports
+import { Utils } from './util.js';
+import { EventBus } from './event.js';
 import {
     SLOT_MAIN_LAYOUT,
     SLOT_SIDEBAR_HEADER,
@@ -17,13 +18,14 @@ import {
     SLOT_APP_STATUS_BAR
 } from './ui.js';
 
-import { Utils } from './util.js';
-import { EventBus } from './event.js';
 
-//PLUGIN imports
+//Plugin imports
 import { PropertiesPlugin } from './property.js';
 import { OntologyPlugin } from './ontology.js';
+import { SemanticParserPlugin } from "./parser.js";
 
+const {html, render} = window.litHtml;
+const produce = window.immer.produce;
 
 // --- 3. Core State Manager (with Immer) ---
 class StateManager {
@@ -38,7 +40,7 @@ class StateManager {
     constructor(initialState, coreReducer) {
         this._state = initialState; // Assume initialState is already structured correctly
         if (typeof coreReducer !== 'function')
-            throw new Error("StateManager: coreReducer must be a function.");
+            throw new Error("State: coreReducer must be a function.");
 
         this._coreReducer = coreReducer;
         this._dispatchChain = this._buildDispatchChain();
@@ -52,7 +54,7 @@ class StateManager {
 
     subscribe(listener) {
         if (typeof listener !== 'function') {
-            console.error("StateManager: Listener is not a function.");
+            console.error("State: Listener is not a function.");
             return () => {
             };
         }
@@ -65,7 +67,7 @@ class StateManager {
             try {
                 listener(this._state, oldState);
             } catch (error) {
-                console.error("StateManager: Error in listener during notification.", error);
+                console.error("State: Error in listener during notification.", error);
             }
         });
     }
@@ -78,7 +80,7 @@ class StateManager {
     }
 
     _buildDispatchChain() {
-        // console.log(`StateManager: Rebuilding dispatch chain with ${this._middleware.length} middleware.`);
+        // console.log(`State: Rebuilding dispatch chain with ${this._middleware.length} middleware.`);
         return this._middleware.reduceRight(
             (next, mw) => mw(this.getStoreApi())(next),
             this._baseDispatch.bind(this)
@@ -88,7 +90,7 @@ class StateManager {
     // --- Immer Integration in _baseDispatch ---
     _baseDispatch(action) {
         if (this._isDispatching) {
-            console.warn(`StateManager: Concurrent dispatch detected for action [${action.type}]. Action ignored.`);
+            console.warn(`State: Concurrent dispatch detected for action [${action.type}]. Action ignored.`);
             return action;
         }
         this._isDispatching = true;
@@ -103,7 +105,7 @@ class StateManager {
                 try {
                     this._coreReducer(draft, action);
                 } catch (error) {
-                    console.error(`StateManager: Error in core reducer for action [${action.type}]`, error, action);
+                    console.error(`State: Error in core reducer for action [${action.type}]`, error, action);
                     // Optionally revert draft changes or dispatch error? Immer handles draft consistency.
                 }
 
@@ -112,13 +114,13 @@ class StateManager {
                     try {
                         reducerFn(draft, action);
                     } catch (error) {
-                        console.error(`StateManager: Error in plugin reducer for [${pluginId}] on action [${action.type}]`, error, action);
+                        console.error(`State: Error in plugin reducer for [${pluginId}] on action [${action.type}]`, error, action);
                     }
                 });
             }); // Immer returns the new state if changes were made, or oldState if not
 
         } catch (error) {
-            console.error("StateManager: Error during Immer produce or reducer execution.", error, action);
+            console.error("State: Error during Immer produce or reducer execution.", error, action);
             // If produce itself fails, nextState remains oldState
             nextState = oldState;
         } finally {
@@ -135,7 +137,7 @@ class StateManager {
 
     dispatch(action) {
         if (!action || typeof action.type !== 'string') {
-            console.error("StateManager: Invalid action dispatched. Action must be an object with a 'type' property.", action);
+            console.error("State: Invalid action dispatched. Action must be an object with a 'type' property.", action);
             return undefined; // Indicate failure or do nothing
         }
         return this._dispatchChain(action);
@@ -144,24 +146,24 @@ class StateManager {
     // --- Methods called by PluginManager ---
     registerReducer(pluginId, reducerFn) {
         if (typeof reducerFn !== 'function') {
-            console.error(`StateManager: Attempted to register non-function reducer for plugin [${pluginId}].`);
+            console.error(`State: Attempted to register non-function reducer for plugin [${pluginId}].`);
             return;
         }
         if (this._pluginReducers.has(pluginId)) {
-            console.warn(`StateManager: Reducer already registered for plugin [${pluginId}]. Overwriting.`);
+            console.warn(`State: Reducer already registered for plugin [${pluginId}]. Overwriting.`);
         }
         this._pluginReducers.set(pluginId, reducerFn);
-        console.log(`StateManager: Registered main reducer for plugin [${pluginId}]`);
+        console.log(`State: Registered main reducer for plugin [${pluginId}]`);
     }
 
     registerMiddleware(pluginId, middlewareFn) {
         if (typeof middlewareFn !== 'function') {
-            console.error(`StateManager: Attempted to register non-function middleware for plugin [${pluginId}].`);
+            console.error(`State: Attempted to register non-function middleware for plugin [${pluginId}].`);
             return;
         }
         this._middleware.push(middlewareFn);
         this._dispatchChain = this._buildDispatchChain(); // Rebuild chain immediately
-        console.log(`StateManager: Registered middleware from plugin [${pluginId}]`);
+        console.log(`State: Registered middleware from plugin [${pluginId}]`);
     }
 }
 
@@ -198,7 +200,7 @@ class PersistenceService {
     async loadState() {
         if (!this._localForage) return Promise.resolve(null); // Return null if no storage
         try {
-            console.log(`PersistenceService: Attempting to load state from key '${this._storageKey}'...`);
+            console.log(`PersistenceService: Loading state '${this._storageKey}'...`);
             const savedState = await this._localForage.getItem(this._storageKey);
             if (savedState) {
                 console.log('PersistenceService: State loaded successfully.');
@@ -695,6 +697,10 @@ class PluginManager {
         console.log("PluginManager initialized.");
     }
 
+    registerPlugins(pluginDefinitions) {
+        pluginDefinitions.forEach(x => this.registerPlugin(x));
+    }
+
     registerPlugin(pluginDefinition) {
         const {id, name, version, dependencies = [], init} = pluginDefinition;
         if (!id || !name || typeof init !== 'function') {
@@ -702,7 +708,7 @@ class PluginManager {
             return;
         }
         if (this._pluginRegistry.has(id)) {
-            console.warn(`PluginManager: Plugin [${id}] definition already registered. Skipping.`);
+            console.warn(`Plugin: Plugin [${id}] definition already registered. Skipping.`);
             return;
         }
 
@@ -714,7 +720,7 @@ class PluginManager {
             api: null
         };
         this._pluginRegistry.set(id, entry);
-        console.log(`PluginManager: Registered plugin definition [${id}] v${version || 'N/A'}`);
+        console.log(`Plugin: [${id}] v${version || 'N/A'} registered`);
     }
 
     // --- Topological Sort Implementation ---
@@ -769,21 +775,21 @@ class PluginManager {
 
 
         this._pluginLoadOrder = sorted;
-        console.log("PluginManager: Calculated plugin load order:", this._pluginLoadOrder);
+        console.log("Plugin: load order:", this._pluginLoadOrder);
     }
 
     activatePlugins() {
         try {
             this._calculateLoadOrder(); // Throws on error
         } catch (e) {
-            console.error("PluginManager: Halting plugin activation due to dependency errors.", e);
+            console.error("Plugin: Stopped activation due to dependency errors.", e);
             this._eventBus.publish('PLUGIN_ACTIVATION_FAILED', {error: e.message});
             // Optionally show a global error status
             this._coreAPI.showGlobalStatus(`Plugin activation failed: ${e.message}`, 'error', 0);
             return; // Stop activation
         }
 
-        console.log('PluginManager: Activating plugins...');
+        //console.log('Plugin: Activating plugins...');
         this._pluginLoadOrder.forEach(pluginId => {
             const entry = this._pluginRegistry.get(pluginId);
             if (!entry || entry.status !== 'registered') return; // Should not happen if load order is correct
@@ -794,7 +800,7 @@ class PluginManager {
             if (!depsMet) {
                 entry.status = 'error';
                 entry.error = new Error(`Dependency not met during activation phase (should not happen).`);
-                console.error(`PluginManager: Activation Error - Dependency check failed just before activating [${pluginId}].`);
+                console.error(`Plugin: Activation Error - Dependency check failed just before activating [${pluginId}].`);
                 this._eventBus.publish('PLUGIN_STATUS_CHANGED', {
                     pluginId,
                     status: 'error',
@@ -804,7 +810,7 @@ class PluginManager {
             }
 
             entry.status = 'activating';
-            console.log(`PluginManager: Activating plugin [${pluginId}]...`);
+            console.log(`Plugin: [${pluginId}] activating`);
 
             try {
                 // Treat definition object as instance for simplicity
@@ -833,7 +839,7 @@ class PluginManager {
                         if (typeof renderFn === 'function') {
                             this._uiRenderer.registerSlotComponent(pluginId, slotName, renderFn);
                         } else {
-                            console.warn(`PluginManager: Invalid render function for slot [${slotName}] from [${pluginId}]`);
+                            console.warn(`Plugin: Invalid render function for slot [${slotName}] from [${pluginId}]`);
                         }
                     });
                 }
@@ -856,11 +862,11 @@ class PluginManager {
                     entry.instance.onActivate();
 
                 entry.status = 'active';
-                console.log(`PluginManager: Successfully activated plugin [${pluginId}]`);
+                console.log(`Plugin: [${pluginId}] activated`);
                 this._eventBus.publish('PLUGIN_STATUS_CHANGED', {pluginId, status: 'active'});
 
             } catch (error) {
-                console.error(`PluginManager: Failed during activation of plugin [${pluginId}]`, error);
+                console.error(`Plugin: [${pluginId}] failed during activation`, error);
                 entry.status = 'error';
                 entry.error = error;
                 this._eventBus.publish('PLUGIN_STATUS_CHANGED', {pluginId, status: 'error', error: error.message});
@@ -870,26 +876,26 @@ class PluginManager {
         // After attempting all activations:
         const failedPlugins = Array.from(this._pluginRegistry.values()).filter(p => p.status === 'error');
         if (failedPlugins.length > 0) {
-            console.error("PluginManager: Some plugins failed to activate:", failedPlugins.map(p => p.definition.id));
+            console.error("Plugin: Failed to activate:", failedPlugins.map(p => p.definition.id));
             this._coreAPI.showGlobalStatus(`${failedPlugins.length} plugin(s) failed to activate. Check console.`, 'error', 10000);
         } else if (this._pluginLoadOrder.length > 0)
-            console.log("PluginManager: All plugins activated successfully.");
+            console.log("Plugin: All plugins activated.");
         else
-            console.log("PluginManager: No plugins registered or activated.");
+            console.log("Plugin: No plugins registered or activated.");
 
     }
 
     registerService(pluginId, serviceName, serviceInstance) {
         if (!serviceInstance || typeof serviceInstance !== 'object') {
-            console.error(`PluginManager: Invalid service instance provided for [${serviceName}] by plugin [${pluginId}].`);
+            console.error(`Plugin: Invalid service instance provided for [${serviceName}] by plugin [${pluginId}].`);
             return;
         }
         if (this._services.has(serviceName)) {
             const existingProvider = this._services.get(serviceName).providerPluginId;
-            console.warn(`PluginManager: Service [${serviceName}] already registered by [${existingProvider}]. Overwriting by [${pluginId}].`);
+            console.warn(`Plugin: Service [${serviceName}] already registered by [${existingProvider}]. Overwriting by [${pluginId}].`);
         }
         this._services.set(serviceName, {instance: serviceInstance, providerPluginId: pluginId});
-        console.log(`PluginManager: Registered service [${serviceName}] from plugin [${pluginId}]`);
+        console.log(`Plugin: service [${serviceName}] registered from plugin [${pluginId}]`);
     }
 
     getService(serviceName) {
@@ -900,7 +906,7 @@ class PluginManager {
     getPluginAPI(pluginId) {
         const entry = this._pluginRegistry.get(pluginId);
         if (!entry || entry.status !== 'active') {
-            console.warn(`PluginManager: API requested for inactive or non-existent plugin [${pluginId}] (Status: ${entry?.status || 'N/A'})`);
+            console.warn(`Plugin: API requested for inactive or non-existent plugin [${pluginId}] (Status: ${entry?.status || 'N/A'})`);
             return null;
         }
         return entry.api;
@@ -1200,11 +1206,11 @@ const coreReducer = (draft, action) => {
 
 // --- 10. Application Initialization (`main` async function) ---
 async function main() {
-    console.log("%cInitializing Reality Notebook v10.1 Core...", "color: blue; font-weight: bold;");
+    console.log("%cInitializing Core...", "color: orange; font-size: 150%; font-weight: bold;");
     let api = null; // To expose for debugging
 
     try {
-        // 1. Initialize Core Services
+        // Initialize Core Services
         const events = new EventBus();
         const state = new StateManager(initialAppState, coreReducer);
         const ui = new UIRenderer(state, 'app');
@@ -1213,35 +1219,36 @@ async function main() {
 
         api = plugins._coreAPI; // Get the created instance
 
-        // 2. Expose Debug Globals
+        // Expose Debug Globals
         window.realityNotebookCore = api;
         window._getState = state.getState.bind(state);
         window._dispatch = state.dispatch.bind(state);
         window._clearState = persistence.clearState.bind(persistence); // Expose clear function
 
-        // 3. Load Initial State (awaits async storage access)
+        // Load Initial State (awaits async storage access)
         const loadedState = await persistence.loadState();
         // Dispatch action to merge loaded state and reset transient fields
         state.dispatch({type: 'CORE_STATE_LOADED', payload: {loadedState}});
-        console.log("Initial state loaded and processed.");
 
-        // 4. Apply initial theme (already done reactively in UIRenderer based on state)
+        // Apply initial theme (already done reactively in UIRenderer based on state)
         // uiRenderer.renderApp(); // Trigger initial render based on loaded state
 
-        // 5. Register Plugins
-        plugins.registerPlugin(PropertiesPlugin);
-        plugins.registerPlugin(OntologyPlugin);
+        plugins.registerPlugins([
+            PropertiesPlugin,
+            OntologyPlugin,
+            SemanticParserPlugin
+        ]);
 
-        // 6. Activate Plugins (Handles dependency sort, lifecycle methods)
+        //  Activate Plugins (Handles dependency sort, lifecycle methods)
         plugins.activatePlugins(); // Will activate any registered plugins
 
-        // 7. Initial Render is triggered by CORE_STATE_LOADED state change via UIRenderer subscription.
+        // Initial Render is triggered by CORE_STATE_LOADED state change via UIRenderer subscription.
         // No explicit renderApp() call needed here.
 
         console.log("%cReality Notebook Core Initialized Successfully.", "color: green; font-weight: bold;");
         api.showGlobalStatus("Application Ready", "success", 2000);
 
-        // 8. Post-initialization (Example: Trigger onboarding check)
+        // Post-initialization (Example: Trigger onboarding check)
         // if (!stateManager.getState().settings.core.onboardingComplete) {
         //     stateManager.dispatch({ type: 'ONBOARDING_CHECK_START' }); // Action handled by onboarding plugin
         // }
@@ -1262,8 +1269,5 @@ async function main() {
     }
 }
 
-// START
-if (document.readyState === 'loading')
-    document.addEventListener('DOMContentLoaded', main);
-else
-    main(); // DOM already ready
+
+/* START */ if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', main); else main(); // DOM already ready

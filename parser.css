@@ -1,0 +1,80 @@
+.parser-suggestions-area {
+    /* Add styles for the suggestions container */
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border-color);
+}
+
+.suggestions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 5px;
+}
+
+.suggestion-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    background-color: var(--secondary-background-color);
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    font-size: 0.9em;
+}
+
+.suggestion-text {
+    flex-grow: 1;
+    margin-right: 10px;
+    color: var(--primary-text-color);
+}
+
+.suggestion-key {
+    font-weight: bold;
+    color: var(--accent-color); /* Or specific color */
+}
+.suggestion-value {
+    font-style: italic;
+    color: var(--secondary-text-color); /* Or specific color */
+    max-width: 200px; /* Prevent very long values overwhelming the UI */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block; /* Needed for ellipsis */
+    vertical-align: bottom; /* Align with key */
+}
+.suggestion-source {
+    font-size: 0.8em;
+    color: var(--secondary-text-color);
+    margin-left: 5px;
+    opacity: 0.7;
+}
+
+.suggestion-actions button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2em;
+    padding: 2px 5px;
+    margin-left: 5px;
+    border-radius: 3px;
+    line-height: 1;
+}
+
+.suggestion-actions button:hover {
+    background-color: var(--hover-background-color);
+}
+
+.suggestion-confirm {
+    color: var(--success-color);
+}
+.suggestion-confirm:hover {
+    color: var(--success-color-darker); /* Define this variable */
+}
+
+.suggestion-ignore {
+    color: var(--danger-color);
+}
+.suggestion-ignore:hover {
+    color: var(--danger-color-darker); /* Define this variable */
+}

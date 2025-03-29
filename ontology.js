@@ -2,6 +2,27 @@
 
 import { SLOT_SETTINGS_PANEL_SECTION } from './ui.js'; // Assuming ui.js exports it
 
+// Default ontology
+const ONTOLOGY = {
+    hints: {
+        "exampleHint": { description: "An example hint definition" }
+    },
+    rules: [
+        { pattern: "^\\d+$", type: "integer", description: "Detects whole numbers" }
+    ],
+    templates: [
+        { name: "Meeting Notes", content: "# Meeting Notes\n\n**Date:** {{date}}\n**Attendees:** \n\n## Agenda\n\n## Notes\n\n## Action Items\n\n" }
+    ],
+    uiHints: {
+        "date": { icon: "📅", color: "#3498db" },
+        "url": { icon: "🔗", color: "#2ecc71" }
+    },
+    keywords: {
+        categories: ["Work", "Personal", "Research", "Ideas"],
+        tags: ["important", "urgent", "review"]
+    }
+};
+
 export const OntologyPlugin = {
     id: 'ontology',
     name: 'Ontology Manager',
@@ -214,26 +235,7 @@ export const OntologyPlugin = {
                         </div>
                     `;
                 } else {
-                    // Default content for the new config note (stringified JSON)
-                    const initialContent = JSON.stringify({
-                        hints: {
-                            "exampleHint": { description: "An example hint definition" }
-                        },
-                        rules: [
-                            { pattern: "^\\d+$", type: "integer", description: "Detects whole numbers" }
-                        ],
-                        templates: [
-                            { name: "Meeting Notes", content: "# Meeting Notes\n\n**Date:** {{date}}\n**Attendees:** \n\n## Agenda\n\n## Notes\n\n## Action Items\n\n" }
-                        ],
-                        uiHints: {
-                            "date": { icon: "📅", color: "#3498db" },
-                            "url": { icon: "🔗", color: "#2ecc71" }
-                        },
-                        keywords: {
-                            categories: ["Work", "Personal", "Research", "Ideas"],
-                            tags: ["important", "urgent", "review"]
-                        }
-                    }, null, 2); // Pretty print JSON
+                    const ontology_str = JSON.stringify(ONTOLOGY, null, 2); // Pretty print JSON
 
                     return html`
                         <div class="settings-section">
@@ -247,7 +249,7 @@ export const OntologyPlugin = {
                             payload: {
                                 name: 'Ontology Configuration',
                                 systemType: 'config/ontology',
-                                content: initialContent
+                                content: ontology_str
                             }
                         });
                         // Maybe close modal after adding? Or let user select it?

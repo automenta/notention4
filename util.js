@@ -14,13 +14,15 @@ export const Utils = {
 
     debounce: (func, wait) => {
         let timeout;
-        return function executedFunction(...args) {
+        let e = function executedFunction(...args) {
             clearTimeout(timeout);
             timeout = setTimeout(() => {
                 clearTimeout(timeout);
                 func.apply(this, args);
             }, wait);
         };
+        e.cancel = () => clearTimeout(timeout);
+        return e;
     },
 
     throttle: (func, limit) => {
@@ -73,3 +75,11 @@ export const Utils = {
     // If required elsewhere, prefer structuredClone where available.
     // deepClone: (obj) => structuredClone(obj), // Use modern API if needed
 };
+
+/** injects a CSS stylesheet into a <style> in <head> */
+export function injectCSS(cssPath) {
+    const style = document.createElement('style');
+    style.setAttribute('href', cssPath);
+    style.setAttribute('rel', 'stylesheet');
+    document.head.appendChild(style);
+}
