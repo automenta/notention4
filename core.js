@@ -17,123 +17,13 @@ import {
     SLOT_APP_STATUS_BAR
 } from './ui.js';
 
+import { Utils } from './util.js';
+import { EventBus } from './event.js';
+
+//PLUGIN imports
 import { PropertiesPlugin } from './property.js';
+import { OntologyPlugin } from './ontology.js';
 
-
-// --- 1. Core Utilities (Utils) ---
-const Utils = {
-    generateUUID: () => {
-        if (typeof crypto !== 'undefined' && crypto.randomUUID)
-            return crypto.randomUUID();
-
-        // Basic fallback (consider a more robust polyfill if needed)
-        console.warn("Utils.generateUUID: crypto.randomUUID not available, using fallback.");
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-            const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-            return v.toString(16);
-        });
-    },
-
-    debounce: (func, wait) => {
-        let timeout;
-        return function executedFunction(...args) {
-            clearTimeout(timeout);
-            timeout = setTimeout(() => {
-                clearTimeout(timeout);
-                func.apply(this, args);
-            }, wait);
-        };
-    },
-
-    throttle: (func, limit) => {
-        let lastFunc, lastRan;
-        return function (...args) {
-            const context = this;
-            if (!lastRan) {
-                func.apply(context, args);
-                lastRan = Date.now();
-            } else {
-                clearTimeout(lastFunc);
-                lastFunc = setTimeout(function () {
-                    if ((Date.now() - lastRan) >= limit) {
-                        func.apply(context, args);
-                        lastRan = Date.now();
-                    }
-                }, limit - (Date.now() - lastRan));
-            }
-        }
-    },
-
-    sanitizeHTML: (dirtyHTMLString) => {
-        if (typeof DOMPurify === 'undefined') {
-            console.error("Utils.sanitizeHTML: DOMPurify library is not loaded! Cannot sanitize HTML. Blocking potentially unsafe content.");
-            // In a real app, you might throw an error or display a clear warning to the user.
-            // Returning an empty string or placeholder is safer than returning unsanitized content.
-            return "[HTML Sanitization Unavailable]";
-            // throw new Error("DOMPurify is required for HTML sanitization but not loaded.");
-        }
-        // Configure DOMPurify as needed (e.g., allow specific tags/attributes)
-        // Default configuration is generally safe.
-        return DOMPurify.sanitize(dirtyHTMLString);
-    },
-
-    formatDate: (timestamp) => {
-        if (!timestamp) return '';
-        try {
-            // Use Intl for better localization and formatting options
-            return new Intl.DateTimeFormat(undefined, {
-                dateStyle: 'short', // e.g., '12/19/2023'
-                timeStyle: 'short'  // e.g., '3:30 PM'
-            }).format(new Date(timestamp));
-        } catch (e) {
-            console.warn("Utils.formatDate: Error formatting date", e);
-            return new Date(timestamp).toLocaleString(); // Fallback
-        }
-    },
-
-    // deepClone is generally not needed with Immer managing state.
-    // If required elsewhere, prefer structuredClone where available.
-    // deepClone: (obj) => structuredClone(obj), // Use modern API if needed
-};
-
-// --- 2. Core Event Bus ---
-class EventBus {
-    _listeners = new Map(); // Map<eventType, Set<handler>>
-
-    subscribe(eventType, handler) {
-        if (typeof handler !== 'function') {
-            console.error(`EventBus: Listener for event [${eventType}] is not a function.`);
-            return () => {
-            }; // Return no-op unsubscribe
-        }
-        if (!this._listeners.has(eventType))
-            this._listeners.set(eventType, new Set());
-
-        this._listeners.get(eventType).add(handler);
-        // Return unsubscribe function
-        return () => {
-            if (this._listeners.has(eventType)) {
-                this._listeners.get(eventType).delete(handler);
-                if (this._listeners.get(eventType).size === 0)
-                    this._listeners.delete(eventType);
-            }
-        };
-    }
-
-    publish(eventType, payload) {
-        const handlers = this._listeners.get(eventType);
-        if (handlers && handlers.size > 0) {
-            // Iterate over a copy in case a handler unsubscribes during the loop
-            [...handlers].forEach(handler => {
-                try {
-                    handler(payload);
-                } catch (error) {
-                    console.error(`EventBus: Error in listener for event [${eventType}]`, error);
-                }
-            });
-        }
-    }
-}
 
 // --- 3. Core State Manager (with Immer) ---
 class StateManager {
@@ -1311,46 +1201,45 @@ const coreReducer = (draft, action) => {
 // --- 10. Application Initialization (`main` async function) ---
 async function main() {
     console.log("%cInitializing Reality Notebook v10.1 Core...", "color: blue; font-weight: bold;");
-    let coreAPIInstance = null; // To expose for debugging
+    let api = null; // To expose for debugging
 
     try {
         // 1. Initialize Core Services
-        const eventBus = new EventBus();
-        const stateManager = new StateManager(initialAppState, coreReducer);
-        const uiRenderer = new UIRenderer(stateManager, 'app');
-        const pluginManager = new PluginManager(stateManager, uiRenderer, eventBus);
-        const persistenceService = new PersistenceService(stateManager);
-        coreAPIInstance = pluginManager._coreAPI; // Get the created instance
+        const events = new EventBus();
+        const state = new StateManager(initialAppState, coreReducer);
+        const ui = new UIRenderer(state, 'app');
+        const plugins = new PluginManager(state, ui, events);
+        const persistence = new PersistenceService(state);
+
+        api = plugins._coreAPI; // Get the created instance
 
         // 2. Expose Debug Globals
-        window.realityNotebookCore = coreAPIInstance;
-        window._getState = stateManager.getState.bind(stateManager);
-        window._dispatch = stateManager.dispatch.bind(stateManager);
-        window._clearState = persistenceService.clearState.bind(persistenceService); // Expose clear function
+        window.realityNotebookCore = api;
+        window._getState = state.getState.bind(state);
+        window._dispatch = state.dispatch.bind(state);
+        window._clearState = persistence.clearState.bind(persistence); // Expose clear function
 
         // 3. Load Initial State (awaits async storage access)
-        const loadedState = await persistenceService.loadState();
+        const loadedState = await persistence.loadState();
         // Dispatch action to merge loaded state and reset transient fields
-        stateManager.dispatch({type: 'CORE_STATE_LOADED', payload: {loadedState}});
+        state.dispatch({type: 'CORE_STATE_LOADED', payload: {loadedState}});
         console.log("Initial state loaded and processed.");
 
         // 4. Apply initial theme (already done reactively in UIRenderer based on state)
         // uiRenderer.renderApp(); // Trigger initial render based on loaded state
 
-        // 5. Register Plugins (!!! --- Placeholder: Empty in Core --- !!!)
-        // In a build with plugins, they would be registered here:
-        pluginManager.registerPlugin(PropertiesPlugin);
-        // pluginManager.registerPlugin(OntologyPluginDefinition);
-        console.log("Plugin Registration Phase (No plugins registered in core).");
+        // 5. Register Plugins
+        plugins.registerPlugin(PropertiesPlugin);
+        plugins.registerPlugin(OntologyPlugin);
 
         // 6. Activate Plugins (Handles dependency sort, lifecycle methods)
-        pluginManager.activatePlugins(); // Will activate any registered plugins
+        plugins.activatePlugins(); // Will activate any registered plugins
 
         // 7. Initial Render is triggered by CORE_STATE_LOADED state change via UIRenderer subscription.
         // No explicit renderApp() call needed here.
 
         console.log("%cReality Notebook Core Initialized Successfully.", "color: green; font-weight: bold;");
-        coreAPIInstance.showGlobalStatus("Application Ready", "success", 2000);
+        api.showGlobalStatus("Application Ready", "success", 2000);
 
         // 8. Post-initialization (Example: Trigger onboarding check)
         // if (!stateManager.getState().settings.core.onboardingComplete) {
