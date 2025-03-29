@@ -28,18 +28,18 @@ Okay, here are pseudocode summaries for each planned plugin, focusing on integra
                 case 'CORE_ADD_NOTE': // Initialize pluginData for new notes
                     const newNoteId = state.noteOrder[0]; // Assumes core added it first
                     // Ensure pluginData structure exists before adding properties
-                    if (!state.notes[newNoteId].pluginData) {
-                       state.notes[newNoteId].pluginData = {};
-                    }
-                    state.notes[newNoteId].pluginData[this.id] = { properties: [] };
+                    const ns = state.notes[newNoteId];
+                    if (!ns.pluginData) ns.pluginData = {};
+                    ns.pluginData[this.id] = { properties: [] };
                     return state; // Return modified state using Immer draft or new object
 
                 case 'PROPERTY_ADD': // payload: { noteId, propertyData }
                     const { noteId_add, propertyData } = action.payload;
-                    if (!state.notes[noteId_add]?.pluginData?.[this.id]) return state; // Ensure initialized
+                    const ps = state.notes[noteId_add];
+                    if (!ps?.pluginData?.[this.id]) return state; // Ensure initialized
                     const newProp = { id: coreAPI.utils.generateUUID(), ...propertyData };
-                    state.notes[noteId_add].pluginData[this.id].properties.push(newProp);
-                    state.notes[noteId_add].updatedAt = Date.now(); // Mark note as updated
+                    ps.pluginData[this.id].properties.push(newProp);
+                    ps.updatedAt = Date.now(); // Mark note as updated
                     return state;
 
                 case 'PROPERTY_UPDATE': // payload: { noteId, propertyId, changes }
@@ -54,13 +54,12 @@ Okay, here are pseudocode summaries for each planned plugin, focusing on integra
 
                 case 'PROPERTY_DELETE': // payload: { noteId, propertyId }
                    const { noteId_del, propertyId_del } = action.payload;
-                   const notePropsDel = state.notes[noteId_del]?.pluginData?.[this.id]?.properties;
+                   const ds = state.notes[noteId_del]; 
+                   const notePropsDel = ds?.pluginData?.[this.id]?.properties;
                    if (!notePropsDel) return state;
                    const initialLength = notePropsDel.length;
-                   state.notes[noteId_del].pluginData[this.id].properties = notePropsDel.filter(p => p.id !== propertyId_del);
-                   if (state.notes[noteId_del].pluginData[this.id].properties.length !== initialLength) {
-                        state.notes[noteId_del].updatedAt = Date.now();
-                   }
+                   ds.pluginData[this.id].properties = notePropsDel.filter(p => p.id !== propertyId_del);
+                   if (ds.pluginData[this.id].properties.length !== initialLength) ds.updatedAt = Date.now();
                    return state;
 
                 // Potentially handle CORE_DELETE_NOTE to clean up related runtime state if any
@@ -450,8 +449,7 @@ Choose a robust, reliable, and extensible Rich Text Editor to import... or creat
 
 **7. LLM Plugin**
 
-*   **Purpose:** Centralized access to Language Models.
-*   **Decomposition:** Generally atomic, handles different API endpoints internally.
+*   **Purpose:** Centralized access to Language Models.  Use langchain.js for access to and configurations for various LM providers. 
 *   **Plugin Definition:**
     ```javascript
     const LLMPlugin = {
