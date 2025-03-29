@@ -248,14 +248,15 @@ Okay, here are pseudocode summaries for each planned plugin, focusing on integra
 
 **4. Rich Text Editor Plugin**
 
+Choose a robust, reliable, and extensible Rich Text Editor to import... or create one using 'contenteditable'.
+
 *   **Purpose:** Provide a rich editing experience and an API for interaction.
-*   **Decomposition:** Generally atomic, might abstract the specific editor library (TipTap, Quill) internally.
 *   **Plugin Definition:**
     ```javascript
     const RichTextEditorPlugin = {
         id: 'editor',
         name: 'Rich Text Editor',
-        _editorInstance: null, // Holds the instance of TipTap/Quill etc.
+        _editorInstance: null, // Holds editor implementation instance
 
         init(coreAPI) { this.coreAPI = coreAPI; /* Setup library config */ },
         onActivate() { /* Initialize editor instance if not done in slot rendering */ },

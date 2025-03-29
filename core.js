@@ -23,6 +23,15 @@ import {
 import { PropertiesPlugin } from './property.js';
 import { OntologyPlugin } from './ontology.js';
 import { SemanticParserPlugin } from "./parser.js";
+import { RichTextEditorPlugin } from "./editor.js";
+
+let PLUGINS = [
+    PropertiesPlugin,
+    OntologyPlugin,
+    SemanticParserPlugin,
+    RichTextEditorPlugin
+];
+
 
 const {html, render} = window.litHtml;
 const produce = window.immer.produce;
@@ -436,45 +445,55 @@ class UIRenderer {
     }
 
     _renderEditorArea(state, note) {
+        // Render the slot content for the editor area
+        const slotContent = this._renderSlot(state, SLOT_EDITOR_CONTENT_AREA, note.id);
+
+        // Check if the slot provided actual content.
+        // lit-html renders arrays of templates, and might return empty strings/arrays if nothing was rendered.
+        const hasPluginContent = Array.isArray(slotContent)
+            ? slotContent.some(item => item != null && item !== '') // Check if array has non-empty items
+            : (slotContent != null && slotContent !== ''); // Check for single non-empty item
+
         return html`
-                <div class="editor-header" data-note-id=${note.id}>
-                    <input
-                            type="text"
-                            class="editor-title-input"
-                            .value=${note.name}
-                            placeholder="Note Title"
-                            aria-label="Note Title"
-                            @input=${(e) => this._handleTitleInput(note.id, e.target.value)}
-                    >
-                    <div class="editor-header-actions" data-slot="${SLOT_EDITOR_HEADER_ACTIONS}"
-                         data-note-id=${note.id}>
-                        <button class="core-archive-note" @click=${() => this._handleArchiveNote(note.id)}
-                                title="Archive Note" aria-label="Archive Note">Archive
-                        </button>
-                        <button class="core-delete-note" @click=${() => this._handleDeleteNote(note.id, note.name)}
-                                title="Delete Note" aria-label="Delete Note">Delete
-                        </button>
-                        ${this._renderSlot(state, SLOT_EDITOR_HEADER_ACTIONS, note.id)}
-                    </div>
+            <div class="editor-header" data-note-id=${note.id}>
+                <input
+                        type="text"
+                        class="editor-title-input"
+                        .value=${note.name}
+                        placeholder="Note Title"
+                        aria-label="Note Title"
+                        @input=${(e) => this._handleTitleInput(note.id, e.target.value)}
+                >
+                <div class="editor-header-actions" data-slot="${SLOT_EDITOR_HEADER_ACTIONS}" data-note-id=${note.id}>
+                    <button class="core-archive-note" @click=${() => this._handleArchiveNote(note.id)} title="Archive Note" aria-label="Archive Note">Archive</button>
+                    <button class="core-delete-note" @click=${() => this._handleDeleteNote(note.id, note.name)} title="Delete Note" aria-label="Delete Note">Delete</button>
+                    ${this._renderSlot(state, SLOT_EDITOR_HEADER_ACTIONS, note.id)}
                 </div>
-                <div class="editor-content-area" data-slot="${SLOT_EDITOR_CONTENT_AREA}" data-note-id=${note.id}>
-                    <!-- Core Fallback: Simple Textarea -->
-                    <textarea
-                            class="core-content-editor"
-                            aria-label="Note Content"
-                            placeholder="Start writing..."
-                            .value=${note.content}
-                            @input=${(e) => this._handleContentInput(note.id, e.target.value)}
-                    ></textarea>
-                    ${this._renderSlot(state, SLOT_EDITOR_CONTENT_AREA, note.id)}
-                </div>
-                <div class="editor-below-content" data-slot="${SLOT_EDITOR_BELOW_CONTENT}" data-note-id=${note.id}>
-                    ${this._renderSlot(state, SLOT_EDITOR_BELOW_CONTENT, note.id)}
-                </div>
-                <div class="editor-plugin-panels" data-slot="${SLOT_EDITOR_PLUGIN_PANELS}" data-note-id=${note.id}>
-                    ${this._renderSlot(state, SLOT_EDITOR_PLUGIN_PANELS, note.id)}
-                </div>
-            `;
+            </div>
+            <div class="editor-content-wrapper" style="flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;">
+                ${hasPluginContent
+                        ? html`<div class="editor-content-area plugin-controlled" data-slot="${SLOT_EDITOR_CONTENT_AREA}" data-note-id=${note.id} style="flex-grow: 1; display: flex; flex-direction: column; overflow-y: auto;">
+                          ${slotContent}
+                       </div>`
+                        : html`<div class="editor-content-area core-controlled" style="flex-grow: 1; display: flex; flex-direction: column;">
+                           <textarea
+                                class="core-content-editor"
+                                aria-label="Note Content"
+                                placeholder="Start writing..."
+                                .value=${note.content}
+                                @input=${(e) => this._handleContentInput(note.id, e.target.value)}
+                                style="flex-grow: 1; width: 100%; border: none; padding: 10px; font-family: inherit; font-size: inherit; resize: none; outline: none;"
+                            ></textarea>
+                       </div>`
+                }
+            </div>
+            <div class="editor-below-content" data-slot="${SLOT_EDITOR_BELOW_CONTENT}" data-note-id=${note.id}>
+                ${this._renderSlot(state, SLOT_EDITOR_BELOW_CONTENT, note.id)}
+            </div>
+            <div class="editor-plugin-panels" data-slot="${SLOT_EDITOR_PLUGIN_PANELS}" data-note-id=${note.id}>
+                ${this._renderSlot(state, SLOT_EDITOR_PLUGIN_PANELS, note.id)}
+            </div>
+        `;
     }
 
     // --- Event Handlers (Defined on the class) ---
@@ -1233,11 +1252,7 @@ async function main() {
         // Apply initial theme (already done reactively in UIRenderer based on state)
         // uiRenderer.renderApp(); // Trigger initial render based on loaded state
 
-        plugins.registerPlugins([
-            PropertiesPlugin,
-            OntologyPlugin,
-            SemanticParserPlugin
-        ]);
+        plugins.registerPlugins(PLUGINS);
 
         //  Activate Plugins (Handles dependency sort, lifecycle methods)
         plugins.activatePlugins(); // Will activate any registered plugins
