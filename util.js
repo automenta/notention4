@@ -1,3 +1,5 @@
+import DOMPurify from 'dompurify';
+
 // --- 1. Core Utilities (Utils) ---
 export const Utils = {
     generateUUID: () => {
@@ -14,14 +16,15 @@ export const Utils = {
 
     debounce: (func, wait) => {
         let timeout;
-        let e = function executedFunction(...args) {
-            clearTimeout(timeout);
+        const cancel = () => clearTimeout(timeout);
+        let e = function(...args) {
+            cancel();
             timeout = setTimeout(() => {
                 clearTimeout(timeout);
                 func.apply(this, args);
             }, wait);
         };
-        e.cancel = () => clearTimeout(timeout);
+        e.cancel = cancel;
         return e;
     },
 
