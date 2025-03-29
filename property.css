@@ -1,0 +1,71 @@
+.properties-area {
+    margin-top: 15px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-color-light);
+}
+
+.plugin-section-title {
+    font-size: 0.9em;
+    color: var(--secondary-text-color);
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.properties-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.property-pill {
+    background-color: var(--tag-background-color);
+    color: var(--tag-text-color);
+    border: 1px solid var(--tag-border-color);
+    border-radius: 12px; /* More rounded */
+    padding: 3px 8px;
+    font-size: 0.85em;
+    cursor: pointer;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    white-space: nowrap;
+    display: inline-flex; /* Align key/value */
+    align-items: baseline;
+    gap: 4px;
+}
+
+.property-pill:hover {
+    background-color: var(--tag-background-hover-color);
+    border-color: var(--tag-border-hover-color);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.property-key {
+    font-weight: 600;
+    opacity: 0.9;
+}
+
+.property-value {
+    /* Optional: Style value differently */
+}
+
+.no-properties-message {
+    color: var(--secondary-text-color);
+    font-style: italic;
+    font-size: 0.9em;
+    margin-bottom: 10px;
+}
+
+.add-property-button {
+    background-color: var(--button-secondary-background-color);
+    color: var(--button-secondary-text-color);
+    border: 1px solid var(--button-secondary-border-color);
+    padding: 4px 10px;
+    border-radius: var(--border-radius);
+    font-size: 0.85em;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.add-property-button:hover {
+    background-color: var(--button-secondary-background-hover-color);
+}

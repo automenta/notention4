@@ -1,0 +1,466 @@
+/* --- Base Styles & Theming (Inspired by A, F, G) --- */
+:root {
+    --font-family: sans-serif;
+
+    --bg-color: #ffffff;
+    --text-color: #1a1a1a;
+    --border-color: #e0e0e0;
+    --primary-color: #007aff;
+    --primary-text-color: #ffffff;
+    --secondary-bg-color: #f2f2f7;
+    --secondary-text-color: #6b6b6b;
+    --selected-bg-color: #e5e5ea;
+    --selected-text-color: #1a1a1a; /* Ensure contrast on selected */
+    --modal-backdrop-color: rgba(0, 0, 0, 0.4);
+    --danger-color: #dc3545;
+    --danger-hover-bg: #bb2d3b;
+    --status-info-bg: #e7f3fe;
+    --status-info-text: #0d6efd;
+    --status-error-bg: #f8d7da;
+    --status-error-text: #842029;
+    --status-success-bg: #d1e7dd;
+    --status-success-text: #0f5132;
+    --input-bg: #ffffff;
+    --button-bg: #f0f0f0;
+    --button-hover-bg: #e0e0e0;
+
+    --sidebar-width: 280px;
+    --status-bar-height: 30px;
+}
+
+[data-theme="dark"] {
+    --bg-color: #1c1c1e;
+    --text-color: #f2f2f7;
+    --border-color: #3a3a3c;
+    --primary-color: #0a84ff;
+    --primary-text-color: #ffffff;
+    --secondary-bg-color: #2c2c2e;
+    --secondary-text-color: #a0a0a5;
+    --selected-bg-color: #3a3a3c;
+    --selected-text-color: #f2f2f7; /* Ensure contrast on selected */
+    --modal-backdrop-color: rgba(0, 0, 0, 0.6);
+    --danger-color: #ff453a;
+    --danger-hover-bg: #d32f2f;
+    --status-info-bg: #1a3557;
+    --status-info-text: #4dabf7;
+    --status-error-bg: #5f2120;
+    --status-error-text: #ffb3b8;
+    --status-success-bg: #144d18;
+    --status-success-text: #a3cfbb;
+    --input-bg: #2c2c2e;
+    --button-bg: #3a3a3c;
+    --button-hover-bg: #4a4a4c;
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    height: 100%;
+    font-family: var(--font-family);
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-size: var(--font-size);
+    line-height: var(--line-height);
+    overflow: hidden; /* Prevent body scroll */
+}
+
+#app {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* --- Layout Structure --- */
+.app-container {
+    display: flex;
+    height: calc(100% - var(--status-bar-height));
+    flex-grow: 1;
+}
+
+.sidebar {
+    width: var(--sidebar-width);
+    min-width: 200px;
+    max-width: 40%;
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow-y: hidden; /* Prevent scrollbar on sidebar itself */
+    background-color: var(--secondary-bg-color);
+}
+
+.main-content-area {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.status-bar {
+    height: var(--status-bar-height);
+    border-top: 1px solid var(--border-color);
+    padding: 0 1rem;
+    display: flex;
+    align-items: center;
+    font-size: 0.85rem;
+    color: var(--secondary-text-color);
+    background-color: var(--secondary-bg-color);
+    flex-shrink: 0; /* Prevent shrinking */
+    gap: 1rem;
+}
+
+/* --- Sidebar Components --- */
+.sidebar-header {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.sidebar-header input[type="search"] {
+    flex-grow: 1;
+    width: 75%;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--input-bg);
+    color: var(--text-color);
+}
+
+.sidebar-header button {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: var(--secondary-text-color);
+    padding: 0.2rem;
+}
+
+.sidebar-header button:hover {
+    color: var(--text-color);
+}
+
+.sidebar-actions {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-actions button {
+    width: 100%;
+    padding: 0.5rem;
+    background-color: var(--button-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+.sidebar-actions button:hover {
+    background-color: var(--button-hover-bg);
+}
+
+.note-list {
+    list-style: none;
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 0;
+    margin: 0;
+}
+
+.note-list-item {
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.note-list-item:hover {
+    background-color: var(--selected-bg-color);
+}
+
+.note-list-item.selected {
+    background-color: var(--primary-color);
+    color: var(--primary-text-color);
+}
+
+.note-list-item.selected .note-list-item-meta {
+    color: var(--primary-text-color);
+    opacity: 0.8;
+}
+
+.note-list-item:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+}
+
+/* Accessibility */
+.note-list-item-title {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.note-list-item-meta, .note-list-item-status {
+    font-size: 0.8rem;
+    color: var(--secondary-text-color);
+    margin-top: 0.2rem;
+    min-height: 1em;
+    display: flex;
+    gap: 0.5em;
+    align-items: center;
+}
+
+.note-list-item-status {
+    position: absolute;
+    right: 0.75rem;
+    top: 0.6rem;
+}
+
+/* --- Main Content Components --- */
+.editor-area {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 1rem;
+}
+
+.welcome-message {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    color: var(--secondary-text-color);
+    font-size: 1.1rem;
+    text-align: center;
+}
+
+.editor-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    gap: 0.5rem;
+}
+
+.editor-title-input {
+    flex-grow: 1;
+    font-size: 1.4rem;
+    font-weight: bold;
+    border: none;
+    background: none;
+    color: var(--text-color);
+    padding: 0.2rem;
+    margin: -0.2rem;
+}
+
+.editor-title-input:focus {
+    outline: 1px solid var(--primary-color);
+    background-color: var(--secondary-bg-color);
+}
+
+.editor-header-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.editor-header-actions button {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.85rem;
+    background-color: var(--button-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--text-color);
+}
+
+.editor-header-actions button:hover {
+    background-color: var(--button-hover-bg);
+}
+
+.editor-header-actions button.core-delete-note {
+    border-color: var(--danger-color);
+    color: var(--danger-color);
+}
+
+.editor-header-actions button.core-delete-note:hover {
+    background-color: var(--danger-color);
+    color: var(--primary-text-color);
+}
+
+.editor-content-area {
+    margin-bottom: 1rem;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.core-content-editor {
+    width: 100%;
+    flex-grow: 1; /* Take available space */
+    resize: none;
+    border: 1px solid var(--border-color);
+    padding: 0.75rem;
+    font-family: inherit;
+    font-size: 1rem;
+    line-height: 1.6;
+    background-color: var(--input-bg);
+    color: var(--text-color);
+    border-radius: 4px;
+}
+
+.core-content-editor:focus {
+    outline: 1px solid var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+/* --- Slots --- */
+[data-slot] {
+    min-height: 10px; /* Ensure slots are minimally visible */
+}
+
+[data-slot="editorBelowContent"], [data-slot="editorPluginPanels"] {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--border-color);
+    min-height: 30px; /* Ensure space visible for plugins */
+}
+
+[data-slot="appStatusBar"] {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-left: auto;
+}
+
+/* --- Status Bar --- */
+.core-status {
+    margin-right: auto; /* Push plugin statuses to the right */
+}
+
+.core-status.info {
+    color: var(--status-info-text);
+}
+
+.core-status.error {
+    color: var(--status-error-text);
+    font-weight: bold;
+}
+
+.core-status.success {
+    color: var(--status-success-text);
+}
+
+/* --- Modals --- */
+#modal-root {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 1000;
+}
+
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background-color: var(--modal-backdrop-color);
+    pointer-events: auto;
+    z-index: 1001;
+}
+
+.modal-content {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: var(--bg-color);
+    padding: 1.5rem 2rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    z-index: 1002;
+    min-width: 300px;
+    max-width: 90%;
+    max-height: 90%;
+    overflow-y: auto;
+    pointer-events: auto;
+}
+
+.modal-close-button {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.75rem;
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--secondary-text-color);
+}
+
+.modal-close-button:hover {
+    color: var(--text-color);
+}
+
+/* Settings Modal Specifics */
+.settings-view h2, .settings-view h3 {
+    margin-bottom: 0.75rem;
+}
+
+.settings-view .settings-core, .settings-plugins [data-slot="settingsPanelSection"] > div {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.settings-view label {
+    margin-right: 0.5rem;
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.settings-view select, .settings-view input[type="text"], .settings-view input[type="password"] {
+    padding: 0.3rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--input-bg);
+    color: var(--text-color);
+    margin-left: 0.3rem;
+    width: calc(100% - 1rem); /* Adjust width */
+}
+
+/* --- Error Display --- */
+.error-display {
+    padding: 20px;
+    border: 2px solid var(--danger-color);
+    color: var(--danger-color);
+    background-color: var(--status-error-bg);
+    margin: 10px;
+    border-radius: 5px;
+}
+
+.error-display h1 {
+    color: var(--danger-color);
+    margin-bottom: 10px;
+}
+
+.error-display pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    background-color: var(--bg-color);
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    max-height: 300px;
+    overflow-y: auto;
+}
