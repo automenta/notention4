@@ -6,6 +6,8 @@
 
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
+import { InlineProperty } from './InlineProperty.js'; // Import the new Node
+
 // Ensure lit is imported correctly based on your setup
 const { html, render: litRender } = window.lit ?? window.litHtml ?? { html: null, render: null };
 if (!html || !litRender) {
@@ -92,15 +94,33 @@ class TiptapEditor extends AbstractEditorLibrary {
     /** @type {import('@tiptap/core').Editor | null} */
     _tiptapInstance = null;
     _lastSetContentWasIdentical = false; // Optimization flag
+    _dispatch = null; // To pass to NodeView
+    _ontologyService = null; // To pass to NodeView
 
     constructor(selectorOrElement, config) {
         super(selectorOrElement, config);
+        // Store dispatch and ontologyService passed in config
+        this._dispatch = config.dispatch;
+        this._ontologyService = config.ontologyService;
+        if (!this._dispatch || !this._ontologyService) {
+            console.error("TiptapEditor: Missing required config properties: dispatch, ontologyService");
+            // Handle error appropriately, maybe throw or prevent initialization
+        }
         this._initTiptap(config.editorOptions);
     }
 
     _initTiptap(editorOptions = {}) {
         try {
             this._tiptapInstance?.destroy(); // Ensure cleanup if re-initializing
+
+            // --- Pass dispatch and ontologyService to NodeViews via editorProps ---
+            const editorProps = {
+                // Pass custom props needed by NodeViews
+                dispatch: this._dispatch,
+                ontologyService: this._ontologyService,
+                // Include any existing editorProps if needed
+                ...(editorOptions.editorProps || {})
+            };
 
             this._tiptapInstance = new Editor({
                 element: this._element,
@@ -109,14 +129,16 @@ class TiptapEditor extends AbstractEditorLibrary {
                         history: editorOptions.history ?? true,
                         // Add other StarterKit options here if needed
                     }),
+                    InlineProperty, // Add our custom node extension
                     // Add more extensions like Placeholder, Link, etc.
                     ...(editorOptions.extensions || [])
                 ],
                 content: this._content,
                 editable: editorOptions.editable ?? true,
                 autofocus: editorOptions.autofocus ?? false,
+                editorProps: editorProps, // Pass the props here
 
-                onUpdate: ({editor}) => {
+                onUpdate: ({ editor }) => {
                     if (this._isUpdatingInternally) return; // Prevent loops during programmatic updates
 
                     const newContent = this.getContent(); // Use own method
