@@ -468,7 +468,7 @@ export const RichTextEditorPlugin = {
                 parts.push(html`
                     <span class="inline-property"
                           data-property-key="${propertyName}"
-                          title="${propertyName}"
+                          title="${propertyName} (click to edit)"
                           @click="${(event) => startInlinePropertyEdit(event, propertyName, propertyValue, noteId)}"
                           style="background-color: lightgoldenrodyellow; border: 1px dotted lightgray; padding: 0 2px; cursor: pointer; border-radius: 2px;">
                         ${propertyValue}
@@ -515,10 +515,38 @@ export const RichTextEditorPlugin = {
                     if (mountPoint) {
                         litRender(renderNoteContentWithProperties(state.notes[currentNoteId]?.content || '', currentNoteId, state.notes[currentNoteId]?.pluginData?.properties?.properties || []), mountPoint); // Pass propertiesData
                     }
-                });
+            const newValue = getInputPropertyValue(inputElement, currentPropType); // Helper function
+            const propKey = blurEvent.target.dataset.propertyKey;
+            const currentNoteId = blurEvent.target.dataset.noteId;
+ 
+            dispatch({
+                type: 'PROPERTY_UPDATE',
+                payload: {
+                    noteId: currentNoteId,
+                    propertyId: propertiesData.find(p => p.key === propKey)?.id,
+                    changes: {
+                        value: newValue,
+                        type: currentPropType
+                    }
+                }
             });
-
-            inputElement.addEventListener('keydown', (keydownEvent) => {
+ 
+            requestAnimationFrame(() => {
+                const mountPoint = document.getElementById('editor-mount-point');
+                if (mountPoint) {
+                    litRender(renderNoteContentWithProperties(state.notes[currentNoteId]?.content || '', currentNoteId), mountPoint);
+                }
+            });
+        });
+ 
+        inputElement.addEventListener('change', (changeEvent) => { // For types like checkbox, select, range, date, time, datetime-local
+            if (currentPropType === 'boolean' || currentPropType === 'select' || currentPropType === 'range' || currentPropType === 'date' || currentPropType === 'time' || currentPropType === 'datetime-local') {
+                inputElement.blur(); // Trigger blur to save on change for these types
+            }
+        });
+ 
+ 
+        inputElement.addEventListener('keydown', (keydownEvent) => {
                 if (keydownEvent.key === 'Enter') {
                     inputElement.blur();
                 } else if (keydownEvent.key === 'Escape') {
