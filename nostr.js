@@ -87,7 +87,7 @@ function generateRandomBytes(length) { /* ... (Implementation unchanged) ... */
 // Nsec/Hex Conversion Helpers (Using nostr-tools)
 function nsecToHex(nsec) { /* ... (Implementation unchanged) ... */
     try {
-        const {type, data} = NostrTools.nip19.decode(nsec);
+        const {type, data} = nip19.decode(nsec);
         if (type !== 'nsec') throw new Error("Not an nsec key");
         return data;
     } catch (e) {
@@ -99,7 +99,7 @@ function nsecToHex(nsec) { /* ... (Implementation unchanged) ... */
 function bytesToNsec(bytes) { /* ... (Implementation unchanged) ... */
     try {
         const hex = bytesToHex(bytes);
-        return NostrTools.nip19.nsecEncode(hex);
+        return nip19.nsecEncode(hex);
     } catch (e) {
         console.error("Failed to encode nsec:", e);
         throw new Error("Failed to encode private key to nsec format.");
@@ -152,12 +152,6 @@ export const NostrPlugin = {
 
     init(coreAPI) {
         this.coreAPI = coreAPI;
-        if (typeof NostrTools === 'undefined') {
-            console.error("NostrPlugin Critical Error: nostr-tools library not found.");
-            this._identityStatus = 'error';
-            this._identityError = "Nostr library missing";
-            this._updateIdentityStatus('error', {error: this._identityError});
-        }
         this.matcherService = coreAPI.getService('MatcherService');
         this._relayPool = null;
         this._poolSubscriptions = new Map();
@@ -288,7 +282,7 @@ export const NostrPlugin = {
             const ciphertextBytes = decodeBase64(encryptedNsec.ciphertext);
             const decryptedPrivateKeyBytes = await decrypt(derivedKey, ivBytes, ciphertextBytes);
             const hexPrivKey = bytesToHex(decryptedPrivateKeyBytes);
-            const derivedPubkey = NostrTools.getPublicKey(hexPrivKey);
+            const derivedPubkey = getPublicKey(hexPrivKey);
             if (derivedPubkey !== pubkey) throw new Error("Decryption failed: Public key mismatch.");
 
             // --- Success ---
@@ -347,7 +341,7 @@ export const NostrPlugin = {
         try {
             // ... (Key generation, encryption, data prep remain the same) ...
             hexPrivKey = nsecToHex(nsec);
-            pubkey = NostrTools.getPublicKey(hexPrivKey);
+            pubkey = getPublicKey(hexPrivKey);
             const privateKeyBytes = hexToBytes(hexPrivKey);
             const salt = generateRandomBytes(NOSTR_CRYPTO_CONFIG.saltLengthBytes);
             const iv = generateRandomBytes(NOSTR_CRYPTO_CONFIG.aes.ivLengthBytes);
@@ -494,7 +488,7 @@ export const NostrPlugin = {
 
                 // Ensure pool exists, pass EOSE timeout from config
                 if (!NostrPlugin._relayPool) {
-                    NostrPlugin._relayPool = new NostrTools.SimplePool({eoseSubTimeout: NostrPlugin._config.eoseTimeout});
+                    NostrPlugin._relayPool = new SimplePool({eoseSubTimeout: NostrPlugin._config.eoseTimeout});
                 }
 
                 // Simulate connection establishment delay / success check
@@ -548,7 +542,7 @@ export const NostrPlugin = {
                 try {
                     eventTemplate.tags = eventTemplate.tags || [];
                     eventTemplate.created_at = eventTemplate.created_at || Math.floor(Date.now() / 1000);
-                    const signedEvent = NostrTools.finalizeEvent(eventTemplate, NostrPlugin._decryptedHexPrivKey);
+                    const signedEvent = finalizeEvent(eventTemplate, NostrPlugin._decryptedHexPrivKey);
                     NostrPlugin._startAutoLockTimer();
                     return signedEvent;
                 } catch (error) {
@@ -627,7 +621,7 @@ export const NostrPlugin = {
             getPublicKey: () => {
                 if (NostrPlugin._identityStatus === 'unlocked' && NostrPlugin._decryptedHexPrivKey) {
                     try {
-                        return NostrTools.getPublicKey(NostrPlugin._decryptedHexPrivKey);
+                        return getPublicKey(NostrPlugin._decryptedHexPrivKey);
                     } catch (e) {
                         console.error("Error deriving pubkey:", e);
                     }
@@ -1101,8 +1095,8 @@ export const NostrPlugin = {
                 const handleGenerateNewKey = async () => {
                     try {
                         if (typeof NostrTools?.generatePrivateKey !== 'function') throw new Error("nostrTools func missing");
-                        const sk = NostrTools.generatePrivateKey();
-                        const nsec = NostrTools.nip19.nsecEncode(sk);
+                        const sk = generatePrivateKey();
+                        const nsec = nip19.nsecEncode(sk);
                         const input = document.getElementById('nostr-nsec');
                         if (input) input.value = nsec;
                         coreAPI.showToast("New key generated.", "success");
