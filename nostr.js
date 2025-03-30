@@ -8,7 +8,8 @@
 // - UI Slot constants
 
 import {Utils} from "./util.js"; const debounce = Utils.debounce;
-import {SimplePool, getEventHash, getPublicKey} from 'nostr-tools/pool'
+import {SimplePool} from 'nostr-tools/pool'
+import {getEventHash, getPublicKey} from 'nostr-tools/pure'
 import {
     SLOT_APP_STATUS_BAR,
     SLOT_EDITOR_HEADER_ACTIONS,
