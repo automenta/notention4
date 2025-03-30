@@ -232,14 +232,15 @@ export const SemanticParserPlugin = {
         return {
             [SLOT_EDITOR_BELOW_CONTENT]: (props) => {
                 const {state, dispatch, noteId, html} = props;
-                const suggestions = state.pluginRuntimeState?.parser?.suggestions?.[noteId] || [];
-                const pendingSuggestions = suggestions.filter(s => s.status === 'pending');
+                const allSuggestions = state.pluginRuntimeState?.parser?.suggestions?.[noteId] || [];
+                const pendingSuggestions = allSuggestions.filter(s => s.status === 'pending');
+                const handledSuggestions = allSuggestions.filter(s => s.status === 'confirmed' || s.status === 'ignored');
 
-                if (pendingSuggestions.length === 0) {
-                    return ''; // Render nothing if no pending suggestions
+                if (pendingSuggestions.length === 0 && handledSuggestions.length === 0) {
+                    return ''; // Render nothing if no suggestions at all
                 }
 
-                // --- Event Handlers for UI ---
+                // --- Event Handlers for UI (Only needed for pending suggestions) ---
                 const handleConfirm = (suggestion) => {
                     // Dispatch action intercepted by middleware to add/update property
                     dispatch({
@@ -256,29 +257,43 @@ export const SemanticParserPlugin = {
                 };
 
                 // --- Render Logic ---
+                const renderSuggestion = (s, isPending) => html`
+                    <div class="suggestion-item ${s.status}">
+                        <span class="suggestion-text">
+                            ${isPending ? 'Add property:' : (s.status === 'confirmed' ? '✓ Added:' : '✕ Ignored:')}
+                            <strong class="suggestion-key">${s.property.key}</strong> = <em class="suggestion-value">${s.displayText || s.property.value}</em>
+                            <span class="suggestion-source" title="Source: ${s.source}${s.confidence ? ` | Confidence: ${Math.round(s.confidence * 100)}%` : ''}">
+                                (${s.source.replace('heuristic ', 'H:')}${s.confidence ? ` ${Math.round(s.confidence * 100)}%` : ''})
+                            </span>
+                        </span>
+                        ${isPending ? html`
+                            <div class="suggestion-actions">
+                                <button class="suggestion-confirm" @click=${() => handleConfirm(s)} title="Confirm">✓</button>
+                                <button class="suggestion-ignore" @click=${() => handleIgnore(s.id)} title="Ignore">✕</button>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+
                 return html`
                     <div class="parser-suggestions-area plugin-section">
-                        <h4 class="plugin-section-title">Suggestions</h4>
-                        <div class="suggestions-list">
-                            ${pendingSuggestions.map(s => html`
-                                <div class="suggestion-item">
-                                    <span class="suggestion-text">
-                                        Add property: <strong class="suggestion-key">${s.property.key}</strong> = <em class="suggestion-value">${s.displayText || s.property.value}</em>?
-                                        <span class="suggestion-source" title="Source: ${s.source}${s.confidence ? ` | Confidence: ${Math.round(s.confidence * 100)}%` : ''}">
-                                            (${s.source.replace('heuristic ', 'H:')}${s.confidence ? ` ${Math.round(s.confidence * 100)}%` : ''})
-                                        </span>
-                                    </span>
-                                    <div class="suggestion-actions">
-                                        <button class="suggestion-confirm" @click=${() => handleConfirm(s)}
-                                                title="Confirm">✓
-                                        </button>
-                                        <button class="suggestion-ignore" @click=${() => handleIgnore(s.id)}
-                                                title="Ignore">✕
-                                        </button>
-                                    </div>
+                        ${pendingSuggestions.length > 0 ? html`
+                            <h4 class="plugin-section-title">Suggestions</h4>
+                            <div class="suggestions-list pending">
+                                ${pendingSuggestions.map(s => renderSuggestion(s, true))}
+                            </div>
+                        ` : ''}
+
+                        ${handledSuggestions.length > 0 ? html`
+                            <details class="handled-suggestions-section">
+                                <summary class="plugin-section-title handled-title">
+                                    Handled Suggestions (${handledSuggestions.length})
+                                </summary>
+                                <div class="suggestions-list handled">
+                                    ${handledSuggestions.map(s => renderSuggestion(s, false))}
                                 </div>
-                            `)}
-                        </div>
+                            </details>
+                        ` : ''}
                     </div>
                 `;
             }

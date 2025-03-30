@@ -21,7 +21,27 @@
     border-radius: 4px;
     border: 1px solid var(--border-color);
     font-size: 0.9em;
+    transition: opacity 0.3s ease; /* Add transition for handled items */
 }
+
+/* Styles for handled suggestions */
+.suggestion-item.confirmed,
+.suggestion-item.ignored {
+    opacity: 0.6;
+    background-color: var(--background-color); /* Less prominent background */
+}
+
+.suggestion-item.confirmed .suggestion-key {
+    color: var(--success-color); /* Green key for confirmed */
+}
+.suggestion-item.ignored .suggestion-key {
+    color: var(--danger-color); /* Red key for ignored */
+    text-decoration: line-through;
+}
+.suggestion-item.ignored .suggestion-value {
+    text-decoration: line-through;
+}
+
 
 .suggestion-text {
     flex-grow: 1;
@@ -81,4 +101,26 @@
 
 .suggestion-ignore:hover {
     color: var(--danger-color-darker); /* Define this variable */
+}
+
+/* Section for handled suggestions */
+.handled-suggestions-section {
+    margin-top: 15px;
+    border-top: 1px dotted var(--border-color);
+    padding-top: 5px;
+}
+
+.handled-suggestions-section summary {
+    cursor: pointer;
+    font-size: 0.9em; /* Slightly smaller title */
+    color: var(--secondary-text-color);
+    margin-bottom: 5px;
+}
+
+.handled-suggestions-section summary:hover {
+    color: var(--primary-text-color);
+}
+
+.suggestions-list.handled {
+    margin-top: 5px;
 }
