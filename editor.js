@@ -301,12 +301,16 @@ class TiptapEditor extends AbstractEditorLibrary {
             if (name === 'undo') return this._tiptapInstance.can().undo();
             if (name === 'redo') return this._tiptapInstance.can().redo();
             // Add specific checks for other commands if needed for disabling buttons accurately
-            // Example: return this._tiptapInstance.can().toggleBold?.();
+            // Example: return this._tiptapInstance.can().can().toggleBold?.();
             return true; // Default to true if specific 'can' check isn't implemented
         } catch (error) {
-            console.error(`TiptapEditor.can Error for ${name}:`, error);
+            this._logError(`can for ${name}`, error);
             return false;
         }
+    }
+
+    _logError(methodName, error) {
+        console.error(`TiptapEditor.${methodName} Error:`, error);
     }
 
     inactive() {
