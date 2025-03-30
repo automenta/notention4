@@ -37,14 +37,14 @@ export const Utils = {
                 lastRan = Date.now();
             } else {
                 clearTimeout(lastFunc);
-                lastFunc = setTimeout(function () {
+                lastFunc = setTimeout(() => {
                     if ((Date.now() - lastRan) >= limit) {
                         func.apply(context, args);
                         lastRan = Date.now();
                     }
                 }, limit - (Date.now() - lastRan));
             }
-        }
+        };
     },
 
     sanitizeHTML: (dirtyHTMLString) => {

@@ -28,37 +28,30 @@ export const LLMPlugin = {
     _coreAPI: null,
     _unsubscribe: null,
     _langchain: null,
-
-    // --- UI State ---
-    _uiSaveStatus: 'idle', // 'idle', 'saving', 'saved'
+    _uiSaveStatus: 'idle',
     _saveStatusTimeout: null,
-    _debouncedSaveFunctions: {}, // Store debounced functions per field
+    _debouncedSaveFunctions: {},
 
     init(coreAPI) {
         this._coreAPI = coreAPI;
         console.log(`LLMPlugin: Initializing v${this.version}`);
-
-        this._loadConfig(); // Load initial config
+        this._loadConfig();
 
         // Check config after initial load
         this._checkEssentialConfig();
 
         // Subscribe to settings changes to reload config if necessary
         // TODO: Enhancement #0 might make this subscription redundant or need modification
-        // if settings are only driven by note properties. Investigate if core settings are still relevant.
         this._unsubscribe = coreAPI.subscribe((newState, oldState) => {
-            // For Enhancement #0, we also need to react to PROPERTY changes on the settings note
             const settingsNote = this._coreAPI.getSystemNoteByType(`config/settings/${this.id}`);
             const oldSettingsNote = oldState.notes?.[settingsNote?.id];
             const newSettingsNote = newState.notes?.[settingsNote?.id];
 
-            // Basic check: Did note properties change?
             const propsChanged = settingsNote && (
                 !oldSettingsNote ||
                 JSON.stringify(newSettingsNote?.properties) !== JSON.stringify(oldSettingsNote?.properties)
             );
 
-            // Also check if the note itself was created/deleted
             const noteExistenceChanged = (!oldState.notes?.[settingsNote?.id] && newState.notes?.[settingsNote?.id]) ||
                 (oldState.notes?.[settingsNote?.id] && !newState.notes?.[settingsNote?.id]);
 
@@ -67,24 +60,12 @@ export const LLMPlugin = {
                 console.log("LLMPlugin: Detected settings note change, reloading config.");
                 this._loadConfig();
                 this._checkEssentialConfig();
-                // Trigger UI refresh if settings panel is visible
-                //this._coreAPI.requestRender(); // Request a general re-render
             }
-            // Keep original core settings check? Maybe remove if fully property-driven.
-            // const newSettings = coreAPI.getPluginSettings(this.id);
-            // const oldSettings = oldState.settings?.plugins?.[this.id] || {};
-            // if (JSON.stringify(newSettings) !== JSON.stringify(oldSettings)) {
-            //     console.log("LLMPlugin: Detected config change from state, reloading internal _config.");
-            //     this._loadConfig();
-            //     this._checkEssentialConfig();
-            // }
         });
     },
 
 
-    // Loads config from System Note and Core Settings
     _loadConfig() {
-        // Enhancement #0: Load from System Note Properties
         const settingsNote = this._coreAPI.getSystemNoteByType('config/settings/llm');
         let noteSettings = {};
         if (settingsNote) {
@@ -100,32 +81,20 @@ export const LLMPlugin = {
             console.log("LLMPlugin: System Note 'config/llm' not found or empty.");
         }
 
-        // Merge: Previous State <- Note Properties
-        // Settings Panel settings are now *driven* by the note properties.
         const mergedConfig = {
-            // Start with previous config state to preserve non-setting values if any
             ...this._config,
-            // Load defaults from ontology if value is missing from noteSettings
-            ...(this._getDefaultSettings()), // Get defaults from ontology definition
-            ...(noteSettings || {}), // Override with note settings
-            // 'settings' from core state is no longer used for config values
-            // ...settings // DEPRECATED by Enhancement #0
-
-
+            ...(this._getDefaultSettings()),
+            ...(noteSettings || {}),
         };
 
-        // Update internal config state
         this._config = {
             apiKey: mergedConfig.apiKey || null,
             endpointUrl: mergedConfig.endpointUrl || null,
             modelName: mergedConfig.modelName || null,
             defaultTemperature: mergedConfig.defaultTemperature ?? 0.7,
-            // Ensure numeric conversion for props that might be strings initially
             defaultMaxTokens: mergedConfig.defaultMaxTokens ? parseInt(mergedConfig.defaultMaxTokens, 10) : 1024,
-
         };
 
-        // Clear sensitive data from log output
         const logConfig = {...this._config};
         if (logConfig.apiKey && logConfig.apiKey.length > 3) {
             logConfig.apiKey = `********${logConfig.apiKey.slice(-3)}`;
@@ -190,7 +159,6 @@ export const LLMPlugin = {
 
 
     _isLocalhostEndpoint(url) {
-        // (Keep existing implementation)
         if (!url) return false;
         try {
             const parsedUrl = new URL(url);
@@ -201,9 +169,7 @@ export const LLMPlugin = {
         }
     },
 
-    // --- Langchain Model Instantiation ---
     _getChatModelInstance(callOptions = {}) {
-        // (Keep existing implementation)
         const modelName = callOptions.model || this._config.modelName;
         const temperature = callOptions.temperature ?? this._config.defaultTemperature;
         const maxTokens = callOptions.max_tokens ?? this._config.defaultMaxTokens;
@@ -214,12 +180,11 @@ export const LLMPlugin = {
             this._coreAPI.showGlobalStatus("LLM Config Error: Model Name required.", "error", 5000);
             throw new Error("LLM Config Error: Model Name is required.");
         }
-        // ... rest of the function
         const modelConfig = {
             model: modelName,
             temperature: temperature,
             maxTokens: maxTokens,
-            apiKey: apiKey || undefined, // Pass undefined if null/empty
+            apiKey: apiKey || undefined,
             streaming: callOptions.stream || false,
         };
 
@@ -240,7 +205,6 @@ export const LLMPlugin = {
     },
 
     _getEmbeddingsInstance(callOptions = {}) {
-        // (Keep existing implementation)
         const modelName = callOptions.model || this._config.embeddingModelName || "text-embedding-ada-002";
         const apiKey = this._config.apiKey;
         const baseURL = this._config.embeddingEndpointUrl || this._config.endpointUrl;
@@ -443,14 +407,12 @@ export const LLMPlugin = {
         };
     },
 
-    // --- UI Slot Registration ---
     registerUISlots() {
         return {
-            // --- REWRITTEN for Enhancement #0 ---
             [SLOT_SETTINGS_PANEL_SECTION]: (props) => {
                 const {state, dispatch} = props;
                 const pluginId = this.id;
-                const settingsOntology = this.getSettingsOntology(); // Get own schema
+                const settingsOntology = this.getSettingsOntology();
                 const settingsNote = this._coreAPI.getSystemNoteByType(`config/settings/${pluginId}`);
                 const propsApi = this._coreAPI.getPluginAPI('properties');
                 const currentProperties = settingsNote ? (propsApi?.getPropertiesForNote(settingsNote.id) || []) : [];
@@ -612,34 +574,13 @@ export const LLMPlugin = {
                         })}
                         <!-- Old hardcoded fields removed -->
                             <!--
-                        <div class="setting-item">...</div>
-                        <div class="setting-item">...</div>
-                        <div class="setting-item">...</div>
-                                    min="0" max="2" step="0.1"
-                                    .value=${displayConfig.defaultTemperature}
-                                    @input=${(e) => handleNumberInput('defaultTemperature', e.target.value, true)}
-                            >
-                            <span class="field-hint">Controls randomness (0=deterministic, ~0.7=balanced, >1=more random). Default: 0.7</span>
                         </div>
-
-                        <div class="setting-item">
-                            <label for="llm-defaultMaxTokens">Default Max Tokens:</label>
-                            <input
-                                    type="number" id="llm-defaultMaxTokens"
-                                    min="1" step="1"
-                                    placeholder="e.g. 1024"
-                                    .value=${displayConfig.defaultMaxTokens}
-                                    @input=${(e) => handleNumberInput('defaultMaxTokens', e.target.value, false)}
-                            >
-                            <span class="field-hint">Max completion length. Default: 1024. Check model limits.</span>
-                        -->
-                    </div>
                     </div>
                 `;
             }
-        } // end SLOT_SETTINGS_PANEL_SECTION
-    } // end return
-}; // end registerUISlots
+        }
+    }
+};
 
 // Optional cleanup remains the same
 LLMPlugin.cleanup = function() {

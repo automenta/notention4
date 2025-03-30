@@ -29,12 +29,9 @@ export const PropertiesPlugin = {
                     if (draft.noteOrder.length > 0) {
                         const newNoteId = draft.noteOrder[0];
                         const note = draft.notes[newNoteId];
+                        if (note?.pluginData?.[pluginId]) return; // Already initialized
                         if (note) {
-                            // Ensure pluginData structure exists before adding properties
-                            if (!note.pluginData) {
-                                note.pluginData = {};
-                            }
-                            // Initialize this plugin's specific data structure
+                            if (!note.pluginData) note.pluginData = {};
                             if (!note.pluginData[pluginId]) {
                                 note.pluginData[pluginId] = {properties: []};
                                 // console.log(`PropertiesPlugin: Initialized data for new note ${newNoteId}`);
@@ -294,13 +291,10 @@ export const PropertiesPlugin = {
                                .value=${currentPriority} @input=${(e) => handlePriorityChange(e.target.value)}
                                style="vertical-align: middle; width: 100px;">
                         <span style="font-size: 0.9em; margin-left: 5px;">(${currentPriority})</span>
-
-                        + Add Property
                         </button>
                     </div>
                 `;
             }
-            // We could add a popover/modal component registration here later if needed.
         };
     },
 

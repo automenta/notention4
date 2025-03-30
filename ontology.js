@@ -50,30 +50,25 @@ export const OntologyPlugin = {
         console.log("OntologyPlugin: Initializing...");
         this._loadOntology(); // Attempt initial load
 
-        // Subscribe to state changes to detect updates to the config note
         this.coreAPI.subscribe((newState, oldState) => {
             const newConfigNote = this.coreAPI.getSystemNoteByType('config/ontology');
             const oldConfigNote = oldState.notes[this._configNoteId];
 
-            // Condition 1: Note exists now, didn't before, or ID changed (shouldn't happen often), or timestamp changed
             if (newConfigNote && (!this._configNoteId || newConfigNote.id !== this._configNoteId || newConfigNote.updatedAt !== oldConfigNote?.updatedAt)) {
                 if (newConfigNote.updatedAt !== this._configNoteLastUpdate) {
                     console.log(`OntologyPlugin: Config note changed (ID: ${newConfigNote.id}, Updated: ${newConfigNote.updatedAt}), reloading...`);
                     this._loadOntology(newConfigNote);
                 }
-                // Condition 2: Note existed before, but doesn't now
             } else if (!newConfigNote && this._configNoteId) {
                 console.log("OntologyPlugin: Config note deleted, clearing ontology.");
-                if (this._ontologyData !== null) { // Only publish/clear if data existed
+                if (this._ontologyData !== null) {
                     this._ontologyData = null;
                     this._configNoteId = null;
                     this._configNoteLastUpdate = 0;
-                    this.coreAPI.publishEvent('ONTOLOGY_UNLOADED', {}); // Notify others data is gone
+                    this.coreAPI.publishEvent('ONTOLOGY_UNLOADED', {});
                     console.log("OntologyPlugin: Ontology data cleared.");
                 }
             }
-            // Note: If the note content is merely saved without changing updatedAt, this won't trigger a reload.
-            // This relies on the core correctly updating the timestamp on relevant changes.
         });
         console.log("OntologyPlugin: Initialized and subscribed to state changes.");
     },

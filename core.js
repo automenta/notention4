@@ -7,18 +7,7 @@ import {produce} from "immer";
 //Util imports
 import {Utils} from './util.js';
 import {EventBus} from './event.js';
-import {
-    SLOT_APP_STATUS_BAR,
-    SLOT_EDITOR_BELOW_CONTENT,
-    SLOT_EDITOR_CONTENT_AREA,
-    SLOT_EDITOR_HEADER_ACTIONS,
-    SLOT_EDITOR_PLUGIN_PANELS,
-    SLOT_NOTE_LIST_ITEM_META,
-    SLOT_NOTE_LIST_ITEM_STATUS,
-    SLOT_SETTINGS_PANEL_SECTION,
-    SLOT_SIDEBAR_HEADER,
-    SLOT_SIDEBAR_NOTE_LIST_ACTIONS
-} from './ui.js';
+import {SLOT_APP_STATUS_BAR, SLOT_EDITOR_BELOW_CONTENT, SLOT_EDITOR_CONTENT_AREA, SLOT_EDITOR_HEADER_ACTIONS, SLOT_EDITOR_PLUGIN_PANELS, SLOT_NOTE_LIST_ITEM_META, SLOT_NOTE_LIST_ITEM_STATUS, SLOT_SETTINGS_PANEL_SECTION, SLOT_SIDEBAR_HEADER, SLOT_SIDEBAR_NOTE_LIST_ACTIONS} from './ui.js';
 
 
 //Plugin imports
@@ -291,13 +280,11 @@ class PersistenceService {
     }
 }
 
-// --- 5. Core UI Renderer (with VDOM - lit-html) ---
 class UIRenderer {
     _stateManager = null;
     _rootElement = null;
-    _slotRegistry = new Map(); // Map<slotName, Array<{pluginId, renderFn}>>
-    _scrollPositions = {}; // Store scroll positions before render
-    // --- VDOM Rendering Functions ---
+    _slotRegistry = new Map();
+    _scrollPositions = {};
 
     constructor(stateManager, rootElementId = 'app') {
         this._stateManager = stateManager;
@@ -402,7 +389,7 @@ class UIRenderer {
             const note = notes[id];
             if (!note || note.isArchived) return false;
             if (!searchTerm) return true;
-            return note.name.toLowerCase().includes(lowerSearchTerm) || note.content.toLowerCase().includes(lowerSearchTerm);
+            return (note.name.toLowerCase().includes(lowerSearchTerm) || note.content.toLowerCase().includes(lowerSearchTerm));
         });
 
         if (filteredNoteIds.length === 0) {
@@ -440,14 +427,10 @@ class UIRenderer {
     }
 
     _renderEditorArea(state, note) {
-        // Render the slot content for the editor area
         const slotContent = this._renderSlot(state, SLOT_EDITOR_CONTENT_AREA, note.id);
-
-        // Check if the slot provided actual content.
-        // lit-html renders arrays of templates, and might return empty strings/arrays if nothing was rendered.
         const hasPluginContent = Array.isArray(slotContent)
-            ? slotContent.some(item => item != null && item !== '') // Check if array has non-empty items
-            : (slotContent != null && slotContent !== ''); // Check for single non-empty item
+            ? slotContent.some(item => item != null && item !== '')
+            : (slotContent != null && slotContent !== '');
 
         return html`
             <div class="editor-header" data-note-id=${note.id}>
@@ -461,36 +444,31 @@ class UIRenderer {
                 >
                 <div class="editor-header-actions" data-slot="${SLOT_EDITOR_HEADER_ACTIONS}" data-note-id=${note.id}>
                     <button class="core-archive-note" @click=${() => this._handleArchiveNote(note.id)}
-                            title="Archive Note" aria-label="Archive Note">Archive
-                    </button>
+                            title="Archive Note" aria-label="Archive Note">Archive</button>
                     <button class="core-delete-note" @click=${() => this._handleDeleteNote(note.id, note.name)}
-                            title="Delete Note" aria-label="Delete Note">Delete
-                    </button>
+                            title="Delete Note" aria-label="Delete Note">Delete</button>
                     ${this._renderSlot(state, SLOT_EDITOR_HEADER_ACTIONS, note.id)}
                 </div>
             </div>
             <div class="editor-content-wrapper"
                  style="flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;">
-                ${hasPluginContent
-                        ? html`
-                            <div class="editor-content-area plugin-controlled" data-slot="${SLOT_EDITOR_CONTENT_AREA}"
-                                 data-note-id=${note.id}
-                                 style="flex-grow: 1; display: flex; flex-direction: column; overflow-y: auto;">
-                                ${slotContent}
-                            </div>`
-                        : html`
-                            <div class="editor-content-area core-controlled"
-                                 style="flex-grow: 1; display: flex; flex-direction: column;">
-                           <textarea
-                                   class="core-content-editor"
-                                   aria-label="Note Content"
-                                   placeholder="Start writing..."
-                                   .value=${note.content}
-                                   @input=${(e) => this._handleContentInput(note.id, e.target.value)}
-                                   style="flex-grow: 1; width: 100%; border: none; padding: 10px; font-family: inherit; font-size: inherit; resize: none; outline: none;"
-                           ></textarea>
-                            </div>`
-                }
+                ${hasPluginContent ? html`
+                    <div class="editor-content-area plugin-controlled" data-slot="${SLOT_EDITOR_CONTENT_AREA}"
+                         data-note-id=${note.id}
+                         style="flex-grow: 1; display: flex; flex-direction: column; overflow-y: auto;">
+                        ${slotContent}
+                    </div>` : html`
+                    <div class="editor-content-area core-controlled"
+                         style="flex-grow: 1; display: flex; flex-direction: column;">
+                        <textarea
+                                class="core-content-editor"
+                                aria-label="Note Content"
+                                placeholder="Start writing..."
+                                .value=${note.content}
+                                @input=${(e) => this._handleContentInput(note.id, e.target.value)}
+                                style="flex-grow: 1; width: 100%; border: none; padding: 10px; font-family: inherit; font-size: inherit; resize: none; outline: none;"
+                        ></textarea>
+                    </div>`}
             </div>
             <div class="editor-below-content" data-slot="${SLOT_EDITOR_BELOW_CONTENT}" data-note-id=${note.id}>
                 ${this._renderSlot(state, SLOT_EDITOR_BELOW_CONTENT, note.id)}
@@ -501,16 +479,16 @@ class UIRenderer {
         `;
     }
 
-    // --- Event Handlers (Defined on the class) ---
-
     _renderWelcomeMessage(state) {
         const noteCount = state.noteOrder.filter(id => !state.notes[id]?.isArchived).length;
         const message = noteCount > 0
             ? `Select a note or click "➕ Add Note".`
             : `Click "➕ Add Note" to get started!`;
         return html`
-            <div class="welcome-message"><h2>Welcome!</h2>
-                <p>${message}</p></div>`;
+            <div class="welcome-message">
+                <h2>Welcome!</h2>
+                <p>${message}</p>
+            </div>`;
     }
 
     _renderSettingsModal(state) {
@@ -547,12 +525,6 @@ class UIRenderer {
                                 : ''}
                     </div>
                 </div>
-                <div class="settings-advanced"
-                     style="margin-top: 20px; padding-top: 10px; border-top: 1px dashed var(--border-color)">
-                    <h3>Advanced</h3>
-                    <button id="core-clear-state" @click=${this._handleClearState}
-                            style="background-color: var(--danger-color);">Clear All Local Data
-                    </button>
                 </div>
             </div>
         `;
@@ -659,15 +631,14 @@ class UIRenderer {
     }
 }
 
-// --- 6. Core Plugin Manager (with Topological Sort) ---
 class PluginManager {
-    _pluginRegistry = new Map(); // Map<pluginId, { definition, instance, status, error?, api? }>
+    _pluginRegistry = new Map();
     _pluginLoadOrder = [];
     _coreAPI = null;
     _stateManager = null;
     _uiRenderer = null;
     _eventBus = null;
-    _services = new Map(); // Map<serviceName, { instance, providerPluginId }>
+    _services = new Map();
 
     constructor(stateManager, uiRenderer, eventBus) {
         this._stateManager = stateManager;
@@ -893,13 +864,12 @@ class PluginManager {
     }
 }
 
-// --- 7. Core API (Interface for Plugins) ---
 class CoreAPI {
     _stateManager = null;
     _pluginManager = null;
     _uiRenderer = null;
     _eventBus = null;
-    utils = Utils; // Expose core utilities directly
+    utils = Utils;
 
     constructor(stateManager, pluginManager, uiRenderer, eventBus) {
         this._stateManager = stateManager;
@@ -965,41 +935,34 @@ const initialAppState = {
     systemNoteIndex: {}, // { [systemType]: noteId }
     settings: {
         core: {theme: 'light', userId: null, onboardingComplete: false},
-        // plugins: {} // DEPRECATED by Enhancement #0 - Stored in System Notes now
+        // plugins: {}
     },
-    uiState: { // Transient state, reset on load
+    uiState: {
         selectedNoteId: null,
         searchTerm: '',
-        noteListSortMode: 'time', // Added for Enhancement #2 ('time' | 'priority')
+        noteListSortMode: 'time',
         activeModal: null,
-        globalStatus: null, // { message, type, duration }
+        globalStatus: null,
     },
-    pluginRuntimeState: {}, // { [pluginId]: pluginState } - Transient, managed by plugins
-    runtimeCache: {}, // { [cacheKey]: data } - Persisted, managed by plugins
+    pluginRuntimeState: {},
+    runtimeCache: {},
 };
 
-// --- 9. Core Reducer Function (with Immer) ---
 const coreReducer = (draft, action) => {
-    // Mutate the 'draft' object directly. Immer handles immutability.
-    // This reducer ONLY handles core state slices.
     switch (action.type) {
         case 'CORE_STATE_LOADED': {
             const loaded = action.payload.loadedState || {};
-            // Reset state to initial, then merge persisted parts carefully
-            Object.assign(draft, initialAppState); // Reset draft to initial state structure
+            Object.assign(draft, initialAppState);
             draft.notes = loaded.notes || {};
-            draft.noteOrder = Array.isArray(loaded.noteOrder) ? loaded.noteOrder.filter(id => draft.notes[id]) : []; // Ensure order contains valid notes
+            draft.noteOrder = Array.isArray(loaded.noteOrder) ? loaded.noteOrder.filter(id => draft.notes[id]) : [];
             draft.settings.core = {...initialAppState.settings.core, ...(loaded.settings?.core || {})};
-            // draft.settings.plugins = loaded.settings?.plugins || {}; // REMOVED for Enhancement #0
             draft.runtimeCache = loaded.runtimeCache || {};
-            // Rebuild systemNoteIndex from loaded notes
             draft.systemNoteIndex = {};
             Object.values(draft.notes).forEach(note => {
                 if (note.systemType)
                     draft.systemNoteIndex[note.systemType] = note.id;
             });
-            // Transient state (uiState, pluginRuntimeState) remains initial/empty
-            break; // Immer requires breaks or returns
+            break;
         }
 
         case 'CORE_ADD_NOTE': {
@@ -1190,17 +1153,13 @@ const coreReducer = (draft, action) => {
         }
 
         default:
-            // If action is not recognized by core, draft remains unchanged by this reducer.
-            // Plugin reducers might still handle it.
             break;
     }
-    // No return value needed from reducer when using Immer's produce
 };
 
-// --- 10. Application Initialization (`main` async function) ---
 async function main() {
     console.log("%cInitializing Core...", "color: orange; font-size: 150%; font-weight: bold;");
-    let api = null; // To expose for debugging
+    let api = null;
 
     try {
         // Initialize Core Services
@@ -1241,10 +1200,8 @@ async function main() {
         // if (!stateManager.getState().settings.core.onboardingComplete) {
         //     stateManager.dispatch({ type: 'ONBOARDING_CHECK_START' }); // Action handled by onboarding plugin
         // }
-
     } catch (error) {
         console.error("%cCRITICAL ERROR DURING INITIALIZATION:", "color: red; font-weight: bold;", error);
-        // Display error to user in the main app container (fallback if global handler failed)
         const appRoot = document.getElementById('app');
         if (appRoot) {
             render(html`
@@ -1259,5 +1216,4 @@ async function main() {
 }
 
 
-/* START */
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', main); else main(); // DOM already ready
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', main); else main();

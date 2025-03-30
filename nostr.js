@@ -16,10 +16,7 @@ import {
     SLOT_NOTE_LIST_ITEM_STATUS,
     SLOT_SETTINGS_PANEL_SECTION
 } from './ui.js'; // Adjust path as needed
-import {Utils} from "./util.js";
 import "./nostr.css";
-
-const debounce = Utils.debounce;
 
 const NostrTools = {
     getEventHash, getPublicKey, SimplePool
@@ -214,7 +211,6 @@ export const NostrPlugin = {
             payload: {relays: this._config.relays, autoLockMinutes: this._config.autoLockMinutes}
         });
 
-        // 2. Check Identity
         const identityNote = this.coreAPI.getSystemNoteByType('config/nostr/identity');
         try {
             if (identityNote?.content?.encryptedNsec?.ciphertext && identityNote.content.pubkey) {
@@ -532,12 +528,12 @@ export const NostrPlugin = {
             },
 
             disconnect: () => {
-                NostrPlugin._clearAutoLockTimer(); // Clear timer on disconnect
+                NostrPlugin._clearAutoLockTimer();
                 console.log("NostrService: Disconnecting pool...");
                 if (NostrPlugin._relayPool) {
                     NostrPlugin._poolSubscriptions.forEach(sub => {
                         try {
-                            sub.unsub();
+                            sub.unsub()
                         } catch (e) {
                             console.warn("Error unsubscribing during disconnect:", e);
                         }
@@ -633,14 +629,17 @@ export const NostrPlugin = {
                         sub.unsub();
                     } catch (e) {
                         console.warn("Error unsubscribing:", e);
-                    }
+                        } catch (e) {
+                            console.warn("Error unsubscribing:", e);
+                        }
+                    });
                     NostrPlugin._poolSubscriptions.delete(subId);
                 } else {
                     console.warn(`Unknown subId [${subId}]`);
                 }
             },
 
-            getPublicKey: () => {
+            getPublicKey: () =>
                 if (NostrPlugin._identityStatus === 'unlocked' && NostrPlugin._decryptedHexPrivKey) {
                     try {
                         return NostrTools.getPublicKey(NostrPlugin._decryptedHexPrivKey);

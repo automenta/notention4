@@ -9,11 +9,7 @@ import StarterKit from '@tiptap/starter-kit';
 import {html, render as litRender} from 'lit';
 
 import {Utils} from "./util.js";
-// Assuming SLOT_EDITOR_CONTENT_AREA is defined elsewhere (e.g., in ui.js)
-// Example: export const SLOT_EDITOR_CONTENT_AREA = 'editorContentArea';
 import {SLOT_EDITOR_CONTENT_AREA} from './ui.js';
-
-const debounce = Utils.debounce;
 
 // --- Abstract Base Class (Optional but good practice) ---
 class AbstractEditorLibrary {
@@ -488,24 +484,18 @@ export const RichTextEditorPlugin = {
                                         });
                                     }
                                 }, debounceTime),
-                                editorOptions: {
-                                    // Pass any Tiptap specific options from settings here
-                                    // history: editorSettings.enableHistory ?? true,
-                                }
+                                editorOptions: {}
                             });
                             this._currentNoteId = noteId;
                             this._updateToolbarUI(); // Render toolbar after successful init
                             // Optional: Focus after loading/creating
                             // this._editorInstance.focus();
-
                         } catch (error) {
                             console.error(`${this.name}: Failed to initialize Tiptap editor:`, error);
                             mountPoint.innerHTML = `<div style="color: red;">Error initializing editor.</div>`;
-                            this._destroyEditor(); // Ensure cleanup on error
+                            this._destroyEditor();
                         }
-                    }
-                    // --- Update Existing Instance ---
-                    else if (this._editorInstance) {
+                    } else if (this._editorInstance) {
                         const noteChanged = note && this._currentNoteId !== noteId;
                         const editorHasFocus = this._editorInstance.hasFocus();
 
@@ -530,25 +520,18 @@ export const RichTextEditorPlugin = {
                                 // Log potentially skipped update due to focus (for debugging)
                                 // console.log(`${this.name}: Skipped external content update for note ${noteId} because editor has focus.`);
                             }
-                        }
-                        // Scenario 3: No Note Selected (or note deleted while editor active)
-                        else if (!note && this._currentNoteId) {
-                            this._destroyEditor(); // Destroy instance if no note is selected
+                        } else if (!note && this._currentNoteId) {
+                            this._destroyEditor();
                             this._currentNoteId = null;
-                            mountPoint.innerHTML = ''; // Clear mount point
-                            // Toolbar is cleared by _destroyEditor -> _updateToolbarUI
+                            mountPoint.innerHTML = '';
                         }
-                    }
-                    // --- No Instance, No Note ---
-                    else if (!note && !this._editorInstance) {
-                        // Ensure placeholder text is shown if mount point is empty
+                    } else if (!note && !this._editorInstance) {
                         if (!mountPoint.hasChildNodes() && !mountPoint.textContent?.trim()) {
                             mountPoint.innerHTML = `<div style="color: var(--secondary-text-color); padding: 10px;">Select or create a note.</div>`;
                         }
-                        // Ensure toolbar is empty
                         this._updateToolbarUI();
                     }
-                }); // End requestAnimationFrame
+                });
 
                 // --- Render Structure (Toolbar container + Mount Point) ---
                 // The toolbar *content* is rendered dynamically by _updateToolbarUI
