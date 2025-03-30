@@ -261,10 +261,10 @@ export const SemanticParserPlugin = {
                             ${pendingSuggestions.map(s => html`
                                 <div class="suggestion-item">
                                     <span class="suggestion-text">
-                                        Add property: <strong class="suggestion-key">${s.property.key}</strong> = <em
-                                            class="suggestion-value">${s.displayText || s.property.value}</em>?
-                                        <span class="suggestion-source">(${s.source}${s.confidence ? ` ${Math.round(s.confidence * 100)}%` : ''}
-                                            )</span>
+                                        Add property: <strong class="suggestion-key">${s.property.key}</strong> = <em class="suggestion-value">${s.displayText || s.property.value}</em>?
+                                        <span class="suggestion-source" title="Source: ${s.source}${s.confidence ? ` | Confidence: ${Math.round(s.confidence * 100)}%` : ''}">
+                                            (${s.source.replace('heuristic ', 'H:')}${s.confidence ? ` ${Math.round(s.confidence * 100)}%` : ''})
+                                        </span>
                                     </span>
                                     <div class="suggestion-actions">
                                         <button class="suggestion-confirm" @click=${() => handleConfirm(s)}
@@ -381,38 +381,79 @@ export const SemanticParserPlugin = {
 
         const suggestions = [];
         const lines = content.split('\n');
-        // Example: Simple Key: Value pattern (adjust regex as needed)
-        // This regex looks for a line starting with potential key chars, followed by ':', optional space, and captures the rest as value.
+        const ontologyRules = this.ontologyService.getRawData()?.rules || [];
+        const processedIndices = new Set(); // Track indices processed by rules to avoid duplicates
+
+        // 1. Apply Ontology Rules first (more specific)
+        ontologyRules.forEach(rule => {
+            if (!rule.pattern || !rule.type) return; // Skip invalid rules
+
+            try {
+                // Global flag to find all matches in the content
+                const regex = new RegExp(rule.pattern, rule.caseSensitive ? 'g' : 'gi');
+                let match;
+                while ((match = regex.exec(content)) !== null) {
+                    // Avoid processing the same match index multiple times if rules overlap
+                    if (processedIndices.has(match.index)) continue;
+
+                    const matchedValue = match[0]; // The full matched string
+                    // Try to infer a key based on context (e.g., preceding words) - very basic example
+                    const contextStart = Math.max(0, match.index - 30);
+                    const context = content.substring(contextStart, match.index);
+                    const keyMatch = context.match(/([a-zA-Z0-9\s_-]+?)\s*[:\-]\s*$/); // Look for "Key:" before match
+                    const key = keyMatch ? keyMatch[1].trim() : rule.type; // Use rule type as fallback key
+
+                    const location = { start: match.index, end: match.index + matchedValue.length };
+
+                    suggestions.push({
+                        id: utils.generateUUID(),
+                        source: 'heuristic (rule)',
+                        property: { key: key, value: matchedValue, type: rule.type },
+                        status: 'pending',
+                        location: location,
+                        confidence: 0.6 // Slightly higher confidence for explicit rules
+                    });
+                    // Mark indices covered by this match as processed
+                    for (let i = match.index; i < match.index + matchedValue.length; i++) {
+                        processedIndices.add(i);
+                    }
+                }
+            } catch (e) {
+                console.warn(`Parser: Error applying heuristic rule regex: ${rule.pattern}`, e);
+            }
+        });
+
+
+        // 2. Apply Simple Key: Value pattern (less specific, avoid processed indices)
         const keyValueRegex = /^\s*(?<key>[a-zA-Z0-9\s_-]+?)\s*:\s*(?<value>.*)$/;
-
-        // TODO: Integrate rules and keywords from OntologyService more deeply
-        // const ontologyKeywords = this.ontologyService.getKeywords()?.tags || [];
-        // const ontologyRules = this.ontologyService.getRules() || []; // Rules might define regex patterns
-
-        lines.forEach((line, index) => {
+        lines.forEach((line, lineIndex) => {
+            const lineStartOffset = content.indexOf(line); // Find start index (approximate if line repeats)
             const match = line.match(keyValueRegex);
+
             if (match && match.groups.key && match.groups.value) {
                 const key = match.groups.key.trim();
                 const value = match.groups.value.trim();
+                const valueStartIndex = line.indexOf(value); // Index within the line
+                const absoluteStartIndex = lineStartOffset + valueStartIndex;
 
-                // Basic filtering: ignore empty values unless ontology defines it as valid?
-                if (value) {
+                // Check if the start of the value has already been processed by a rule
+                if (value && !processedIndices.has(absoluteStartIndex)) {
                     const inferredType = this.ontologyService.inferType(value, key);
-                    const location = { // Approximate location
-                        start: content.indexOf(line), // This isn't perfect if line repeats
-                        end: content.indexOf(line) + line.length
+                    const location = {
+                        start: absoluteStartIndex,
+                        end: absoluteStartIndex + value.length
                     };
 
                     suggestions.push({
                         id: utils.generateUUID(),
-                        source: 'heuristic',
-                        property: {key, value, type: inferredType},
+                        source: 'heuristic (kv)',
+                        property: { key, value, type: inferredType },
                         status: 'pending',
                         location: location,
+                        confidence: 0.4 // Lower confidence for generic key-value
                     });
                 }
             }
-            // TODO: Add more complex heuristic rules here (e.g., matching keywords, date patterns within text)
         });
 
         // console.log(`Parser: Heuristics found ${suggestions.length} potential suggestions.`);
@@ -431,25 +472,33 @@ export const SemanticParserPlugin = {
         if (!content || !this.llmService || !this.ontologyService) return [];
 
         // --- Construct Prompt ---
-        // Get hints from ontology about expected properties
-        // TODO enable 'json' output mode
-        const hints = this.ontologyService.getHints() || {};
-        const keywords = this.ontologyService.getKeywords() || {};
-        let ontologyContext = "Consider the following potential property types:\n";
-        for (const [key, hint] of Object.entries(hints)) {
-            ontologyContext += `- ${key}: ${hint.description}\n`;
+        const ontologyData = this.ontologyService.getRawData();
+        let ontologyContext = "Ontology Context:\n";
+        ontologyContext += "Defined Properties (Key: Type - Description):\n";
+        if (ontologyData?.properties) {
+            for (const [key, propDef] of Object.entries(ontologyData.properties)) {
+                ontologyContext += `- ${key}: ${propDef.type || 'text'} - ${propDef.description || 'No description'}\n`;
+                if (propDef.validation?.allowedValues) {
+                    ontologyContext += `    (Allowed values: ${propDef.validation.allowedValues.join(', ')})\n`;
+                }
+            }
+        } else {
+            ontologyContext += "- None defined.\n";
         }
-        if (keywords.tags?.length) {
-            ontologyContext += `\nCommon tags: ${keywords.tags.join(', ')}\n`;
+        ontologyContext += "\nCommon Keywords/Tags:\n";
+        if (ontologyData?.keywords?.tags?.length) {
+            ontologyContext += `- Tags: ${ontologyData.keywords.tags.join(', ')}\n`;
         }
-        if (keywords.categories?.length) {
-            ontologyContext += `Common categories: ${keywords.categories.join(', ')}\n`;
+        if (ontologyData?.keywords?.categories?.length) {
+            ontologyContext += `- Categories: ${ontologyData.keywords.categories.join(', ')}\n`;
+        }
+        if (!ontologyData?.keywords?.tags?.length && !ontologyData?.keywords?.categories?.length) {
+            ontologyContext += "- None defined.\n";
         }
 
         const prompt = `
-Analyze the following note content and extract relevant key-value properties based on common sense and the provided context.
+Analyze the following note content and extract relevant key-value properties based on common sense and the provided ontology context.
 
-Context about potential properties:
 ${ontologyContext}
 
 Note Content:
@@ -460,10 +509,14 @@ ${content}
 Instructions:
 1. Identify key pieces of information that can be represented as properties (key-value pairs).
 2. Focus on extracting meaningful data like dates, names, locations, statuses, project names, priorities, deadlines, etc.
-3. Use the context provided to guide your extraction, but also use common sense for properties not explicitly listed.
-4. For dates/times, try to normalize them to YYYY-MM-DD or ISO 8601 format if possible, otherwise return the original text.
+3. Use the property definitions from the ontology context to guide your extraction (match keys and expected types). Also use common sense for properties not explicitly listed.
+4. **Value Normalization**:
+    - Dates/Times: Normalize to ISO 8601 format (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ssZ) whenever possible. If ambiguous, return the original text.
+    - Numbers: Output as numeric types in JSON.
+    - Booleans: Output as true/false in JSON.
+    - Lists/Tags: If a property type is 'list' (like 'tags'), try to extract multiple items into a JSON array of strings.
 5. Ignore vague or incomplete information unless it clearly implies a property.
-6. Output the results ONLY as a JSON array of objects, where each object has the structure: {"key": "...", "value": "..."}.
+6. Output the results ONLY as a JSON array of objects. Each object MUST have the structure: {"key": "...", "value": ...}. You MAY optionally include a "confidence": float (0.0-1.0) field if you are unsure.
 7. If no properties are found, output an empty JSON array: [].
 
 JSON Output:
@@ -516,10 +569,11 @@ JSON Output:
                     return {
                         id: utils.generateUUID(),
                         source: 'llm',
-                        property: {key, value, type: inferredType},
+                        property: { key, value, type: inferredType },
                         status: 'pending',
-                        confidence: item.confidence, // If LLM provides it
-                        // Location info is hard to get accurately from LLM without specific instructions
+                        // Assign confidence: use LLM's if provided, otherwise default (e.g., 0.8)
+                        confidence: typeof item.confidence === 'number' ? Math.max(0, Math.min(1, item.confidence)) : 0.8,
+                        // Location info is hard to get accurately from LLM without specific instructions/model support
                     };
                 });
 
