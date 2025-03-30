@@ -8,8 +8,7 @@
 // - UI Slot constants
 
 import {Utils} from "./util.js"; const debounce = Utils.debounce;
-import {SimplePool} from 'nostr-tools/pool'
-import {getEventHash, getPublicKey} from 'nostr-tools/pure'
+import {SimplePool, getEventHash, getPublicKey} from 'nostr-tools/pool'
 import {
     SLOT_APP_STATUS_BAR,
     SLOT_EDITOR_HEADER_ACTIONS,
@@ -17,10 +16,6 @@ import {
     SLOT_SETTINGS_PANEL_SECTION
 } from './ui.js'; // Adjust path as needed
 import "./nostr.css";
-
-const NostrTools = {
-    getEventHash, getPublicKey, SimplePool
-};
 
 
 // --- Crypto & Utility Helper Functions ---

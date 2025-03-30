@@ -105,14 +105,6 @@ export const LLMPlugin = {
     },
 
     // --- Helper for Enhancement #0 ---
-    _mapPropsToObject(properties = []) {
-        const settings = {};
-        properties.forEach(prop => {
-            settings[prop.key] = prop.value;
-        });
-        return settings;
-    },
-    // --- Helper for Enhancement #0 ---
     _getDefaultSettings() {
         const defaults = {};
         const ontology = this.getSettingsOntology(); // Call own method
