@@ -468,8 +468,9 @@ export const RichTextEditorPlugin = {
                 parts.push(html`
                     <span class="inline-property"
                           data-property-key="${propertyName}"
+                          title="${propertyName}"
                           @click="${(event) => startInlinePropertyEdit(event, propertyName, propertyValue, noteId)}"
-                          style="background-color: lightyellow; border-bottom: 1px dashed gray; padding: 0 2px; cursor: pointer;">
+                          style="background-color: lightgoldenrodyellow; border: 1px dotted lightgray; padding: 0 2px; cursor: pointer; border-radius: 2px;">
                         ${propertyValue}
                     </span>
                 `);
