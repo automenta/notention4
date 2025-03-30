@@ -830,8 +830,54 @@ export const RichTextEditorPlugin = {
         };
     },
 
-    // --- Added for Enhancement #7 (Content Generation) ---
-    async _handleGenerateContent() {
+    // --- Middleware to handle TEMPLATE_SELECTED action ---
+    registerMiddleware() {
+        const pluginInstance = this;
+        return storeApi => next => action => {
+            if (action.type === 'TEMPLATE_SELECTED') {
+                const { template, context } = action.payload;
+                if (context === 'insert') {
+                    pluginInstance._insertTemplateContent(template);
+                } else if (context === 'generate') {
+                    pluginInstance._generateContentFromTemplate(template);
+                }
+            }
+            return next(action);
+        };
+    },
+
+    // --- Refactored Content Generation Logic ---
+    async _generateContentFromTemplate(selectedTemplate) {
+        if (!this.coreAPI || !this._editorInstance || !this._currentNoteId || !selectedTemplate) return;
+
+        const llmService = this.coreAPI.getService('LLMService');
+        const propertiesAPI = this.coreAPI.getPluginAPI('properties');
+
+        if (!llmService || !propertiesAPI) {
+            this.coreAPI.showGlobalStatus("Cannot generate content: Required services (LLM, Properties) not available.", "warning");
+            return;
+        }
+
+        const currentProperties = propertiesAPI.getPropertiesForNote(this._currentNoteId);
+        this.coreAPI.showGlobalStatus(`Generating content using template "${selectedTemplate.name}"...`, "info");
+
+        try {
+            const generatedContent = await llmService.generateContent(selectedTemplate.name, currentProperties);
+
+            if (generatedContent) {
+                this.providesServices().EditorService.insertContentAtCursor?.(generatedContent);
+                this.coreAPI.showGlobalStatus("AI content generated and inserted.", "success", 3000);
+            } else {
+                this.coreAPI.showGlobalStatus("AI content generation failed.", "warning", 4000);
+            }
+        } catch (error) {
+            console.error("EditorPlugin: Error during content generation call:", error);
+            this.coreAPI.showGlobalStatus(`Error generating content: ${error.message}`, "error", 5000);
+        }
+    },
+
+    // --- Trigger for Content Generation Modal ---
+    _handleGenerateContent() {
         if (!this.coreAPI || !this._editorInstance || !this._currentNoteId) return;
 
         const ontologyService = this.coreAPI.getService('OntologyService');
@@ -849,40 +895,37 @@ export const RichTextEditorPlugin = {
             return;
         }
 
-        // Get current note properties
-        const currentProperties = propertiesAPI.getPropertiesForNote(this._currentNoteId);
-
-        // Prompt user to select a template
-        // TODO: Replace prompt with a proper modal/dropdown selection UI
-        const templateNames = templates.map((t, i) => `${i + 1}: ${t.name}`).join('\n');
-        const choice = prompt(`Select template to generate content from:\n${templateNames}`);
-        const index = parseInt(choice, 10) - 1;
-
-        if (!isNaN(index) && templates[index]) {
-            const selectedTemplate = templates[index];
-            this.coreAPI.showGlobalStatus(`Generating content using template "${selectedTemplate.name}"...`, "info");
-
-            try {
-                const generatedContent = await llmService.generateContent(selectedTemplate.name, currentProperties);
-
-                if (generatedContent) {
-                    // Use EditorService to insert the generated content
-                    this.providesServices().EditorService.insertContentAtCursor?.(generatedContent);
-                    this.coreAPI.showGlobalStatus("AI content generated and inserted.", "success", 3000);
-                } else {
-                    // Error message handled by LLMService or generateContent function
-                    this.coreAPI.showGlobalStatus("AI content generation failed.", "warning", 4000);
+        // Dispatch action to open the template selector modal
+        this.coreAPI.dispatch({
+            type: 'CORE_OPEN_MODAL',
+            payload: {
+                modalType: 'templateSelector',
+                modalProps: {
+                    templates: templates,
+                    context: 'generate', // Indicate the context
+                    onSelectActionType: 'TEMPLATE_SELECTED' // Action dispatched by modal
                 }
-            } catch (error) {
-                console.error("EditorPlugin: Error during content generation call:", error);
-                this.coreAPI.showGlobalStatus(`Error generating content: ${error.message}`, "error", 5000);
             }
-        }
+        });
     },
-    // --- End Enhancement #7 ---
+    // --- End Refactored Content Generation ---
 
 
-    // --- Added for Enhancement #3 ---
+    // --- Refactored Template Insertion Logic ---
+    _insertTemplateContent(template) {
+         if (!this.coreAPI || !this._editorInstance || !template) return;
+
+         let contentToInsert = template.content || '';
+         // Basic placeholder replacement (extend as needed)
+         contentToInsert = contentToInsert.replace(/{{date}}/gi, this.coreAPI.utils.formatDate(Date.now()));
+         // TODO: Add more placeholder logic
+
+         // Use EditorService to insert
+         this.providesServices().EditorService.insertContentAtCursor?.(contentToInsert);
+         this.coreAPI.showGlobalStatus(`Template "${template.name}" inserted.`, "success", 2000);
+    },
+
+    // --- Trigger for Template Insertion Modal ---
     _handleInsertTemplate() {
         if (!this.coreAPI || !this._editorInstance) return;
 
@@ -898,23 +941,20 @@ export const RichTextEditorPlugin = {
             return;
         }
 
-        // TODO: Replace prompt with a proper modal/dropdown selection UI
-        const templateNames = templates.map((t, i) => `${i + 1}: ${t.name}`).join('\n');
-        const choice = prompt(`Select template to insert:\n${templateNames}`);
-        const index = parseInt(choice, 10) - 1;
-
-        if (!isNaN(index) && templates[index]) {
-            const template = templates[index];
-            let contentToInsert = template.content || '';
-            // Basic placeholder replacement (extend as needed)
-            contentToInsert = contentToInsert.replace(/{{date}}/gi, this.coreAPI.utils.formatDate(Date.now()));
-            // TODO: Add more placeholder logic
-
-            // Use EditorService to insert (assumes method exists)
-            this.providesServices().EditorService.insertContentAtCursor?.(contentToInsert);
-        }
+        // Dispatch action to open the template selector modal
+        this.coreAPI.dispatch({
+            type: 'CORE_OPEN_MODAL',
+            payload: {
+                modalType: 'templateSelector',
+                modalProps: {
+                    templates: templates,
+                    context: 'insert', // Indicate the context
+                    onSelectActionType: 'TEMPLATE_SELECTED' // Action dispatched by modal
+                }
+            }
+        });
     },
-    // --- End Enhancement #3 ---
+    // --- End Refactored Template Insertion ---
 
     // Convenience helpers bound to the plugin instance
     getContent() {

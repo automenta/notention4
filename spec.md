@@ -467,8 +467,7 @@ class UIRenderer {
                     </div>
                 </div>
                  <div id="modal-root"> <!-- Modal container -->
-                     ${state.uiState.activeModal === 'settings' ? this.renderSettingsModal(state) : ''}
-                     <!-- Other modals rendered here -->
+                     ${this._renderModal(state)}
                  </div>
             </div>
         `;
@@ -805,11 +804,14 @@ const coreReducer = (state = initialAppState, action) => {
         }
 
         case 'CORE_OPEN_MODAL': {
-            return {...state, uiState: {...state.uiState, activeModal: action.payload.modalId}};
+            draft.uiState.modalType = action.payload.modalType;
+            draft.uiState.modalProps = action.payload.modalProps || {}; // Store props for the modal
+            break;
         }
         case 'CORE_CLOSE_MODAL': {
-            if (!state.uiState.activeModal) return state;
-            return {...state, uiState: {...state.uiState, activeModal: null}};
+            draft.uiState.modalType = null;
+            draft.uiState.modalProps = null;
+            break;
         }
 
         case 'CORE_SET_CORE_SETTING': {

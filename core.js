@@ -717,6 +717,202 @@ class UIRenderer {
         }
     };
 
+    // --- Centralized Modal Rendering Logic ---
+    _renderModal(state) {
+        const { modalType, modalProps } = state.uiState;
+        if (!modalType) return '';
+
+        switch (modalType) {
+            case 'settings':
+                return this._renderSettingsModal(state);
+            case 'templateSelector':
+                return this._renderTemplateSelectorModal(state, modalProps);
+            case 'propertyAdd':
+                return this._renderPropertyAddModal(state, modalProps);
+            case 'propertyEdit':
+                return this._renderPropertyEditModal(state, modalProps);
+            // Add other modal types here
+            default:
+                console.warn(`UIRenderer: Unknown modal type requested: ${modalType}`);
+                return '';
+        }
+    }
+
+    // --- Specific Modal Renderers ---
+
+    _renderTemplateSelectorModal(state, props) {
+        const { templates = [], context = 'insert', onSelectActionType = 'TEMPLATE_SELECTED' } = props; // Expect templates array and context
+
+        const handleSelect = (template) => {
+            this._stateManager.dispatch({ type: onSelectActionType, payload: { template, context } });
+            this._handleCloseModal(); // Close modal after selection
+        };
+
+        return html`
+            <div id="modal-backdrop" class="modal-backdrop" @click=${this._handleCloseModal}></div>
+            <div class="modal-content template-selector-modal" role="dialog" aria-modal="true" aria-labelledby="template-selector-title">
+                <button class="modal-close-button" @click=${this._handleCloseModal} aria-label="Close">×</button>
+                <h2 id="template-selector-title">Select Template to ${context}</h2>
+                ${templates.length === 0 ? html`<p>No templates available.</p>` : ''}
+                <ul class="modal-list">
+                    ${templates.map(template => html`
+                        <li class="modal-list-item">
+                            <button @click=${() => handleSelect(template)}>${template.name}</button>
+                        </li>
+                    `)}
+                </ul>
+            </div>
+        `;
+    }
+
+    _renderPropertyAddModal(state, props) {
+        const { noteId, possibleKeys = [], onAddActionType = 'PROPERTY_ADD_CONFIRMED' } = props;
+        const coreAPI = window.realityNotebookCore; // Get core API instance
+        const ontologyService = coreAPI?.getService('OntologyService');
+
+        const handleSubmit = (event) => {
+            event.preventDefault();
+            const form = event.target;
+            const key = form.keySelect.value === '__custom__' ? form.customKey.value.trim() : form.keySelect.value;
+            const value = form.value.value;
+
+            if (key) {
+                this._stateManager.dispatch({ type: onAddActionType, payload: { noteId, key, value } });
+                this._handleCloseModal();
+            } else {
+                coreAPI?.showGlobalStatus("Property key cannot be empty.", "warning");
+            }
+        };
+
+        const handleKeyChange = (event) => {
+            const customKeyInput = event.target.form.customKey;
+            customKeyInput.style.display = event.target.value === '__custom__' ? 'block' : 'none';
+            if (event.target.value !== '__custom__') {
+                 customKeyInput.value = ''; // Clear custom if selection changes
+            }
+        };
+
+        return html`
+            <div id="modal-backdrop" class="modal-backdrop" @click=${this._handleCloseModal}></div>
+            <div class="modal-content property-add-modal" role="dialog" aria-modal="true" aria-labelledby="property-add-title">
+                <button class="modal-close-button" @click=${this._handleCloseModal} aria-label="Close">×</button>
+                <h2 id="property-add-title">Add Property</h2>
+                <form @submit=${handleSubmit}>
+                    <div class="form-field">
+                        <label for="prop-key-select">Property Key:</label>
+                        <select id="prop-key-select" name="keySelect" @change=${handleKeyChange} required>
+                            <option value="" disabled selected>-- Select or Add --</option>
+                            ${possibleKeys.map(k => {
+                                const hints = ontologyService?.getUIHints(k) || { icon: '?' };
+                                return html`<option value="${k}">${hints.icon} ${k}</option>`;
+                            })}
+                            <option value="__custom__">-- Add Custom Key --</option>
+                        </select>
+                        <input type="text" name="customKey" placeholder="Enter custom key name" style="display: none; margin-top: 5px;">
+                    </div>
+                    <div class="form-field">
+                        <label for="prop-value-input">Value:</label>
+                        <input type="text" id="prop-value-input" name="value" required>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" @click=${this._handleCloseModal}>Cancel</button>
+                        <button type="submit">Add Property</button>
+                    </div>
+                </form>
+            </div>
+        `;
+    }
+
+    _renderPropertyEditModal(state, props) {
+        const { noteId, property, onUpdateActionType = 'PROPERTY_UPDATE_CONFIRMED', onDeleteActionType = 'PROPERTY_DELETE_CONFIRMED' } = props;
+        if (!property) return ''; // Should not happen
+        const coreAPI = window.realityNotebookCore;
+        const ontologyService = coreAPI?.getService('OntologyService');
+        const hints = ontologyService?.getUIHints(property.key) || {};
+        const inputType = hints.inputType || 'text';
+
+        // Function to render the correct input based on type hint
+        const renderInput = () => {
+            // Reuse logic from InlinePropertyNodeView or PropertiesPlugin UI
+            // For simplicity, using text input for now, but should be enhanced
+            // based on inputType (date, select, checkbox, range etc.)
+             if (inputType === 'select' && hints.options) {
+                return html`<select name="value" required>
+                    ${hints.options.map(opt => html`
+                        <option value="${opt}" ?selected=${opt === property.value}>${opt}</option>
+                    `)}
+                </select>`;
+            } else if (inputType === 'checkbox') { // Boolean
+                 return html`<input type="checkbox" name="value" .checked=${!!property.value}>`;
+            } else if (inputType === 'date') {
+                 const dateValue = property.value ? new Date(property.value).toISOString().split('T')[0] : '';
+                 return html`<input type="date" name="value" .value=${dateValue}>`;
+            } else if (inputType === 'number') {
+                 return html`<input type="number" name="value" .value=${property.value ?? ''} step=${hints.step ?? 'any'}>`;
+            } else { // Default text
+                 return html`<input type="text" name="value" .value=${property.value ?? ''} required>`;
+            }
+        };
+
+        const handleUpdate = (event) => {
+            event.preventDefault();
+            const form = event.target;
+            const newKey = form.key.value.trim();
+            const newValueRaw = inputType === 'checkbox' ? form.value.checked : form.value;
+            // Normalize value based on original type before dispatching
+            const newValueNormalized = coreAPI.getPluginAPI('properties')?._normalizeValue(newValueRaw, property.type) ?? newValueRaw;
+
+            if (newKey) {
+                const changes = {};
+                if (newKey !== property.key) changes.key = newKey;
+                if (newValueNormalized !== property.value) changes.value = newValueNormalized;
+                // TODO: Add type change possibility?
+
+                if (Object.keys(changes).length > 0) {
+                    this._stateManager.dispatch({
+                        type: onUpdateActionType,
+                        payload: { noteId, propertyId: property.id, changes }
+                    });
+                }
+                this._handleCloseModal();
+            } else {
+                 coreAPI?.showGlobalStatus("Property key cannot be empty.", "warning");
+            }
+        };
+
+        const handleDelete = () => {
+            if (confirm(`Are you sure you want to delete property "${property.key}"?`)) {
+                this._stateManager.dispatch({ type: onDeleteActionType, payload: { noteId, propertyId: property.id } });
+                this._handleCloseModal();
+            }
+        };
+
+        return html`
+            <div id="modal-backdrop" class="modal-backdrop" @click=${this._handleCloseModal}></div>
+            <div class="modal-content property-edit-modal" role="dialog" aria-modal="true" aria-labelledby="property-edit-title">
+                <button class="modal-close-button" @click=${this._handleCloseModal} aria-label="Close">×</button>
+                <h2 id="property-edit-title">Edit Property: ${hints.icon || ''} ${property.key}</h2>
+                <form @submit=${handleUpdate}>
+                    <div class="form-field">
+                        <label for="prop-edit-key">Key:</label>
+                        <input type="text" id="prop-edit-key" name="key" .value=${property.key} required>
+                    </div>
+                    <div class="form-field">
+                        <label for="prop-edit-value">Value (Type: ${property.type}):</label>
+                        ${renderInput()}
+                    </div>
+                    <!-- TODO: Add Type selector? -->
+                    <div class="modal-actions">
+                        <button type="button" class="danger" @click=${handleDelete}>Delete</button>
+                        <button type="button" @click=${this._handleCloseModal}>Cancel</button>
+                        <button type="submit">Update Property</button>
+                    </div>
+                </form>
+            </div>
+        `;
+    }
+
+
     // --- Method for plugins to register components ---
     registerSlotComponent(pluginId, slotName, renderFn) {
         if (!this._slotRegistry.has(slotName)) {
@@ -1067,8 +1263,11 @@ const initialAppState = {
         selectedNoteId: null,
         searchTerm: '',
         noteListSortMode: 'time',
-        activeModal: null,
+        activeModal: null, // Keep for compatibility? No, remove.
+        modalType: null,
+        modalProps: null,
         globalStatus: null,
+        noteListSortMode: 'time', // Default sort mode
     },
     pluginRuntimeState: {},
     runtimeCache: {},

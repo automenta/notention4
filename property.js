@@ -201,6 +201,37 @@ export const PropertiesPlugin = {
         };
     },
 
+    // --- Middleware to handle modal confirmation actions ---
+    registerMiddleware() {
+        const pluginInstance = this;
+        return storeApi => next => action => {
+            const { dispatch } = storeApi;
+            const { noteId } = action.payload || {};
+
+            if (action.type === 'PROPERTY_ADD_CONFIRMED') {
+                const { key, value } = action.payload;
+                dispatch({
+                    type: 'PROPERTY_ADD',
+                    payload: { noteId, propertyData: { key, value } }
+                });
+            } else if (action.type === 'PROPERTY_UPDATE_CONFIRMED') {
+                const { propertyId, changes } = action.payload;
+                 dispatch({
+                    type: 'PROPERTY_UPDATE',
+                    payload: { noteId, propertyId, changes }
+                });
+            } else if (action.type === 'PROPERTY_DELETE_CONFIRMED') {
+                 const { propertyId } = action.payload;
+                 dispatch({
+                    type: 'PROPERTY_DELETE',
+                    payload: { noteId, propertyId }
+                });
+            }
+
+            return next(action); // Pass along the original action or others
+        };
+    },
+
     registerUISlots() {
         const pluginId = this.id;
         const coreAPI = this.coreAPI; // Capture coreAPI for use in the UI renderer
@@ -223,67 +254,36 @@ export const PropertiesPlugin = {
                     let possibleKeys = ontologyService?.getCommonProperties() || [];
                     if (!possibleKeys.includes('priority')) possibleKeys.push('priority'); // Ensure priority is there
                     // Add keys from hints?
-                    // possibleKeys = [...new Set([...possibleKeys, ...Object.keys(ontologyService?.getHints() || {})])];
+                    // possibleKeys = [...new Set([...possibleKeys, ...Object.keys(ontologyService?.getHints() || {})])]; // Keep for modal
 
-                    // TODO: Replace prompt with a proper modal/dropdown UI
-                    const optionsText = possibleKeys.map((k, i) => {
-                        const hints = ontologyService?.getUIHints(k) || {icon: '?'};
-                        return `${i + 1}: ${hints.icon} ${k}`;
-                    }).join('\n');
-                    const choice = prompt(`Select property to add:\n${optionsText}\n\nOr type a custom key:`);
-
-                    let selectedKey = null;
-                    const choiceNum = parseInt(choice, 10);
-                    if (!isNaN(choiceNum) && possibleKeys[choiceNum - 1]) {
-                        selectedKey = possibleKeys[choiceNum - 1];
-                    } else if (choice && choice.trim()) { // Treat as custom key
-                        selectedKey = choice.trim();
-                    }
-
-                    if (selectedKey) {
-                        const value = prompt(`Enter value for "${selectedKey}":`);
-                        dispatch({
-                            type: 'PROPERTY_ADD',
-                            payload: {
+                    // Dispatch action to open the property add modal
+                    dispatch({
+                        type: 'CORE_OPEN_MODAL',
+                        payload: {
+                            modalType: 'propertyAdd',
+                            modalProps: {
                                 noteId: noteId,
-                                propertyData: {key: selectedKey, value: value ?? ''} // Use ?? for null/undefined from prompt
+                                possibleKeys: possibleKeys,
+                                onAddActionType: 'PROPERTY_ADD_CONFIRMED' // Action dispatched by modal
                             }
-                        });
-                    }
+                        }
+                    });
                 };
 
                 const handlePropertyClick = (prop) => {
-                    // TODO: Replace prompt with a proper modal/popover editor
-                    // This editor should use ontology hints for input types (date picker, range slider, etc.)
-                    const action = prompt(`Property: ${prop.key}=${prop.value} (Type: ${prop.type})\n\nEnter 'update' or 'delete':`);
-                    if (action?.toLowerCase() === 'update') {
-                        const newKey = prompt(`Update key (current: ${prop.key}):`, prop.key);
-                        const newValue = prompt(`Update value (current: ${prop.value}):`, prop.value);
-                        // Optionally prompt for type change?
-                        // const newType = prompt(`Update type (current: ${prop.type}):`, prop.type);
-
-                        if (newKey !== null || newValue !== null /* || newType !== null */) {
-                            dispatch({
-                                type: 'PROPERTY_UPDATE',
-                                payload: {
-                                    noteId: noteId,
-                                    propertyId: prop.id,
-                                    changes: {
-                                        ...(newKey !== null && { key: newKey }),
-                                        ...(newValue !== null && { value: newValue }),
-                                        // ...(newType !== null && { type: newType })
-                                    }
-                                }
-                            });
+                    // Dispatch action to open the property edit modal
+                     dispatch({
+                        type: 'CORE_OPEN_MODAL',
+                        payload: {
+                            modalType: 'propertyEdit',
+                            modalProps: {
+                                noteId: noteId,
+                                property: prop, // Pass the whole property object
+                                onUpdateActionType: 'PROPERTY_UPDATE_CONFIRMED',
+                                onDeleteActionType: 'PROPERTY_DELETE_CONFIRMED'
+                            }
                         }
-                    } else if (action?.toLowerCase() === 'delete') {
-                        if (confirm(`Are you sure you want to delete property "${prop.key}"?`)) {
-                            dispatch({
-                                type: 'PROPERTY_DELETE',
-                                payload: { noteId: noteId, propertyId: prop.id }
-                            });
-                        }
-                    }
+                    });
                 };
 
                 // --- Added for Enhancement #2 ---
@@ -361,6 +361,11 @@ export const PropertiesPlugin = {
     getAPI() {
         const pluginId = this.id;
         return {
+            // Expose internal helpers if needed by other plugins (like the NodeView)
+            _normalizeValue: this._normalizeValue.bind(this),
+            _formatDisplayValue: this._formatDisplayValue.bind(this),
+            _validateValue: this._validateValue.bind(this),
+            // Public API
             getPropertiesForNote: (noteId) => {
                 const state = this.coreAPI.getState();
                 return state.notes[noteId]?.pluginData?.[pluginId]?.properties || [];
