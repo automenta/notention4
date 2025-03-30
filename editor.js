@@ -499,15 +499,13 @@ export const RichTextEditorPlugin = {
                 const currentNoteId = blurEvent.target.dataset.noteId;
 
                 dispatch({
-                    type: 'CORE_UPDATE_NOTE',
+                    type: 'PROPERTY_UPDATE',
                     payload: {
                         noteId: currentNoteId,
+                        propertyId: propertiesData.find(p => p.key === propKey)?.id, // Find propertyId
                         changes: {
-                            pluginData: {
-                                properties: {
-                                    [propKey]: newValue
-                                }
-                            }
+                            value: newValue,
+                            // type: currentPropType // Optionally send type, though reducer has it already
                         }
                     }
                 });
@@ -515,7 +513,7 @@ export const RichTextEditorPlugin = {
                 requestAnimationFrame(() => {
                     const mountPoint = document.getElementById('editor-mount-point');
                     if (mountPoint) {
-                        litRender(renderNoteContentWithProperties(state.notes[currentNoteId]?.content || '', currentNoteId), mountPoint);
+                        litRender(renderNoteContentWithProperties(state.notes[currentNoteId]?.content || '', currentNoteId, state.notes[currentNoteId]?.pluginData?.properties?.properties || []), mountPoint); // Pass propertiesData
                     }
                 });
             });
@@ -527,7 +525,7 @@ export const RichTextEditorPlugin = {
                     requestAnimationFrame(() => {
                         const mountPoint = document.getElementById('editor-mount-point');
                         if (mountPoint) {
-                            litRender(renderNoteContentWithProperties(state.notes[noteId]?.content || '', noteId), mountPoint);
+                            litRender(renderNoteContentWithProperties(state.notes[noteId]?.content || '', noteId, state.notes[noteId]?.pluginData?.properties?.properties || []), mountPoint); // Pass propertiesData
                         }
                     });
                 }
@@ -542,6 +540,7 @@ export const RichTextEditorPlugin = {
             [SLOT_EDITOR_CONTENT_AREA]: (props) => {
                 const { state, dispatch, noteId } = props;
                 const note = noteId ? state.notes[noteId] : null;
+                const propertiesData = note?.pluginData?.properties?.properties || []; // Get propertiesData
 
                 //const editorSettings = this.coreAPI.getPluginSettings(this.id) || {};
                 const debounceTime = 500; //editorSettings.debounceTime ?? 500;
@@ -641,7 +640,7 @@ export const RichTextEditorPlugin = {
                              style="flex-grow: 1; overflow-y: auto; border: 1px solid var(--border-color, #ccc); border-top: none; border-radius: 0 0 4px 4px; padding: 10px;"
                              class="tiptap-editor-content">
                             <!-- Tiptap editor attaches here -->
-                            ${note ? renderNoteContentWithProperties(note.content, noteId) : html`
+                            ${note ? renderNoteContentWithProperties(note.content, noteId, propertiesData) : html` // Pass propertiesData
                                 <div style="color: var(--secondary-text-color); padding: 10px;">Select or create a
                                     note.
                                 </div>`}
