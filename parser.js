@@ -176,10 +176,11 @@ export const SemanticParserPlugin = {
                     if (noteSuggestions) {
                         const suggestionIndex = noteSuggestions.findIndex(s => s.id === suggestion.id);
                         if (suggestionIndex > -1) {
-                            //  console.log(`ParserReducer: Marking suggestion ${suggestion.id} as confirmed for note ${noteId}`);
+                            // console.log(`ParserReducer: Marking suggestion ${suggestion.id} as confirmed for note ${noteId}`);
+                            // Update the status directly on the suggestion object in the state
                             noteSuggestions[suggestionIndex].status = 'confirmed';
-                            // Optionally remove confirmed suggestions from the list immediately?
-                            // parserState.suggestions[noteId] = noteSuggestions.filter(s => s.status !== 'confirmed');
+                        } else {
+                            console.warn(`ParserReducer: Suggestion ${suggestion.id} not found for confirmation in note ${noteId}`);
                         }
                     }
                     break;
@@ -190,10 +191,11 @@ export const SemanticParserPlugin = {
                     if (noteSuggestions) {
                         const suggestionIndex = noteSuggestions.findIndex(s => s.id === suggestionId);
                         if (suggestionIndex > -1) {
-                            //  console.log(`ParserReducer: Marking suggestion ${suggestionId} as ignored for note ${noteId}`);
+                            // console.log(`ParserReducer: Marking suggestion ${suggestionId} as ignored for note ${noteId}`);
+                            // Update the status directly on the suggestion object in the state
                             noteSuggestions[suggestionIndex].status = 'ignored';
-                            // Optionally remove ignored suggestions from the list immediately?
-                            // parserState.suggestions[noteId] = noteSuggestions.filter(s => s.status !== 'ignored');
+                        } else {
+                            console.warn(`ParserReducer: Suggestion ${suggestionId} not found for ignoring in note ${noteId}`);
                         }
                     }
                     break;
