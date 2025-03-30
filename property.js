@@ -66,11 +66,19 @@ export const PropertiesPlugin = {
                         break;
                     }
 
+                    const key = propertyData.key.trim();
+                    let value = propertyData.value;
+                    // Infer type using OntologyService if not explicitly provided
+                    let type = propertyData.type || (this.ontologyService ? this.ontologyService.inferType(value, key) : 'text');
+
+                    // Normalize value based on type
+                    value = this._normalizeValue(value, type);
+
                     const newProp = {
                         id: coreAPI.utils.generateUUID(),
-                        key: propertyData.key.trim(),
-                        value: propertyData.value, // Allow various types for value
-                        type: propertyData.type || 'text', // Default type if not provided
+                        key: key,
+                        value: value,
+                        type: type,
                         createdAt: Date.now(),
                         updatedAt: Date.now(),
                     };
@@ -103,14 +111,19 @@ export const PropertiesPlugin = {
                         updatedProp.key = changes.key.trim();
                         hasChanged = true;
                     }
-                    if (changes.hasOwnProperty('value') && changes.value !== updatedProp.value) {
-                        updatedProp.value = changes.value;
-                        hasChanged = true;
-                    }
+                    // Determine the final type *before* normalizing the value
+                    let finalType = updatedProp.type;
                     if (changes.hasOwnProperty('type') && typeof changes.type === 'string' && changes.type !== updatedProp.type) {
-                        updatedProp.type = changes.type;
+                        finalType = changes.type;
+                        updatedProp.type = finalType; // Update the type on the property
                         hasChanged = true;
                     }
+                    // Normalize value if it changed, using the potentially updated type
+                    if (changes.hasOwnProperty('value') && changes.value !== updatedProp.value) {
+                        updatedProp.value = this._normalizeValue(changes.value, finalType);
+                        hasChanged = true;
+                    }
+
 
                     if (hasChanged) {
                         updatedProp.updatedAt = Date.now();
@@ -208,21 +221,25 @@ export const PropertiesPlugin = {
                 };
 
                 const handlePropertyClick = (prop) => {
-                    // In a real UI, open an editor modal/popover.
-                    // For now, allow simple update or delete.
-                    const action = prompt(`Property: ${prop.key}=${prop.value}\n\nEnter 'update' or 'delete':`);
+                    // TODO: Replace prompt with a proper modal/popover editor
+                    // This editor should use ontology hints for input types (date picker, range slider, etc.)
+                    const action = prompt(`Property: ${prop.key}=${prop.value} (Type: ${prop.type})\n\nEnter 'update' or 'delete':`);
                     if (action?.toLowerCase() === 'update') {
                         const newKey = prompt(`Update key (current: ${prop.key}):`, prop.key);
                         const newValue = prompt(`Update value (current: ${prop.value}):`, prop.value);
-                        if (newKey !== null || newValue !== null) { // Allow updating only one
+                        // Optionally prompt for type change?
+                        // const newType = prompt(`Update type (current: ${prop.type}):`, prop.type);
+
+                        if (newKey !== null || newValue !== null /* || newType !== null */) {
                             dispatch({
                                 type: 'PROPERTY_UPDATE',
                                 payload: {
                                     noteId: noteId,
                                     propertyId: prop.id,
                                     changes: {
-                                        ...(newKey !== null && {key: newKey}), // Only include key if changed
-                                        ...(newValue !== null && {value: newValue}) // Only include value if changed
+                                        ...(newKey !== null && { key: newKey }),
+                                        ...(newValue !== null && { value: newValue }),
+                                        // ...(newType !== null && { type: newType })
                                     }
                                 }
                             });
@@ -231,7 +248,7 @@ export const PropertiesPlugin = {
                         if (confirm(`Are you sure you want to delete property "${prop.key}"?`)) {
                             dispatch({
                                 type: 'PROPERTY_DELETE',
-                                payload: {noteId: noteId, propertyId: prop.id}
+                                payload: { noteId: noteId, propertyId: prop.id }
                             });
                         }
                     }
@@ -261,26 +278,37 @@ export const PropertiesPlugin = {
                 };
 
                 // --- Render Logic ---
+                // --- Render Logic ---
+                const ontologyService = this.ontologyService; // Get service instance
+
                 return html`
                     <div class="properties-area plugin-section">
                         <h4 class="plugin-section-title">Properties</h4>
                         ${propertiesData.length > 0 ? html`
                             <div class="properties-list">
-                                ${propertiesData.map(prop => html`
+                                ${propertiesData.map(prop => {
+                                    // Get UI hints from OntologyService
+                                    const hints = ontologyService?.getUIHints(prop.key) || { icon: '📝', color: '#888' };
+                                    const displayValue = this._formatDisplayValue(prop.value, prop.type);
+                                    const title = `Click to edit/delete\nType: ${prop.type || 'text'}\nCreated: ${coreAPI.utils.formatDate(prop.createdAt)}\nUpdated: ${coreAPI.utils.formatDate(prop.updatedAt)}`;
+
+                                    return html`
                                     <button class="property-pill ${prop.key.toLowerCase() === 'priority' ? getPriorityClass(parseInt(prop.value, 10) || 5) : ''}"
+                                            style="--prop-color: ${hints.color};"
                                             @click=${() => handlePropertyClick(prop)}
-                                            title="Click to edit/delete\nType: ${prop.type || 'text'}\nCreated: ${coreAPI.utils.formatDate(prop.createdAt)}\nUpdated: ${coreAPI.utils.formatDate(prop.updatedAt)}"
+                                            title=${title}
                                     >
+                                        <span class="property-icon">${hints.icon}</span>
                                         <span class="property-key">${prop.key}:</span>
-                                        <span class="property-value">${prop.value}</span>
+                                        <span class="property-value">${displayValue}</span>
                                     </button>
-                                `)}
+                                `})}
                             </div>
                         ` : html`
                             <p class="no-properties-message">No properties defined for this note.</p>
                         `}
                         <button class="add-property-button" @click=${handleAddProperty}>
-                            + Add Property... <!-- Ellipsis indicates selection follows -->
+                            + Add Property...
                         </button>
 
                         <!-- Added for Enhancement #2 -->
@@ -307,5 +335,81 @@ export const PropertiesPlugin = {
             },
             // Could add functions like findPropertyByKey(noteId, key), etc.
         };
+    },
+
+    // --- Internal Helper Methods ---
+
+    /**
+     * Normalizes a value based on its intended semantic type.
+     * @param {*} value - The raw value.
+     * @param {string} type - The target semantic type (e.g., 'number', 'boolean', 'date').
+     * @returns {*} The normalized value.
+     * @private
+     */
+    _normalizeValue(value, type) {
+        if (value === null || value === undefined) return value; // Keep null/undefined as is
+
+        switch (type) {
+            case 'number':
+                const num = Number(value);
+                return isNaN(num) ? value : num; // Keep original if not a valid number
+            case 'boolean':
+                if (typeof value === 'boolean') return value;
+                const lowerVal = String(value).toLowerCase();
+                if (['true', 'yes', '1', 'on'].includes(lowerVal)) return true;
+                if (['false', 'no', '0', 'off'].includes(lowerVal)) return false;
+                return Boolean(value); // Fallback to standard JS boolean conversion
+            case 'date':
+                // Attempt to parse and potentially reformat, but be cautious
+                // For now, just return the value. More robust parsing needed.
+                // Example: Could try new Date(value) and if valid, return ISO string?
+                return value;
+            case 'list':
+                // If it's a string, try splitting by comma? Very basic.
+                if (typeof value === 'string') {
+                    return value.split(',').map(s => s.trim()).filter(s => s);
+                }
+                // If already an array, keep it. Otherwise, wrap it?
+                return Array.isArray(value) ? value : [value];
+            // Add normalization for 'url', 'location', 'reference' if needed
+            case 'text':
+            default:
+                // Ensure it's a string
+                return String(value);
+        }
+    },
+
+    /**
+     * Formats a value for display in the UI based on its type.
+     * @param {*} value - The normalized value.
+     * @param {string} type - The semantic type.
+     * @returns {string} The formatted string representation.
+     * @private
+     */
+    _formatDisplayValue(value, type) {
+        if (value === null || value === undefined) return '';
+
+        switch (type) {
+            case 'boolean':
+                return value ? 'Yes' : 'No'; // Or use icons ✔️ / ❌ ?
+            case 'date':
+                // Use formatDate utility if available and value is valid date representation
+                try {
+                    const date = new Date(value);
+                    if (!isNaN(date.getTime())) {
+                        return this.coreAPI.utils.formatDate(date.getTime());
+                    }
+                } catch (e) { /* Ignore formatting error */ }
+                return String(value); // Fallback
+            case 'list':
+                return Array.isArray(value) ? value.join(', ') : String(value);
+            case 'number':
+            case 'text':
+            case 'url':
+            case 'location':
+            case 'reference':
+            default:
+                return String(value);
+        }
     }
 };
