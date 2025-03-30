@@ -80,6 +80,15 @@ export const PropertiesPlugin = {
                     // Normalize value based on type
                     value = this._normalizeValue(value, type);
 
+                    // --- Validate Value ---
+                    const validationResult = this._validateValue(key, value, type);
+                    if (!validationResult.isValid) {
+                        console.warn(`PropertiesPlugin: PROPERTY_ADD - Validation failed for key '${key}': ${validationResult.message}`);
+                        coreAPI.showGlobalStatus(`Invalid value for '${key}': ${validationResult.message}`, "warning");
+                        break; // Stop processing this action
+                    }
+                    // --- End Validation ---
+
                     const newProp = {
                         id: coreAPI.utils.generateUUID(),
                         key: key,
@@ -124,14 +133,31 @@ export const PropertiesPlugin = {
                         updatedProp.type = finalType; // Update the type on the property
                         hasChanged = true;
                     }
+                    let valueToValidate = updatedProp.value; // Start with original value
                     // Normalize value if it changed, using the potentially updated type
                     if (changes.hasOwnProperty('value') && changes.value !== updatedProp.value) {
-                        updatedProp.value = this._normalizeValue(changes.value, finalType);
-                        hasChanged = true;
+                        valueToValidate = this._normalizeValue(changes.value, finalType);
+                        // Don't assign to updatedProp.value yet, validate first
+                        hasChanged = true; // Mark that a change was attempted
                     }
 
+                    // --- Validate Value (only if value or type changed) ---
+                    if (hasChanged) { // Only validate if key, value, or type was part of the change request
+                        const validationResult = this._validateValue(updatedProp.key, valueToValidate, finalType);
+                        if (!validationResult.isValid) {
+                            console.warn(`PropertiesPlugin: PROPERTY_UPDATE - Validation failed for key '${updatedProp.key}': ${validationResult.message}`);
+                            coreAPI.showGlobalStatus(`Invalid value for '${updatedProp.key}': ${validationResult.message}`, "warning");
+                            // Do NOT proceed with the update
+                            break; // Stop processing this action
+                        }
+                        // Validation passed, apply the normalized value if it was the field being changed
+                        if (changes.hasOwnProperty('value')) {
+                             updatedProp.value = valueToValidate;
+                        }
+                    }
+                    // --- End Validation ---
 
-                    if (hasChanged) {
+                    if (hasChanged) { // If any valid change occurred
                         updatedProp.updatedAt = Date.now();
                         propsArray[propIndex] = updatedProp; // Replace the old property object
                         note.updatedAt = Date.now(); // Mark note as updated
@@ -417,5 +443,61 @@ export const PropertiesPlugin = {
             default:
                 return String(value);
         }
+    },
+
+    /**
+     * Validates a property value against ontology rules.
+     * @param {string} key - The property key.
+     * @param {*} value - The normalized value to validate.
+     * @param {string} type - The semantic type of the value.
+     * @returns {{isValid: boolean, message: string|null}} Validation result.
+     * @private
+     */
+    _validateValue(key, value, type) {
+        if (!this.ontologyService) {
+            return { isValid: true, message: null }; // Cannot validate without service
+        }
+        const rules = this.ontologyService.getValidationRules(key);
+        if (!rules) {
+            return { isValid: true, message: null }; // No rules defined for this key
+        }
+
+        // Check required
+        if (rules.required) {
+            let isEmpty = false;
+            if (value === null || value === undefined) {
+                isEmpty = true;
+            } else if (typeof value === 'string' && value.trim() === '') {
+                isEmpty = true;
+            } else if (Array.isArray(value) && value.length === 0) {
+                isEmpty = true;
+            }
+            if (isEmpty) {
+                return { isValid: false, message: `Property is required.` };
+            }
+        }
+
+        // Check allowedValues (case-insensitive comparison for strings)
+        if (rules.allowedValues && Array.isArray(rules.allowedValues)) {
+            const lowerCaseAllowed = rules.allowedValues.map(v => String(v).toLowerCase());
+            const lowerCaseValue = String(value).toLowerCase();
+            if (!lowerCaseAllowed.includes(lowerCaseValue)) {
+                return { isValid: false, message: `Value must be one of: ${rules.allowedValues.join(', ')}.` };
+            }
+        }
+
+        // Check min/max for numbers
+        if (type === 'number' && typeof value === 'number') {
+            if (rules.hasOwnProperty('min') && value < rules.min) {
+                return { isValid: false, message: `Value must be ${rules.min} or greater.` };
+            }
+            if (rules.hasOwnProperty('max') && value > rules.max) {
+                return { isValid: false, message: `Value must be ${rules.max} or less.` };
+            }
+        }
+
+        // TODO: Add more validation types (regex pattern, referenceType check, list itemType check)
+
+        return { isValid: true, message: null }; // Passed all checks
     }
 };
