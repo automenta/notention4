@@ -16,10 +16,10 @@ import {
     SLOT_NOTE_LIST_ITEM_STATUS,
     SLOT_SETTINGS_PANEL_SECTION
 } from './ui.js'; // Adjust path as needed
-import { Utils } from "./util.js";
-const debounce = Utils.debounce;
-
+import {Utils} from "./util.js";
 import "./nostr.css";
+
+const debounce = Utils.debounce;
 
 const NostrTools = {
     getEventHash, getPublicKey, SimplePool
@@ -1083,7 +1083,7 @@ export const NostrPlugin = {
                 const currentProperties = settingsNote ? (propsApi?.getPropertiesForNote(settingsNote.id) || []) : [];
                 const currentValues = plugin._mapPropsToObject(currentProperties);
                 const defaultValues = plugin._getDefaultSettings();
-                const displayConfig = { ...defaultValues, ...currentValues };
+                const displayConfig = {...defaultValues, ...currentValues};
 
                 const {identityStatus, publicKey, identityError} = nostrState;
                 const displayPubkey = publicKey ? (NostrTools?.nip19?.npubEncode(publicKey) || `${publicKey.substring(0, 10)}...`) : 'N/A';
@@ -1092,14 +1092,16 @@ export const NostrPlugin = {
                 let settingsNoteUI = html``;
                 if (!settingsNote) {
                     settingsNoteUI = html`
-                         <p>Nostr settings note not found.</p>
-                         <button @click=${() => dispatch({
-                        type: 'CORE_ADD_NOTE', payload: {
-                            name: `${plugin.name} Settings`,
-                            systemType: `config/settings/${pluginId}`,
-                            content: `Stores configuration properties for the ${pluginId} plugin.`
-                        }})}>Create Settings Note</button>
-                     `;
+                        <p>Nostr settings note not found.</p>
+                        <button @click=${() => dispatch({
+                            type: 'CORE_ADD_NOTE', payload: {
+                                name: `${plugin.name} Settings`,
+                                systemType: `config/settings/${pluginId}`,
+                                content: `Stores configuration properties for the ${pluginId} plugin.`
+                            }
+                        })}>Create Settings Note
+                        </button>
+                    `;
                 } else {
                     // Logic to render form fields dynamically will go here
                 }
@@ -1197,50 +1199,65 @@ export const NostrPlugin = {
                         <textarea id="nostr-relays-textarea" rows="5" .value=${currentRelays}></textarea>
                         <button @click=${() => handleRelaySave(document.getElementById('nostr-relays-textarea').value)}>
                             Save Relays
-                             (Legacy Note)
+                            (Legacy Note)
                         </button>
 
                         <hr>
                         <h4>Plugin Configuration</h4>
                         ${settingsNoteUI}
                         ${settingsNote ? Object.keys(settingsOntology).sort((a, b) => (settingsOntology[a].order || 99) - (settingsOntology[b].order || 99)).map(key => {
-                    const schema = settingsOntology[key];
-                    const currentValue = displayConfig[key]; // Uses default if not set
-                    const inputId = `nostr-setting-${key}`;
-                    let inputElement;
-                    const isRequired = schema.required;
+                            const schema = settingsOntology[key];
+                            const currentValue = displayConfig[key]; // Uses default if not set
+                            const inputId = `nostr-setting-${key}`;
+                            let inputElement;
+                            const isRequired = schema.required;
 
-                    // Debounced saver using PROPERTY_ADD/UPDATE
-                    const saveSetting = debounce((newValue) => {
-                        const existingProp = currentProperties.find(p => p.key === key);
-                        let actionType = existingProp ? 'PROPERTY_UPDATE' : 'PROPERTY_ADD';
-                        let payload = {};
+                            // Debounced saver using PROPERTY_ADD/UPDATE
+                            const saveSetting = debounce((newValue) => {
+                                const existingProp = currentProperties.find(p => p.key === key);
+                                let actionType = existingProp ? 'PROPERTY_UPDATE' : 'PROPERTY_ADD';
+                                let payload = {};
 
-                        if (existingProp) {
-                            if (existingProp.value === newValue) return; // No change
-                            payload = { noteId: settingsNote.id, propertyId: existingProp.id, changes: { value: newValue } };
-                        } else {
-                            payload = { noteId: settingsNote.id, propertyData: { key: key, value: newValue, type: schema.type || 'text' } };
-                        }
-                        dispatch({ type: actionType, payload: payload });
-                        // TODO: Add save status indicator?
-                    }, 750);
+                                if (existingProp) {
+                                    if (existingProp.value === newValue) return; // No change
+                                    payload = {
+                                        noteId: settingsNote.id,
+                                        propertyId: existingProp.id,
+                                        changes: {value: newValue}
+                                    };
+                                } else {
+                                    payload = {
+                                        noteId: settingsNote.id,
+                                        propertyData: {key: key, value: newValue, type: schema.type || 'text'}
+                                    };
+                                }
+                                dispatch({type: actionType, payload: payload});
+                                // TODO: Add save status indicator?
+                            }, 750);
 
-                    // Render appropriate input based on schema.type
-                    if (schema.type === 'number') {
-                        inputElement = html`<input type="number" id=${inputId} .value=${currentValue} ?required=${isRequired} min=${schema.min ?? ''} max=${schema.max ?? ''} step=${schema.step ?? ''} @input=${(e)=> saveSetting(parseInt(e.target.value, 10) || (schema.default ?? 0))}>`;
-                    } else { // Default text (add more types like textarea later)
-                        inputElement = html`<input type="text" id=${inputId} .value=${currentValue} ?required=${isRequired} placeholder=${schema.placeholder || ''} @input=${(e)=> saveSetting(e.target.value)}>`;
-                    }
+                            // Render appropriate input based on schema.type
+                            if (schema.type === 'number') {
+                                inputElement = html`<input type="number" id=${inputId} .value=${currentValue}
+                                                           ?required=${isRequired} min=${schema.min ?? ''}
+                                                           max=${schema.max ?? ''} step=${schema.step ?? ''}
+                                                           @input=${(e) => saveSetting(parseInt(e.target.value, 10) || (schema.default ?? 0))}>`;
+                            } else { // Default text (add more types like textarea later)
+                                inputElement = html`<input type="text" id=${inputId} .value=${currentValue}
+                                                           ?required=${isRequired}
+                                                           placeholder=${schema.placeholder || ''}
+                                                           @input=${(e) => saveSetting(e.target.value)}>`;
+                            }
 
-                    return html`
+                            return html`
                                 <div class="setting-item">
-                                    <label for=${inputId}>${schema.label || key}${isRequired ? html`<span class="required-indicator">*</span>` : ''}</label>
+                                    <label for=${inputId}>${schema.label || key}${isRequired ? html`<span
+                                            class="required-indicator">*</span>` : ''}</label>
                                     ${inputElement}
-                                    ${schema.description ? html`<span class="field-hint">${schema.description}</span>` : ''}
+                                    ${schema.description ? html`<span
+                                            class="field-hint">${schema.description}</span>` : ''}
                                 </div>
                             `;
-                }) : ''}
+                        }) : ''}
                     </div>
                 `;
             },

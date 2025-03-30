@@ -8,12 +8,12 @@ import {Editor} from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import {html, render as litRender} from 'lit';
 
-import { Utils } from "./util.js";
-const debounce = Utils.debounce;
-
+import {Utils} from "./util.js";
 // Assuming SLOT_EDITOR_CONTENT_AREA is defined elsewhere (e.g., in ui.js)
 // Example: export const SLOT_EDITOR_CONTENT_AREA = 'editorContentArea';
 import {SLOT_EDITOR_CONTENT_AREA} from './ui.js';
+
+const debounce = Utils.debounce;
 
 // --- Abstract Base Class (Optional but good practice) ---
 class AbstractEditorLibrary {

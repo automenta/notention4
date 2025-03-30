@@ -165,6 +165,7 @@ html, body {
     font-weight: 500;
     color: var(--text-color);
 }
+
 /* Style for new sort dropdown - Enhancement #2 */
 .sidebar-actions select {
     margin-left: 10px;
@@ -213,14 +214,36 @@ html, body {
 }
 
 /* Added for Enhancement #2 (Priority Colors) */
-.note-list-item.priority-high { border-left: 4px solid var(--priority-high-color); padding-left: calc(0.75rem - 4px); }
-.note-list-item.priority-medium { border-left: 4px solid var(--priority-medium-color); padding-left: calc(0.75rem - 4px); }
-.note-list-item.priority-low { border-left: 4px solid var(--priority-low-color); padding-left: calc(0.75rem - 4px); }
+.note-list-item.priority-high {
+    border-left: 4px solid var(--priority-high-color);
+    padding-left: calc(0.75rem - 4px);
+}
+
+.note-list-item.priority-medium {
+    border-left: 4px solid var(--priority-medium-color);
+    padding-left: calc(0.75rem - 4px);
+}
+
+.note-list-item.priority-low {
+    border-left: 4px solid var(--priority-low-color);
+    padding-left: calc(0.75rem - 4px);
+}
 
 /* More granular priority styling */
-.note-list-item.priority-10, .note-list-item.priority-9, .note-list-item.priority-8 { border-left: 4px solid var(--priority-high-color); padding-left: calc(0.75rem - 4px); }
-.note-list-item.priority-7, .note-list-item.priority-6, .note-list-item.priority-5 { border-left: 4px solid var(--priority-medium-color); padding-left: calc(0.75rem - 4px); }
-.note-list-item.priority-4, .note-list-item.priority-3, .note-list-item.priority-2, .note-list-item.priority-1 { border-left: 4px solid var(--priority-low-color); padding-left: calc(0.75rem - 4px); }
+.note-list-item.priority-10, .note-list-item.priority-9, .note-list-item.priority-8 {
+    border-left: 4px solid var(--priority-high-color);
+    padding-left: calc(0.75rem - 4px);
+}
+
+.note-list-item.priority-7, .note-list-item.priority-6, .note-list-item.priority-5 {
+    border-left: 4px solid var(--priority-medium-color);
+    padding-left: calc(0.75rem - 4px);
+}
+
+.note-list-item.priority-4, .note-list-item.priority-3, .note-list-item.priority-2, .note-list-item.priority-1 {
+    border-left: 4px solid var(--priority-low-color);
+    padding-left: calc(0.75rem - 4px);
+}
 
 /* Style priority display if added to meta/status - Enhancement #2 */
 .priority-indicator {

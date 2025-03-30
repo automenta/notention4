@@ -474,11 +474,13 @@ export const LLMPlugin = {
                             <h4>${this.name}</h4>
                             <p>Settings note not found.</p>
                             <button @click=${() => dispatch({
-                        type: 'CORE_ADD_NOTE', payload: {
-                            name: `${this.name} Settings`,
-                            systemType: `config/settings/${pluginId}`,
-                            content: `Stores configuration properties for the ${pluginId} plugin.`
-                        }})}>Create Settings Note</button>
+                                type: 'CORE_ADD_NOTE', payload: {
+                                    name: `${this.name} Settings`,
+                                    systemType: `config/settings/${pluginId}`,
+                                    content: `Stores configuration properties for the ${pluginId} plugin.`
+                                }
+                            })}>Create Settings Note
+                            </button>
                         </div>
                     `;
                 }
@@ -494,7 +496,7 @@ export const LLMPlugin = {
                             let actionType = 'PROPERTY_ADD';
                             let payload = {
                                 noteId: settingsNote.id,
-                                propertyData: { key: key, value: value, type: schema.type || 'text' }
+                                propertyData: {key: key, value: value, type: schema.type || 'text'}
                             };
 
                             if (existingProp) {
@@ -504,15 +506,15 @@ export const LLMPlugin = {
                                     payload = {
                                         noteId: settingsNote.id,
                                         propertyId: existingProp.id,
-                                        changes: { value: value }
+                                        changes: {value: value}
                                     };
-                                    dispatch({ type: actionType, payload: payload });
+                                    dispatch({type: actionType, payload: payload});
                                 } else {
                                     // Value hasn't changed, don't dispatch anything
                                     return;
                                 }
                             } else {
-                                dispatch({ type: actionType, payload: payload });
+                                dispatch({type: actionType, payload: payload});
                             }
 
                             // Update UI status - REMOVED requestRender
@@ -556,56 +558,60 @@ export const LLMPlugin = {
                             <span class="save-status ${this._uiSaveStatus === 'saved' ? 'visible' : ''}">Saved ✓</span>
                         </h4>
                         <p class="settings-description">
-                            Configure LLM access. Settings are stored as properties on System Note: ${settingsNote.id}. Autosaves on change.
+                            Configure LLM access. Settings are stored as properties on System Note: ${settingsNote.id}.
+                            Autosaves on change.
                         </p>
                         ${isModelNameMissing ? html`<p class="settings-description warning">⚠️ Model Name is required
                             for the plugin to function. Please enter one below.</p>` : ''}
 
 
                         ${sortedKeys.map(key => {
-                    const schema = settingsOntology[key];
-                    const currentValue = displayConfig[key]; // Uses default if not set
-                    const inputId = `llm-setting-${key}`;
-                    let inputElement;
-                    const isRequired = schema.required;
+                            const schema = settingsOntology[key];
+                            const currentValue = displayConfig[key]; // Uses default if not set
+                            const inputId = `llm-setting-${key}`;
+                            let inputElement;
+                            const isRequired = schema.required;
 
-                    // Determine input type and common attributes
-                    const commonAttrs = {
-                        id: inputId,
-                        '.value': currentValue ?? '', // Use ?? for null/undefined, ensuring empty string for input value
-                        placeholder: schema.placeholder || '',
-                        required: isRequired,
-                        'aria-required': String(isRequired)
-                    };
-                    const style = (isRequired && !currentValue) ? 'border-color: var(--vscode-inputValidation-warningBorder, orange);' : '';
+                            // Determine input type and common attributes
+                            const commonAttrs = {
+                                id: inputId,
+                                '.value': currentValue ?? '', // Use ?? for null/undefined, ensuring empty string for input value
+                                placeholder: schema.placeholder || '',
+                                required: isRequired,
+                                'aria-required': String(isRequired)
+                            };
+                            const style = (isRequired && !currentValue) ? 'border-color: var(--vscode-inputValidation-warningBorder, orange);' : '';
 
 
-                    // TODO: Add support for select, checkbox, textarea based on schema.type
-                    if (schema.type === 'number') {
-                        inputElement = html`<input type="number" ...=${commonAttrs} style=${style}
-                                     min=${schema.min ?? ''} max=${schema.max ?? ''} step=${schema.step ?? ''}
-                                     @input=${(e) => handleNumberInput(key, e.target.value, schema.step && String(schema.step).includes('.'))}>`;
-                    } else if (schema.type === 'password') {
-                        inputElement = html`<input type="password" ...=${commonAttrs} style=${style}
-                                     @input=${(e) => handleInput(key, e.target.value)}>`;
-                    } else if (schema.type === 'url') {
-                        inputElement = html`<input type="url" ...=${commonAttrs} style=${style}
-                                     @input=${(e) => handleInput(key, e.target.value.trim())}>`;
-                    } else { // Default to text
-                        inputElement = html`<input type="text" ...=${commonAttrs} style=${style}
-                                     @input=${(e) => handleInput(key, e.target.value.trim())}>`;
-                    }
+                            // TODO: Add support for select, checkbox, textarea based on schema.type
+                            if (schema.type === 'number') {
+                                inputElement = html`<input type="number" ...=${commonAttrs} style=${style}
+                                                           min=${schema.min ?? ''} max=${schema.max ?? ''}
+                                                           step=${schema.step ?? ''}
+                                                           @input=${(e) => handleNumberInput(key, e.target.value, schema.step && String(schema.step).includes('.'))}>`;
+                            } else if (schema.type === 'password') {
+                                inputElement = html`<input type="password" ...=${commonAttrs} style=${style}
+                                                           @input=${(e) => handleInput(key, e.target.value)}>`;
+                            } else if (schema.type === 'url') {
+                                inputElement = html`<input type="url" ...=${commonAttrs} style=${style}
+                                                           @input=${(e) => handleInput(key, e.target.value.trim())}>`;
+                            } else { // Default to text
+                                inputElement = html`<input type="text" ...=${commonAttrs} style=${style}
+                                                           @input=${(e) => handleInput(key, e.target.value.trim())}>`;
+                            }
 
-                    return html`
-                                 <div class="setting-item">
-                                     <label for=${inputId}>${schema.label || key}${isRequired ? html`<span class="required-indicator">*</span>` : ''}</label>
-                                     ${inputElement}
-                                     ${schema.description ? html`<span class="field-hint">${schema.description}</span>` : ''}
-                                 </div>
-                             `;
-                })}
+                            return html`
+                                <div class="setting-item">
+                                    <label for=${inputId}>${schema.label || key}${isRequired ? html`<span
+                                            class="required-indicator">*</span>` : ''}</label>
+                                    ${inputElement}
+                                    ${schema.description ? html`<span
+                                            class="field-hint">${schema.description}</span>` : ''}
+                                </div>
+                            `;
+                        })}
                         <!-- Old hardcoded fields removed -->
-                        <!--
+                            <!--
                         <div class="setting-item">...</div>
                         <div class="setting-item">...</div>
                         <div class="setting-item">...</div>
@@ -627,7 +633,7 @@ export const LLMPlugin = {
                             >
                             <span class="field-hint">Max completion length. Default: 1024. Check model limits.</span>
                         -->
-                        </div>
+                    </div>
                     </div>
                 `;
             }
@@ -636,7 +642,7 @@ export const LLMPlugin = {
 }; // end registerUISlots
 
 // Optional cleanup remains the same
-LLMPlugin.cleanup = function() {
+LLMPlugin.cleanup = function () {
     console.log("LLMPlugin: Cleaning up.");
     if (this._unsubscribe) {
         this._unsubscribe();

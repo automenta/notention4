@@ -255,7 +255,8 @@ export const OntologyPlugin = {
                                 Edit Ontology Config Note
                             </button>
                             <span class="settings-hint"> (ID: ${noteId})</span>
-                            <p class="settings-hint">Last loaded update: ${this._configNoteLastUpdate ? new Date(this._configNoteLastUpdate).toLocaleString() : 'Never'}</p>
+                            <p class="settings-hint">Last loaded update:
+                                ${this._configNoteLastUpdate ? new Date(this._configNoteLastUpdate).toLocaleString() : 'Never'}</p>
                         </div>
                     `;
                 } else {

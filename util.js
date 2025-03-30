@@ -17,7 +17,7 @@ export const Utils = {
     debounce: (func, wait) => {
         let timeout;
         const cancel = () => clearTimeout(timeout);
-        let e = function(...args) {
+        let e = function (...args) {
             cancel();
             timeout = setTimeout(() => {
                 clearTimeout(timeout);

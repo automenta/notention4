@@ -631,7 +631,7 @@ class UIRenderer {
 
     // --- Event Handler for #2 (Priority Sort) ---
     _handleSortChange = (e) => {
-        this._dispatch({ type: 'CORE_SET_NOTE_LIST_SORT_MODE', payload: e.target.value });
+        this._dispatch({type: 'CORE_SET_NOTE_LIST_SORT_MODE', payload: e.target.value});
     }
 
     // --- Rendering Helper for #2 (Priority Sort Button) ---

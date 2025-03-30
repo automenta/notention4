@@ -186,7 +186,7 @@ export const PropertiesPlugin = {
 
                     // TODO: Replace prompt with a proper modal/dropdown UI
                     const optionsText = possibleKeys.map((k, i) => {
-                        const hints = ontologyService?.getUIHints(k) || { icon: '?' };
+                        const hints = ontologyService?.getUIHints(k) || {icon: '?'};
                         return `${i + 1}: ${hints.icon} ${k}`;
                     }).join('\n');
                     const choice = prompt(`Select property to add:\n${optionsText}\n\nOr type a custom key:`);
@@ -205,7 +205,7 @@ export const PropertiesPlugin = {
                             type: 'PROPERTY_ADD',
                             payload: {
                                 noteId: noteId,
-                                propertyData: { key: selectedKey, value: value ?? '' } // Use ?? for null/undefined from prompt
+                                propertyData: {key: selectedKey, value: value ?? ''} // Use ?? for null/undefined from prompt
                             }
                         });
                     }
@@ -245,9 +245,15 @@ export const PropertiesPlugin = {
                 const handlePriorityChange = coreAPI.utils.debounce((newValue) => {
                     const value = parseInt(newValue, 10) || 5; // Default to 5 if invalid
                     if (priorityProp) { // Update existing
-                        dispatch({type: 'PROPERTY_UPDATE', payload: { noteId: noteId, propertyId: priorityProp.id, changes: { value: value } }});
+                        dispatch({
+                            type: 'PROPERTY_UPDATE',
+                            payload: {noteId: noteId, propertyId: priorityProp.id, changes: {value: value}}
+                        });
                     } else { // Add new
-                        dispatch({type: 'PROPERTY_ADD', payload: { noteId: noteId, propertyData: { key: 'priority', value: value, type: 'number' } }});
+                        dispatch({
+                            type: 'PROPERTY_ADD',
+                            payload: {noteId: noteId, propertyData: {key: 'priority', value: value, type: 'number'}}
+                        });
                     }
                 }, 500); // Debounce slider changes
 
@@ -282,12 +288,15 @@ export const PropertiesPlugin = {
                             + Add Property... <!-- Ellipsis indicates selection follows -->
                         </button>
 
-                         <!-- Added for Enhancement #2 -->
-                        <label for="priority-slider-${noteId}" style="margin-left: 15px; font-size: 0.9em;">Priority:</label>
-                        <input type="range" id="priority-slider-${noteId}" min="1" max="10" step="1" .value=${currentPriority} @input=${(e) => handlePriorityChange(e.target.value)} style="vertical-align: middle; width: 100px;">
+                        <!-- Added for Enhancement #2 -->
+                        <label for="priority-slider-${noteId}"
+                               style="margin-left: 15px; font-size: 0.9em;">Priority:</label>
+                        <input type="range" id="priority-slider-${noteId}" min="1" max="10" step="1"
+                               .value=${currentPriority} @input=${(e) => handlePriorityChange(e.target.value)}
+                               style="vertical-align: middle; width: 100px;">
                         <span style="font-size: 0.9em; margin-left: 5px;">(${currentPriority})</span>
 
-                            + Add Property
+                        + Add Property
                         </button>
                     </div>
                 `;
