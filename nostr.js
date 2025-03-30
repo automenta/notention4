@@ -163,7 +163,7 @@ export const NostrPlugin = {
             console.error("NostrPlugin Critical Error: nostr-tools library not found.");
             this._identityStatus = 'error';
             this._identityError = "Nostr library missing";
-            // Dispatch error state in _loadConfigAndCheckIdentity
+            this._updateIdentityStatus('error', {error: this._identityError});
         }
         this.matcherService = coreAPI.getService('MatcherService');
         this._relayPool = null;
@@ -177,6 +177,7 @@ export const NostrPlugin = {
         this._identityError = null;
         this._connectionStatus = 'disconnected';
         this._connectionError = null;
+        this._updateIdentityStatus('loading'); // Initial loading state
 
 
         this._loadConfigAndCheckIdentity();
@@ -186,18 +187,13 @@ export const NostrPlugin = {
 
     async _loadConfigAndCheckIdentity() {
         if (typeof NostrTools === 'undefined') {
-            this.coreAPI.dispatch({
-                type: 'NOSTR_IDENTITY_STATUS_UPDATE',
-                payload: 'error',
-                error: "Nostr library (nostr-tools) not loaded."
-            });
+            this._updateIdentityStatus('error', {error: "Nostr library (nostr-tools) not loaded."});
             return;
         }
 
-        this.coreAPI.dispatch({type: 'NOSTR_IDENTITY_STATUS_UPDATE', payload: 'loading'});
+        this._updateIdentityStatus('loading');
 
         // 1. Load Relay & Plugin Config
-        // Enhancement #0: Load settings from System Note properties
         const settingsNote = this.coreAPI.getSystemNoteByType(`config/settings/${this.id}`);
         const propsApi = this.coreAPI.getPluginAPI('properties');
         const currentSettings = settingsNote ? (this._mapPropsToObject(propsApi?.getPropertiesForNote(settingsNote.id) || [])) : {};
@@ -223,26 +219,22 @@ export const NostrPlugin = {
         try {
             if (identityNote?.content?.encryptedNsec?.ciphertext && identityNote.content.pubkey) {
                 this._identityStatus = 'locked';
-                this.coreAPI.dispatch({
-                    type: 'NOSTR_IDENTITY_STATUS_UPDATE',
-                    payload: 'locked',
-                    pubkey: identityNote.content.pubkey
-                });
+                this._updateIdentityStatus('locked', {pubkey: identityNote.content.pubkey});
                 console.log("NostrPlugin: Identity found, status 'locked'. PubKey:", identityNote.content.pubkey);
             } else {
                 this._identityStatus = 'no_identity';
-                this.coreAPI.dispatch({type: 'NOSTR_IDENTITY_STATUS_UPDATE', payload: 'no_identity'});
+                this._updateIdentityStatus('no_identity');
                 console.log("NostrPlugin: No identity found.");
             }
         } catch (error) {
             console.error("NostrPlugin: Error loading identity:", error);
             this._identityStatus = 'error';
             this._identityError = `Failed to load identity: ${error.message}`;
-            this.coreAPI.dispatch({type: 'NOSTR_IDENTITY_STATUS_UPDATE', payload: 'error', error: this._identityError});
+            this._updateIdentityStatus('error', {error: this._identityError});
         }
     },
 
-    // --- Helper for Enhancement #0 ---
+    // --- Helpers ---
     _mapPropsToObject(properties = []) {
         const settings = {};
         properties.forEach(prop => {
@@ -250,10 +242,10 @@ export const NostrPlugin = {
         });
         return settings;
     },
-    // --- Helper for Enhancement #0 ---
+
     _getDefaultSettings() {
         const defaults = {};
-        const ontology = this.getSettingsOntology(); // Call own method
+        const ontology = this.getSettingsOntology();
         if (!ontology) return defaults;
 
         for (const key in ontology) {
@@ -436,14 +428,10 @@ export const NostrPlugin = {
                     const noteCheck = this.coreAPI.getSystemNoteByType('config/nostr/identity');
                     if (noteCheck?.content?.encryptedNsec) {
                         this._identityStatus = 'locked';
-                        this.coreAPI.dispatch({
-                            type: 'NOSTR_IDENTITY_STATUS_UPDATE',
-                            payload: 'locked',
-                            pubkey: noteCheck.content.pubkey
-                        });
+                        this._updateIdentityStatus('locked', {pubkey: noteCheck.content.pubkey});
                     } else {
                         this._identityStatus = 'no_identity';
-                        this.coreAPI.dispatch({type: 'NOSTR_IDENTITY_STATUS_UPDATE', payload: 'no_identity'});
+                        this._updateIdentityStatus('no_identity');
                     }
                     return;
                 }
@@ -451,36 +439,44 @@ export const NostrPlugin = {
                 await this.coreAPI.saveSystemNote('config/nostr/identity', null);
                 this._identityStatus = 'no_identity';
                 this._identityError = null;
-                this.coreAPI.dispatch({type: 'NOSTR_IDENTITY_STATUS_UPDATE', payload: 'no_identity'});
+                this._updateIdentityStatus('no_identity');
                 this.coreAPI.showToast("Nostr identity cleared from storage.", "info");
-            } catch (error) { /* ... (Error handling unchanged) ... */
+            } catch (error) {
                 console.error("NostrPlugin: Failed to clear identity:", error);
                 this.coreAPI.showToast("Error clearing identity.", "error");
                 this._identityStatus = 'error';
                 this._identityError = "Failed to clear identity.";
-                this.coreAPI.dispatch({
-                    type: 'NOSTR_IDENTITY_STATUS_UPDATE',
-                    payload: 'error',
-                    error: this._identityError
-                });
+                this._updateIdentityStatus('error', {error: this._identityError});
             }
         } else { // Just locking
             const identityNote = this.coreAPI.getSystemNoteByType('config/nostr/identity');
             if (identityNote?.content?.encryptedNsec) {
                 this._identityStatus = 'locked';
                 this._identityError = null;
-                this.coreAPI.dispatch({
-                    type: 'NOSTR_IDENTITY_STATUS_UPDATE',
-                    payload: 'locked',
-                    pubkey: identityNote.content.pubkey
-                });
+                this._updateIdentityStatus('locked', {pubkey: identityNote.content.pubkey});
                 this.coreAPI.showToast("Nostr identity locked.", "info");
-            } else { /* ... (Handle case where no identity exists - unchanged) ... */
+            } else {
                 this._identityStatus = 'no_identity';
                 this._identityError = null;
-                this.coreAPI.dispatch({type: 'NOSTR_IDENTITY_STATUS_UPDATE', payload: 'no_identity'});
+                this._updateIdentityStatus('no_identity');
             }
         }
+    },
+
+    /**
+     * Updates the plugin's identity status and dispatches an action to the core.
+     * @param {string} status - The new identity status ('loading', 'locked', 'unlocked', 'no_identity', 'error').
+     * @param {object} [options] - Optional parameters including 'pubkey' and 'error'.
+     * @private
+     */
+    _updateIdentityStatus(status, options = {}) {
+        const {pubkey, error} = options;
+        this.coreAPI.dispatch({
+            type: 'NOSTR_IDENTITY_STATUS_UPDATE',
+            payload: status,
+            pubkey: pubkey,
+            error: error
+        });
     },
 
     onActivate() {
@@ -721,15 +717,13 @@ export const NostrPlugin = {
                         nostrState.pendingPublish = {}; /* Clear pending on lock/clear */
                     }
                     break;
-                case 'NOSTR_CONNECTION_STATUS_UPDATE': /* ... (Logic unchanged) ... */
+                case 'NOSTR_CONNECTION_STATUS_UPDATE':
                     nostrState.connectionStatus = action.payload;
                     nostrState.connectionError = action.error || null;
                     break;
-                case 'NOSTR_CONFIG_LOADED': // Update state mirror of config
+                case 'NOSTR_CONFIG_LOADED':
                     nostrState.config.relays = action.payload.relays || [];
                     nostrState.config.autoLockMinutes = action.payload.autoLockMinutes ?? nostrState.config.autoLockMinutes;
-                    // TODO: Update eoseTimeout if loaded from config
-                    // nostrState.config.eoseTimeout = action.payload.eoseTimeout ?? nostrState.config.eoseTimeout;
                     break;
 
                 // --- Request Actions (Handled by Middleware) ---
