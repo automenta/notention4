@@ -317,69 +317,296 @@ export const OntologyPlugin = {
         };
     },
 
+    // --- UI Rendering ---
+
     registerUISlots: function () {
         return {
             [SLOT_SETTINGS_PANEL_SECTION]: (props) => {
-                // Render function needs access to coreAPI, likely via props or global scope
-                // Using global coreAPI as per the example structure provided
+                const { state, dispatch, html } = props;
                 const configNote = this.coreAPI.getSystemNoteByType('config/ontology');
                 const noteId = configNote?.id;
+                const currentOntologyData = this._ontologyData || ONTOLOGY; // Use loaded data or default
 
-                // Use lit-html if available via props.html, otherwise basic string templating
-                const html = props?.html || ((strings, ...values) => strings.map((s, i) => s + (values[i] || '')).join(''));
-
-                if (noteId) {
-                    // Button dispatches multiple actions: select the note and close the modal
-                    // Note: Direct onclick string is simple but less robust than event listeners
-                    return html`
-                        <div class="settings-section">
-                            <h4>${this.name}</h4>
-                            <p>Configure semantic types, templates, keywords, and hints.</p>
-                            <p>Configuration is stored in the 'config/ontology' system note.</p>
-                            <button
-                                    @click=${() => {
-                                        this.coreAPI.dispatch({type: 'CORE_SELECT_NOTE', payload: {noteId: noteId}});
-                                        this.coreAPI.dispatch({type: 'CORE_CLOSE_MODAL'});
-                                    }}>
-                                Edit Ontology Config Note
-                            </button>
-                            <span class="settings-hint"> (ID: ${noteId})</span>
-                            <p class="settings-hint">Last loaded update: ${this._configNoteLastUpdate ? new Date(this._configNoteLastUpdate).toLocaleString() : 'Never'}</p>
-                            <p class="settings-hint">Note: A structured editor for the ontology is planned for future updates.</p>
-                        </div>
-                    `;
-                } else {
-                    // Use the enhanced default ONTOLOGY structure when creating the note
-                    const ontology_str = JSON.stringify(ONTOLOGY, null, 2); // Pretty print JSON
-
+                if (!noteId) {
+                    // Render button to create the config note
+                    const ontology_str = JSON.stringify(ONTOLOGY, null, 2);
                     return html`
                         <div class="settings-section ontology-settings">
                             <h4>${this.name}</h4>
                             <p>Configure semantic types, templates, keywords, and hints.</p>
                             <p>Configuration note not found.</p>
-                            <button
-                                    @click=${() => {
-                                        this.coreAPI.dispatch({
-                                            type: 'CORE_ADD_NOTE',
-                                            payload: {
-                                                name: 'Ontology Configuration',
-                                                systemType: 'config/ontology',
-                                                content: ontology_str
-                                            }
-                                        });
-                                        // Maybe close modal after adding? Or let user select it?
-                                        // this.coreAPI.dispatch({ type: 'CORE_CLOSE_MODAL' });
-                                        this.coreAPI.showGlobalStatus("Ontology config note created. Edit it to customize.", "info", 5000);
-                                    }}>
+                            <button @click=${() => this._handleCreateOntologyNote(dispatch, ontology_str)}>
                                 Create Ontology Config Note
                             </button>
+                        </div>
+                    `;
+                } else {
+                    // Render the editor UI
+                    return html`
+                        <div class="settings-section ontology-settings">
+                            <h4>${this.name} Editor</h4>
+                            <p>Configuration stored in System Note: ${noteId}</p>
+                            <p class="settings-hint">Last loaded update: ${this._configNoteLastUpdate ? new Date(this._configNoteLastUpdate).toLocaleString() : 'Never'}</p>
+                            ${this._renderOntologyEditor(currentOntologyData, noteId, dispatch, html)}
+                            <style>${this._getEditorCSS()}</style>
                         </div>
                     `;
                 }
             }
         }
+    },
+
+    // --- UI Helper Methods ---
+
+    _handleCreateOntologyNote(dispatch, ontologyString) {
+        dispatch({
+            type: 'CORE_ADD_NOTE',
+            payload: {
+                name: 'Ontology Configuration',
+                systemType: 'config/ontology',
+                content: ontologyString
+            }
+        });
+        this.coreAPI.showGlobalStatus("Ontology config note created. Edit it to customize.", "info", 5000);
+    },
+
+    _renderOntologyEditor(ontologyData, noteId, dispatch, html) {
+        // Helper to render a section (Properties, Rules, Hints, Templates)
+        const renderSection = (title, key, items, renderItemFn, addItemFn) => html`
+            <details class="ontology-section">
+                <summary>${title} (${Object.keys(items || {}).length})</summary>
+                <div class="ontology-items">
+                    ${Object.entries(items || {}).map(([itemKey, itemValue]) => renderItemFn(itemKey, itemValue))}
+                </div>
+                <button class="ontology-add-button" @click=${() => addItemFn(key)}>+ Add ${title.slice(0, -1)}</button>
+            </details>
+        `;
+
+        // Render individual property definition
+        const renderPropertyItem = (propKey, propValue) => html`
+            <div class="ontology-item property-item" data-key=${propKey} data-section="properties">
+                <strong class="ontology-item-key">${propKey}</strong>
+                <button class="ontology-delete-button" title="Delete Property" @click=${(e) => this._handleDeleteOntologyItem(e, ontologyData, noteId, dispatch)}>×</button>
+                <div class="ontology-item-fields">
+                    <label>Type:</label><input type="text" .value=${propValue.type || 'text'} @input=${(e) => this._handleOntologyChange(e, 'type', ontologyData, noteId, dispatch)}>
+                    <label>Description:</label><input type="text" .value=${propValue.description || ''} @input=${(e) => this._handleOntologyChange(e, 'description', ontologyData, noteId, dispatch)}>
+                    <label>UI Hint Key:</label><input type="text" .value=${propValue.uiHint || ''} @input=${(e) => this._handleOntologyChange(e, 'uiHint', ontologyData, noteId, dispatch)}>
+                    <label>Validation (JSON):</label><textarea rows="2" .value=${JSON.stringify(propValue.validation || {}, null, 2)} @input=${(e) => this._handleOntologyChange(e, 'validation', ontologyData, noteId, dispatch)}></textarea>
+                </div>
+            </div>
+        `;
+
+        // Render individual rule
+        const renderRuleItem = (index, ruleValue) => html`
+            <div class="ontology-item rule-item" data-key=${index} data-section="rules">
+                <strong class="ontology-item-key">Rule ${parseInt(index, 10) + 1}</strong>
+                <button class="ontology-delete-button" title="Delete Rule" @click=${(e) => this._handleDeleteOntologyItem(e, ontologyData, noteId, dispatch)}>×</button>
+                <div class="ontology-item-fields">
+                    <label>Pattern (Regex):</label><input type="text" .value=${ruleValue.pattern || ''} @input=${(e) => this._handleOntologyChange(e, 'pattern', ontologyData, noteId, dispatch)}>
+                    <label>Type:</label><input type="text" .value=${ruleValue.type || 'text'} @input=${(e) => this._handleOntologyChange(e, 'type', ontologyData, noteId, dispatch)}>
+                    <label>Description:</label><input type="text" .value=${ruleValue.description || ''} @input=${(e) => this._handleOntologyChange(e, 'description', ontologyData, noteId, dispatch)}>
+                    <label>Case Sensitive:</label><input type="checkbox" .checked=${!!ruleValue.caseSensitive} @change=${(e) => this._handleOntologyChange(e, 'caseSensitive', ontologyData, noteId, dispatch)}>
+                </div>
+            </div>
+        `;
+
+        // Render individual UI Hint
+        const renderHintItem = (hintKey, hintValue) => html`
+            <div class="ontology-item hint-item" data-key=${hintKey} data-section="uiHints">
+                <strong class="ontology-item-key">${hintKey}</strong>
+                <button class="ontology-delete-button" title="Delete Hint" @click=${(e) => this._handleDeleteOntologyItem(e, ontologyData, noteId, dispatch)}>×</button>
+                <div class="ontology-item-fields">
+                    <label>Icon:</label><input type="text" .value=${hintValue.icon || ''} @input=${(e) => this._handleOntologyChange(e, 'icon', ontologyData, noteId, dispatch)}>
+                    <label>Color:</label><input type="color" .value=${hintValue.color || '#cccccc'} @input=${(e) => this._handleOntologyChange(e, 'color', ontologyData, noteId, dispatch)}>
+                    <label>Input Type:</label><input type="text" .value=${hintValue.inputType || 'text'} @input=${(e) => this._handleOntologyChange(e, 'inputType', ontologyData, noteId, dispatch)}>
+                    <label>Options (JSON Array):</label><input type="text" .value=${JSON.stringify(hintValue.options || [])} @input=${(e) => this._handleOntologyChange(e, 'options', ontologyData, noteId, dispatch)}>
+                    <label>Min:</label><input type="number" .value=${hintValue.min ?? ''} @input=${(e) => this._handleOntologyChange(e, 'min', ontologyData, noteId, dispatch)}>
+                    <label>Max:</label><input type="number" .value=${hintValue.max ?? ''} @input=${(e) => this._handleOntologyChange(e, 'max', ontologyData, noteId, dispatch)}>
+                    <label>Step:</label><input type="number" .value=${hintValue.step ?? ''} @input=${(e) => this._handleOntologyChange(e, 'step', ontologyData, noteId, dispatch)}>
+                </div>
+            </div>
+        `;
+
+        // Render individual template
+        const renderTemplateItem = (index, templateValue) => html`
+            <div class="ontology-item template-item" data-key=${index} data-section="templates">
+                <strong class="ontology-item-key">Template ${parseInt(index, 10) + 1}</strong>
+                <button class="ontology-delete-button" title="Delete Template" @click=${(e) => this._handleDeleteOntologyItem(e, ontologyData, noteId, dispatch)}>×</button>
+                <div class="ontology-item-fields">
+                    <label>Name:</label><input type="text" .value=${templateValue.name || ''} @input=${(e) => this._handleOntologyChange(e, 'name', ontologyData, noteId, dispatch)}>
+                    <label>Content:</label><textarea rows="4" .value=${templateValue.content || ''} @input=${(e) => this._handleOntologyChange(e, 'content', ontologyData, noteId, dispatch)}></textarea>
+                </div>
+            </div>
+        `;
+
+        return html`
+            <div class="ontology-editor">
+                ${renderSection('Properties', 'properties', ontologyData.properties, renderPropertyItem, this._handleAddOntologyItem.bind(this))}
+                ${renderSection('Rules', 'rules', ontologyData.rules, renderRuleItem, this._handleAddOntologyItem.bind(this))}
+                ${renderSection('UI Hints', 'uiHints', ontologyData.uiHints, renderHintItem, this._handleAddOntologyItem.bind(this))}
+                ${renderSection('Templates', 'templates', ontologyData.templates, renderTemplateItem, this._handleAddOntologyItem.bind(this))}
+                <!-- Keywords section could be added similarly -->
+            </div>
+        `;
+    },
+
+    _handleAddOntologyItem(sectionKey, ontologyData, noteId, dispatch) {
+        const newItemKey = prompt(`Enter new key for ${sectionKey} (or leave blank for array items):`);
+        if (newItemKey === null) return; // User cancelled
+
+        const updatedOntology = { ...ontologyData }; // Shallow copy
+
+        if (Array.isArray(updatedOntology[sectionKey])) {
+            updatedOntology[sectionKey] = [...updatedOntology[sectionKey], {}]; // Add empty object for arrays (rules, templates)
+        } else {
+            if (!newItemKey || updatedOntology[sectionKey]?.[newItemKey]) {
+                alert(`Invalid or duplicate key: "${newItemKey}"`);
+                return;
+            }
+            updatedOntology[sectionKey] = { ...(updatedOntology[sectionKey] || {}), [newItemKey]: {} }; // Add empty object for maps (properties, uiHints)
+        }
+
+        this._handleSaveOntology(updatedOntology, noteId, dispatch);
+    },
+
+    _handleDeleteOntologyItem(event, ontologyData, noteId, dispatch) {
+        const itemElement = event.target.closest('.ontology-item');
+        const sectionKey = itemElement.dataset.section;
+        const itemKey = itemElement.dataset.key;
+
+        if (!confirm(`Are you sure you want to delete this item from ${sectionKey}?`)) return;
+
+        const updatedOntology = { ...ontologyData }; // Shallow copy
+
+        if (Array.isArray(updatedOntology[sectionKey])) {
+            const index = parseInt(itemKey, 10);
+            updatedOntology[sectionKey] = updatedOntology[sectionKey].filter((_, i) => i !== index);
+        } else {
+            updatedOntology[sectionKey] = { ...(updatedOntology[sectionKey] || {}) }; // Ensure object exists
+            delete updatedOntology[sectionKey][itemKey];
+        }
+
+        this._handleSaveOntology(updatedOntology, noteId, dispatch);
+    },
+
+    _handleOntologyChange(event, fieldKey, ontologyData, noteId, dispatch) {
+        const input = event.target;
+        const itemElement = input.closest('.ontology-item');
+        const sectionKey = itemElement.dataset.section;
+        const itemKey = itemElement.dataset.key; // This is the key for maps, index for arrays
+
+        let value = input.type === 'checkbox' ? input.checked : input.value;
+
+        // Attempt to parse JSON for specific fields
+        if (['validation', 'options'].includes(fieldKey)) {
+            try {
+                value = JSON.parse(value);
+            } catch (e) {
+                console.warn(`Invalid JSON for ${sectionKey}[${itemKey}].${fieldKey}:`, value);
+                input.style.borderColor = 'red'; // Indicate error
+                return; // Don't save invalid JSON
+            }
+            input.style.borderColor = ''; // Clear error indicator
+        }
+        // Convert number fields
+        if (input.type === 'number') {
+            value = value === '' ? null : Number(value);
+        }
+
+
+        // Use Immer-like update pattern (manual for now)
+        const updatedOntology = JSON.parse(JSON.stringify(ontologyData)); // Deep copy for safety
+
+        try {
+            if (Array.isArray(updatedOntology[sectionKey])) {
+                const index = parseInt(itemKey, 10);
+                if (updatedOntology[sectionKey][index]) {
+                    updatedOntology[sectionKey][index][fieldKey] = value;
+                }
+            } else {
+                if (updatedOntology[sectionKey]?.[itemKey]) {
+                    updatedOntology[sectionKey][itemKey][fieldKey] = value;
+                }
+            }
+        } catch (e) {
+            console.error("Error updating ontology structure:", e);
+            return; // Don't save if structure is wrong
+        }
+
+
+        // Debounce saving
+        this._debouncedSaveOntology(updatedOntology, noteId, dispatch);
+    },
+
+    // Debounced save function
+    _debouncedSaveOntology: Utils.debounce(function(updatedOntology, noteId, dispatch) {
+        this._handleSaveOntology(updatedOntology, noteId, dispatch);
+    }, 1500), // Debounce time in ms
+
+    _handleSaveOntology(updatedOntology, noteId, dispatch) {
+        try {
+            const ontologyString = JSON.stringify(updatedOntology, null, 2);
+            dispatch({
+                type: 'CORE_UPDATE_NOTE',
+                payload: {
+                    noteId: noteId,
+                    changes: { content: ontologyString }
+                }
+            });
+            // No need to manually update this._ontologyData, the subscription will handle it.
+            this.coreAPI.showGlobalStatus("Ontology saved.", "success", 1500);
+        } catch (e) {
+            console.error("Failed to stringify or save ontology:", e);
+            this.coreAPI.showGlobalStatus("Error saving ontology.", "error", 5000);
+        }
+    },
+
+    _getEditorCSS() {
+        return `
+            .ontology-settings h4 { margin-bottom: 0.5em; }
+            .ontology-editor { display: flex; flex-direction: column; gap: 1em; }
+            .ontology-section { border: 1px solid var(--vscode-settings-headerBorder); border-radius: 4px; }
+            .ontology-section summary { padding: 0.5em; cursor: pointer; background-color: var(--vscode-sideBar-background); }
+            .ontology-section[open] summary { border-bottom: 1px solid var(--vscode-settings-headerBorder); }
+            .ontology-items { padding: 0.5em 1em 1em 1em; display: flex; flex-direction: column; gap: 1em; max-height: 400px; overflow-y: auto; }
+            .ontology-item { border: 1px solid var(--vscode-input-border, #ccc); border-radius: 3px; padding: 0.5em; position: relative; }
+            .ontology-item-key { font-weight: bold; display: block; margin-bottom: 0.5em; }
+            .ontology-item-fields { display: grid; grid-template-columns: auto 1fr; gap: 0.5em 0.8em; align-items: center; }
+            .ontology-item-fields label { grid-column: 1; text-align: right; font-size: 0.9em; color: var(--vscode-descriptionForeground); }
+            .ontology-item-fields input[type="text"],
+            .ontology-item-fields input[type="number"],
+            .ontology-item-fields input[type="url"],
+            .ontology-item-fields textarea {
+                grid-column: 2;
+                width: 100%;
+                background-color: var(--vscode-input-background);
+                color: var(--vscode-input-foreground);
+                border: 1px solid var(--vscode-input-border);
+                padding: 2px 4px;
+                border-radius: 2px;
+                font-family: inherit;
+                font-size: 0.95em;
+            }
+             .ontology-item-fields input[type="color"] {
+                grid-column: 2;
+                padding: 0; border: none; height: 24px; width: 50px;
+             }
+             .ontology-item-fields input[type="checkbox"] {
+                grid-column: 2; justify-self: start;
+             }
+            .ontology-item-fields textarea { resize: vertical; min-height: 40px; font-family: monospace; }
+            .ontology-add-button { margin: 0.5em 1em 1em 1em; }
+            .ontology-delete-button {
+                position: absolute; top: 2px; right: 2px;
+                background: none; border: none; color: var(--vscode-foreground);
+                cursor: pointer; font-size: 1.2em; padding: 0 4px; line-height: 1;
+            }
+            .ontology-delete-button:hover { color: var(--vscode-errorForeground); }
+            .settings-hint { font-size: 0.9em; color: var(--vscode-descriptionForeground); margin-top: 0.2em; display: block; }
+        `;
     }
 
     // No primary reducer needed as state (_ontologyData) is managed internally
-    // based on external note changes detected via subscription.
+    // based on external note changes detected via subscription. The editor directly
+    // dispatches CORE_UPDATE_NOTE to save changes.
 };
