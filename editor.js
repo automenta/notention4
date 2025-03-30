@@ -573,12 +573,12 @@ export const RichTextEditorPlugin = {
                                             type: 'CORE_UPDATE_NOTE',
                                             payload: {
                                                 noteId: this._currentNoteId,
-                                                changes: {content: currentEditorContent}
+                                                changes: { content: currentEditorContent }
                                             }
                                         });
                                     }
                                 }, debounceTime),
-                                editorOptions: {}
+                                editorOptions: {},
                             });
                             this._currentNoteId = noteId;
                             this._updateToolbarUI(); // Render toolbar after successful init
