@@ -8,6 +8,9 @@ import {Editor} from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import {html, render as litRender} from 'lit';
 
+import { Utils } from "./util.js";
+const debounce = Utils.debounce;
+
 // Assuming SLOT_EDITOR_CONTENT_AREA is defined elsewhere (e.g., in ui.js)
 // Example: export const SLOT_EDITOR_CONTENT_AREA = 'editorContentArea';
 import {SLOT_EDITOR_CONTENT_AREA} from './ui.js';
@@ -378,6 +381,12 @@ function renderToolbarContent(editorInstance) {
         <button title="Horizontal Rule" class="toolbar-button"
                 @click=${() => tiptap.applyDecoration(null, {style: 'horizontalRule'})}>- Rule
         </button>
+        <span class="toolbar-divider"></span>
+        <!-- Added for Enhancement #3 -->
+        <button title="Insert Template" class="toolbar-button"
+                @click=${() => RichTextEditorPlugin._handleInsertTemplate()}>
+            📄 Insert
+        </button>
     `;
 }
 
@@ -442,8 +451,8 @@ export const RichTextEditorPlugin = {
             [SLOT_EDITOR_CONTENT_AREA]: (props) => {
                 const {state, dispatch, noteId} = props;
                 const note = noteId ? state.notes[noteId] : null;
-                const editorSettings = this.coreAPI.getPluginSettings(this.id) || {};
-                const debounceTime = editorSettings.debounceTime ?? 500;
+                //const editorSettings = this.coreAPI.getPluginSettings(this.id) || {};
+                const debounceTime = 500; //editorSettings.debounceTime ?? 500;
 
                 // --- Editor Mount/Update Logic (deferred to next frame) ---
                 requestAnimationFrame(() => {
@@ -462,7 +471,7 @@ export const RichTextEditorPlugin = {
                             this._editorInstance = new TiptapEditor(mountPoint, {
                                 content: note.content || '',
                                 onSelectionUpdate: () => this._updateToolbarUI(), // Use bound method
-                                onChange: this.coreAPI.utils.debounce(() => {
+                                onChange: debounce(() => {
                                     if (!this._editorInstance || !this._currentNoteId || this._editorInstance._isUpdatingInternally) return;
 
                                     const currentEditorContent = this._editorInstance.getContent();
@@ -713,6 +722,40 @@ export const RichTextEditorPlugin = {
         };
     },
 
+    // --- Added for Enhancement #3 ---
+    _handleInsertTemplate() {
+        if (!this.coreAPI || !this._editorInstance) return;
+
+        const ontologyService = this.coreAPI.getService('OntologyService');
+        if (!ontologyService) {
+            this.coreAPI.showGlobalStatus("Ontology Service not available for templates.", "warning");
+            return;
+        }
+
+        const templates = ontologyService.getTemplates();
+        if (!templates || templates.length === 0) {
+            this.coreAPI.showGlobalStatus("No templates found in ontology.", "info");
+            return;
+        }
+
+        // TODO: Replace prompt with a proper modal/dropdown selection UI
+        const templateNames = templates.map((t, i) => `${i + 1}: ${t.name}`).join('\n');
+        const choice = prompt(`Select template to insert:\n${templateNames}`);
+        const index = parseInt(choice, 10) - 1;
+
+        if (!isNaN(index) && templates[index]) {
+            const template = templates[index];
+            let contentToInsert = template.content || '';
+            // Basic placeholder replacement (extend as needed)
+            contentToInsert = contentToInsert.replace(/{{date}}/gi, this.coreAPI.utils.formatDate(Date.now()));
+            // TODO: Add more placeholder logic
+
+            // Use EditorService to insert (assumes method exists)
+            this.providesServices().EditorService.insertContentAtCursor?.(contentToInsert);
+        }
+    },
+    // --- End Enhancement #3 ---
+
     // Convenience helpers bound to the plugin instance
     getContent() {
         return this.providesServices().EditorService.getContent();
@@ -720,4 +763,11 @@ export const RichTextEditorPlugin = {
     setContent(content) {
         this.providesServices().EditorService.setContent(content);
     },
+    // Assume EditorService has this method (added conceptually)
+    insertContentAtCursor(htmlContent) {
+        if (this._editorInstance && !this._editorInstance.inactive()) {
+            console.log("EditorPlugin: Inserting content at cursor:", htmlContent.substring(0, 50) + "...");
+            this._editorInstance._tiptapInstance?.commands.insertContent(htmlContent);
+        }
+    }
 };

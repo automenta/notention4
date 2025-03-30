@@ -50,6 +50,11 @@
     --input-bg: #2c2c2e;
     --button-bg: #3a3a3c;
     --button-hover-bg: #4a4a4c;
+
+    /* Added for Enhancement #2 */
+    --priority-high-color: #ff453a; /* Danger color for high */
+    --priority-medium-color: #ff9f0a; /* Warning color */
+    --priority-low-color: #30d158; /* Success color for low */
 }
 
 *, *::before, *::after {
@@ -160,6 +165,12 @@ html, body {
     font-weight: 500;
     color: var(--text-color);
 }
+/* Style for new sort dropdown - Enhancement #2 */
+.sidebar-actions select {
+    margin-left: 10px;
+    padding: 4px;
+    color: var(--text-color);
+}
 
 .sidebar-actions button:hover {
     background-color: var(--button-hover-bg);
@@ -199,6 +210,23 @@ html, body {
 .note-list-item:focus {
     outline: 2px solid var(--primary-color);
     outline-offset: -2px;
+}
+
+/* Added for Enhancement #2 (Priority Colors) */
+.note-list-item.priority-high { border-left: 4px solid var(--priority-high-color); padding-left: calc(0.75rem - 4px); }
+.note-list-item.priority-medium { border-left: 4px solid var(--priority-medium-color); padding-left: calc(0.75rem - 4px); }
+.note-list-item.priority-low { border-left: 4px solid var(--priority-low-color); padding-left: calc(0.75rem - 4px); }
+
+/* More granular priority styling */
+.note-list-item.priority-10, .note-list-item.priority-9, .note-list-item.priority-8 { border-left: 4px solid var(--priority-high-color); padding-left: calc(0.75rem - 4px); }
+.note-list-item.priority-7, .note-list-item.priority-6, .note-list-item.priority-5 { border-left: 4px solid var(--priority-medium-color); padding-left: calc(0.75rem - 4px); }
+.note-list-item.priority-4, .note-list-item.priority-3, .note-list-item.priority-2, .note-list-item.priority-1 { border-left: 4px solid var(--priority-low-color); padding-left: calc(0.75rem - 4px); }
+
+/* Style priority display if added to meta/status - Enhancement #2 */
+.priority-indicator {
+    font-weight: bold;
+    font-size: 0.9em;
+    margin-right: 4px;
 }
 
 /* Accessibility */

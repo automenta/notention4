@@ -170,18 +170,42 @@ export const PropertiesPlugin = {
                 const note = state.notes[noteId];
                 const propertiesData = note?.pluginData?.[pluginId]?.properties || [];
 
+                // --- Added for Enhancement #2 ---
+                const priorityProp = propertiesData.find(p => p.key.toLowerCase() === 'priority');
+                const currentPriority = priorityProp ? (parseInt(priorityProp.value, 10) || 5) : 5; // Default 5
+
                 // --- Event Handlers ---
+
+                // Rewritten for Enhancement #4
                 const handleAddProperty = () => {
-                    // In a real UI, you'd open a modal/form here.
-                    // For now, add a simple default property.
-                    const key = prompt("Enter property key:");
-                    if (key && key.trim()) {
-                        const value = prompt(`Enter value for "${key.trim()}":`);
+                    const ontologyService = coreAPI.getService('OntologyService');
+                    let possibleKeys = ontologyService?.getCommonProperties() || [];
+                    if (!possibleKeys.includes('priority')) possibleKeys.push('priority'); // Ensure priority is there
+                    // Add keys from hints?
+                    // possibleKeys = [...new Set([...possibleKeys, ...Object.keys(ontologyService?.getHints() || {})])];
+
+                    // TODO: Replace prompt with a proper modal/dropdown UI
+                    const optionsText = possibleKeys.map((k, i) => {
+                        const hints = ontologyService?.getUIHints(k) || { icon: '?' };
+                        return `${i + 1}: ${hints.icon} ${k}`;
+                    }).join('\n');
+                    const choice = prompt(`Select property to add:\n${optionsText}\n\nOr type a custom key:`);
+
+                    let selectedKey = null;
+                    const choiceNum = parseInt(choice, 10);
+                    if (!isNaN(choiceNum) && possibleKeys[choiceNum - 1]) {
+                        selectedKey = possibleKeys[choiceNum - 1];
+                    } else if (choice && choice.trim()) { // Treat as custom key
+                        selectedKey = choice.trim();
+                    }
+
+                    if (selectedKey) {
+                        const value = prompt(`Enter value for "${selectedKey}":`);
                         dispatch({
                             type: 'PROPERTY_ADD',
                             payload: {
                                 noteId: noteId,
-                                propertyData: {key: key.trim(), value: value || ''} // Default value if prompt cancelled
+                                propertyData: { key: selectedKey, value: value ?? '' } // Use ?? for null/undefined from prompt
                             }
                         });
                     }
@@ -217,6 +241,23 @@ export const PropertiesPlugin = {
                     }
                 };
 
+                // --- Added for Enhancement #2 ---
+                const handlePriorityChange = coreAPI.utils.debounce((newValue) => {
+                    const value = parseInt(newValue, 10) || 5; // Default to 5 if invalid
+                    if (priorityProp) { // Update existing
+                        dispatch({type: 'PROPERTY_UPDATE', payload: { noteId: noteId, propertyId: priorityProp.id, changes: { value: value } }});
+                    } else { // Add new
+                        dispatch({type: 'PROPERTY_ADD', payload: { noteId: noteId, propertyData: { key: 'priority', value: value, type: 'number' } }});
+                    }
+                }, 500); // Debounce slider changes
+
+                // --- Helper for Enhancement #2 ---
+                const getPriorityClass = (priorityValue) => {
+                    if (priorityValue >= 8) return 'priority-high';
+                    if (priorityValue >= 5) return 'priority-medium';
+                    return 'priority-low';
+                };
+
                 // --- Render Logic ---
                 return html`
                     <div class="properties-area plugin-section">
@@ -225,7 +266,7 @@ export const PropertiesPlugin = {
                             <div class="properties-list">
                                 ${propertiesData.map(prop => html`
                                     <button
-                                            class="property-pill"
+                                            class="property-pill ${prop.key.toLowerCase() === 'priority' ? getPriorityClass(parseInt(prop.value, 10) || 5) : ''}"
                                             @click=${() => handlePropertyClick(prop)}
                                             title="Click to edit/delete\nType: ${prop.type || 'text'}\nCreated: ${coreAPI.utils.formatDate(prop.createdAt)}\nUpdated: ${coreAPI.utils.formatDate(prop.updatedAt)}"
                                     >
@@ -238,6 +279,14 @@ export const PropertiesPlugin = {
                             <p class="no-properties-message">No properties defined for this note.</p>
                         `}
                         <button class="add-property-button" @click=${handleAddProperty}>
+                            + Add Property... <!-- Ellipsis indicates selection follows -->
+                        </button>
+
+                         <!-- Added for Enhancement #2 -->
+                        <label for="priority-slider-${noteId}" style="margin-left: 15px; font-size: 0.9em;">Priority:</label>
+                        <input type="range" id="priority-slider-${noteId}" min="1" max="10" step="1" .value=${currentPriority} @input=${(e) => handlePriorityChange(e.target.value)} style="vertical-align: middle; width: 100px;">
+                        <span style="font-size: 0.9em; margin-left: 5px;">(${currentPriority})</span>
+
                             + Add Property
                         </button>
                     </div>

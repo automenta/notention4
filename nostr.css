@@ -1,0 +1,25 @@
+/* ... (Previous styles unchanged) ... */
+.nostr-status-widget { margin: 0 5px; padding: 0 5px; border-radius: 3px; white-space: nowrap; }
+.nostr-status-widget[clickable] { cursor: pointer; }
+.nostr-status-widget[clickable]:hover { background-color: var(--hover-background-color); }
+.nostr-note-status { font-size: 0.8em; margin-left: 5px; opacity: 0.7; }
+.nostr-note-status.deleted { opacity: 0.6; filter: grayscale(80%); } /* Style for deleted icon */
+.nostr-share-button, .nostr-unshare-button, .nostr-status-deleted {}
+.nostr-settings h4 { margin-top: 15px; margin-bottom: 5px; }
+.nostr-settings form { margin-bottom: 15px; }
+.nostr-settings label { display: block; margin: 8px 0 2px 0; font-weight: bold; }
+.nostr-settings input[type="password"],
+.nostr-settings input[type="text"],
+.nostr-settings input[type="number"],
+.nostr-settings textarea { width: 95%; max-width: 400px; padding: 6px; margin-bottom: 8px; border: 1px solid var(--border-color); background-color: var(--input-background-color); color: var(--text-color); border-radius: 3px; font-family: inherit; font-size: inherit; }
+.nostr-settings button { margin-right: 5px; margin-top: 5px; }
+.nostr-settings .error, .nostr-settings .error-message { color: var(--danger-color); font-size: 0.9em; margin-top: 5px;}
+.nostr-settings button.danger { background-color: var(--danger-color-secondary); color: var(--danger-color); border-color: var(--danger-color);}
+#nostr-relays-textarea { font-family: monospace; resize: vertical; min-height: 60px; }
+/* Added for ontology settings */
+.nostr-settings .setting-item { margin-bottom: 15px; }
+.nostr-settings .setting-item label { margin-bottom: 2px; }
+.nostr-settings .setting-item input { width: auto; max-width: none; display: inline-block; margin-right: 10px; margin-bottom: 0; }
+.nostr-settings .setting-item input[type="number"] { width: 80px; }
+.nostr-settings .field-hint { font-size: 0.85em; color: var(--secondary-text-color); display: block; margin-top: 2px; }
+.nostr-settings .required-indicator { color: var(--danger-color); margin-left: 3px; }

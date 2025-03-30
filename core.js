@@ -542,6 +542,12 @@ class UIRenderer {
                     </select>
                 </div>
                 <div class="settings-plugins">
+                    <!-- Settings Generation Enhancement (#0) -->
+                    <!-- Core provides the slot, but individual plugins now render -->
+                    <!-- their own forms based on their getSettingsOntology() -->
+                    <!-- and reading properties from their config System Note -->
+                    <!-- This section title remains, but the rendering logic -->
+                    <!-- inside the slot functions (e.g., in llm.js, nostr.js) changes -->
                     <h3>Plugin Settings</h3>
                     <div data-slot="${SLOT_SETTINGS_PANEL_SECTION}">
                         ${this._renderSlot(state, SLOT_SETTINGS_PANEL_SECTION)}
@@ -620,6 +626,56 @@ class UIRenderer {
         const value = e.target.value;
         if (key) {
             this._dispatch({type: 'CORE_SET_CORE_SETTING', payload: {key, value}});
+        }
+    };
+
+    // --- Event Handler for #2 (Priority Sort) ---
+    _handleSortChange = (e) => {
+        this._dispatch({ type: 'CORE_SET_NOTE_LIST_SORT_MODE', payload: e.target.value });
+    }
+
+    // --- Rendering Helper for #2 (Priority Sort Button) ---
+    _renderSortControl = (state) => html`... sort control ...` // Placeholder - added directly in main template below
+
+    _handleNoteListKeyDown = (event) => {
+        const list = event.currentTarget; // The <ul> element
+        const currentItem = document.activeElement;
+
+        if (!currentItem || !list.contains(currentItem) || !currentItem.matches('.note-list-item')) {
+            // If focus is not on an item, focus the first one on down arrow
+            if (event.key === 'ArrowDown') {
+                const firstItem = list.querySelector('.note-list-item');
+                if (firstItem) {
+                    firstItem.focus();
+                    event.preventDefault();
+                }
+            }
+            return;
+        }
+
+        let nextItem = null;
+        if (event.key === 'ArrowDown') {
+            nextItem = currentItem.nextElementSibling;
+            while (nextItem && !nextItem.matches('.note-list-item')) { // Skip non-item elements if any
+                nextItem = nextItem.nextElementSibling;
+            }
+            event.preventDefault();
+        } else if (event.key === 'ArrowUp') {
+            nextItem = currentItem.previousElementSibling;
+            while (nextItem && !nextItem.matches('.note-list-item')) {
+                nextItem = nextItem.previousElementSibling;
+            }
+            event.preventDefault();
+        } else if (event.key === 'Enter' || event.key === ' ') {
+            const noteId = currentItem.dataset.noteId;
+            if (noteId) {
+                this._handleSelectNote(noteId);
+                event.preventDefault();
+            }
+        }
+
+        if (nextItem) {
+            nextItem.focus(); // Move focus
         }
     };
 
@@ -1019,11 +1075,12 @@ const initialAppState = {
     systemNoteIndex: {}, // { [systemType]: noteId }
     settings: {
         core: {theme: 'light', userId: null, onboardingComplete: false},
-        plugins: {} // { [pluginId]: pluginSettings }
+        // plugins: {} // DEPRECATED by Enhancement #0 - Stored in System Notes now
     },
     uiState: { // Transient state, reset on load
         selectedNoteId: null,
         searchTerm: '',
+        noteListSortMode: 'time', // Added for Enhancement #2 ('time' | 'priority')
         activeModal: null,
         globalStatus: null, // { message, type, duration }
     },
@@ -1043,7 +1100,7 @@ const coreReducer = (draft, action) => {
             draft.notes = loaded.notes || {};
             draft.noteOrder = Array.isArray(loaded.noteOrder) ? loaded.noteOrder.filter(id => draft.notes[id]) : []; // Ensure order contains valid notes
             draft.settings.core = {...initialAppState.settings.core, ...(loaded.settings?.core || {})};
-            draft.settings.plugins = loaded.settings?.plugins || {};
+            // draft.settings.plugins = loaded.settings?.plugins || {}; // REMOVED for Enhancement #0
             draft.runtimeCache = loaded.runtimeCache || {};
             // Rebuild systemNoteIndex from loaded notes
             draft.systemNoteIndex = {};
@@ -1196,7 +1253,7 @@ const coreReducer = (draft, action) => {
             break;
         }
 
-        // CORE_SET_PLUGIN_SETTING is handled by plugin reducers
+        // CORE_SET_PLUGIN_SETTING is REMOVED by Enhancement #0
 
         case 'CORE_SET_GLOBAL_STATUS': {
             const {message, type = 'info', duration = 5000} = action.payload;
@@ -1227,6 +1284,18 @@ const coreReducer = (draft, action) => {
                 type: 'warning',
                 duration: 0
             };
+            break;
+        }
+
+        // --- Added for Enhancement #2 (Priority Sort) ---
+        case 'CORE_SET_NOTE_LIST_SORT_MODE': {
+            const newMode = action.payload;
+            if (newMode === 'time' || newMode === 'priority') {
+                if (draft.uiState.noteListSortMode !== newMode) {
+                    draft.uiState.noteListSortMode = newMode;
+                    // Notify listeners - state change handled by Immer/StateManager
+                }
+            }
             break;
         }
 

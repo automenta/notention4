@@ -16,10 +16,15 @@ import {
     SLOT_NOTE_LIST_ITEM_STATUS,
     SLOT_SETTINGS_PANEL_SECTION
 } from './ui.js'; // Adjust path as needed
+import { Utils } from "./util.js";
+const debounce = Utils.debounce;
+
+import "./nostr.css";
 
 const NostrTools = {
     getEventHash, getPublicKey, SimplePool
 };
+
 
 // --- Crypto & Utility Helper Functions ---
 
@@ -192,19 +197,21 @@ export const NostrPlugin = {
         this.coreAPI.dispatch({type: 'NOSTR_IDENTITY_STATUS_UPDATE', payload: 'loading'});
 
         // 1. Load Relay & Plugin Config
-        const settings = this.coreAPI.getPluginSettings(this.id);
+        // Enhancement #0: Load settings from System Note properties
+        const settingsNote = this.coreAPI.getSystemNoteByType(`config/settings/${this.id}`);
+        const propsApi = this.coreAPI.getPluginAPI('properties');
+        const currentSettings = settingsNote ? (this._mapPropsToObject(propsApi?.getPropertiesForNote(settingsNote.id) || [])) : {};
+        const defaultSettings = this._getDefaultSettings(); // Get defaults from getSettingsOntology
+
         const relayNote = this.coreAPI.getSystemNoteByType('config/nostr/relays');
-        let relays = settings.defaultRelays || this._config.defaultRelays;
-        if (relayNote?.content?.relays && Array.isArray(relayNote.content.relays) && relayNote.content.relays.length > 0) {
-            relays = relayNote.content.relays;
-            console.log("NostrPlugin: Loaded relays from System Note.");
-        } else {
-            console.log("NostrPlugin: Using default relays.");
-        }
-        this._config.relays = [...new Set(relays.filter(url => typeof url === 'string' && url.startsWith('ws')))];
-        // Load other settings
-        this._config.autoLockMinutes = settings.autoLockMinutes ?? this._config.autoLockMinutes;
-        this._config.eoseTimeout = settings.eoseTimeout ?? this._config.eoseTimeout;
+        // Relay loading logic remains the same, using the legacy note for now
+        // TODO: Migrate relays to be properties on the settings note as well?
+        let relays = relayNote?.content?.relays || defaultSettings.defaultRelays || this._config.defaultRelays;
+        this._config.relays = [...new Set(relays.filter(url => typeof url === 'string' && url.startsWith('ws')))]; // Keep relay loading separate for now
+
+        // Load other settings using the new pattern
+        this._config.autoLockMinutes = currentSettings.autoLockMinutes ?? defaultSettings.autoLockMinutes ?? this._config.autoLockMinutes;
+        this._config.eoseTimeout = currentSettings.eoseTimeout ?? defaultSettings.eoseTimeout ?? this._config.eoseTimeout;
 
         this.coreAPI.dispatch({
             type: 'NOSTR_CONFIG_LOADED',
@@ -233,6 +240,28 @@ export const NostrPlugin = {
             this._identityError = `Failed to load identity: ${error.message}`;
             this.coreAPI.dispatch({type: 'NOSTR_IDENTITY_STATUS_UPDATE', payload: 'error', error: this._identityError});
         }
+    },
+
+    // --- Helper for Enhancement #0 ---
+    _mapPropsToObject(properties = []) {
+        const settings = {};
+        properties.forEach(prop => {
+            settings[prop.key] = prop.value;
+        });
+        return settings;
+    },
+    // --- Helper for Enhancement #0 ---
+    _getDefaultSettings() {
+        const defaults = {};
+        const ontology = this.getSettingsOntology(); // Call own method
+        if (!ontology) return defaults;
+
+        for (const key in ontology) {
+            if (ontology[key].hasOwnProperty('default')) {
+                defaults[key] = ontology[key].default;
+            }
+        }
+        return defaults;
     },
 
     _clearAutoLockTimer() {
@@ -641,6 +670,24 @@ export const NostrPlugin = {
         }
     }),
 
+    // --- Added for Enhancement #0 ---
+    getSettingsOntology() {
+        // Define the structure and metadata for this plugin's settings
+        return {
+            'autoLockMinutes': {
+                type: 'number', label: 'Auto-Lock Timeout (minutes)', order: 1,
+                min: 0, step: 1, default: 30,
+                description: 'Automatically lock identity after minutes of inactivity (0 to disable).'
+            },
+            // TODO: Add relay management here instead of separate System Note?
+            // 'relays': { type: 'textarea', label: 'Relay URLs', ... }
+            'eoseTimeout': {
+                type: 'number', label: 'Relay EOSE Timeout (ms)', order: 2,
+                min: 1000, step: 500, default: 8000,
+                description: 'Time to wait for End Of Stored Events marker from relays during subscription.'
+            }
+        };
+    },
     // --- Reducer (Handles pluginRuntimeState) ---
     registerReducer: () => {
         const pluginId = NostrPlugin.id;
@@ -650,7 +697,7 @@ export const NostrPlugin = {
                 draft.pluginRuntimeState[pluginId] = {
                     identityStatus: 'loading', publicKey: null, identityError: null,
                     connectionStatus: 'disconnected', connectionError: null,
-                    config: {relays: [], autoLockMinutes: 30}, // Mirror relevant config
+                    config: {relays: [], autoLockMinutes: 30, eoseTimeout: 8000}, // Mirror relevant config
                     pendingPublish: {}, // { [noteId]: boolean }
                     activeSubscriptions: {}, // { [subId]: { filters: [], status: 'active' | 'eose_received' } }
                 };
@@ -681,6 +728,8 @@ export const NostrPlugin = {
                 case 'NOSTR_CONFIG_LOADED': // Update state mirror of config
                     nostrState.config.relays = action.payload.relays || [];
                     nostrState.config.autoLockMinutes = action.payload.autoLockMinutes ?? nostrState.config.autoLockMinutes;
+                    // TODO: Update eoseTimeout if loaded from config
+                    // nostrState.config.eoseTimeout = action.payload.eoseTimeout ?? nostrState.config.eoseTimeout;
                     break;
 
                 // --- Request Actions (Handled by Middleware) ---
@@ -961,9 +1010,9 @@ export const NostrPlugin = {
             else if (action.type === 'CORE_SYSTEM_NOTE_UPDATED') { /* ... (Relay update logic unchanged) ... */
                 const {type, content} = action.payload;
                 if (type === 'config/nostr/relays') {
-                    const oldRelays = new Set(plugin._config.relays);
+                    const oldRelays = new Set(nextState.pluginRuntimeState[pluginId].config.relays); // Check against state
                     const newRelaysList = Array.isArray(content?.relays) ? [...new Set(content.relays.filter(url => typeof url === 'string' && url.startsWith('ws')))] : plugin._config.defaultRelays;
-                    plugin._config.relays = newRelaysList;
+                    plugin._config.relays = newRelaysList; // Update internal config cache too
                     const newRelaysSet = new Set(newRelaysList);
                     store.dispatch({
                         type: 'NOSTR_CONFIG_LOADED',
@@ -1023,11 +1072,37 @@ export const NostrPlugin = {
 
         return {
             // Settings Panel
+            // --- REWRITTEN for Enhancement #0 ---
             [SLOT_SETTINGS_PANEL_SECTION]: (props) => {
                 const {state, dispatch, html} = props;
                 const nostrState = getNostrState(state);
+                const pluginId = plugin.id;
+                const settingsOntology = plugin.getSettingsOntology(); // Get own schema
+                const settingsNote = coreAPI.getSystemNoteByType(`config/settings/${pluginId}`);
+                const propsApi = coreAPI.getPluginAPI('properties');
+                const currentProperties = settingsNote ? (propsApi?.getPropertiesForNote(settingsNote.id) || []) : [];
+                const currentValues = plugin._mapPropsToObject(currentProperties);
+                const defaultValues = plugin._getDefaultSettings();
+                const displayConfig = { ...defaultValues, ...currentValues };
+
                 const {identityStatus, publicKey, identityError} = nostrState;
                 const displayPubkey = publicKey ? (NostrTools?.nip19?.npubEncode(publicKey) || `${publicKey.substring(0, 10)}...`) : 'N/A';
+
+                // Find/Create Settings Note Button (if needed)
+                let settingsNoteUI = html``;
+                if (!settingsNote) {
+                    settingsNoteUI = html`
+                         <p>Nostr settings note not found.</p>
+                         <button @click=${() => dispatch({
+                        type: 'CORE_ADD_NOTE', payload: {
+                            name: `${plugin.name} Settings`,
+                            systemType: `config/settings/${pluginId}`,
+                            content: `Stores configuration properties for the ${pluginId} plugin.`
+                        }})}>Create Settings Note</button>
+                     `;
+                } else {
+                    // Logic to render form fields dynamically will go here
+                }
 
                 // --- Event Handlers (Mostly unchanged, added strength check feedback) ---
                 const handleSetupSubmit = (e) => { /* ... */
@@ -1065,10 +1140,13 @@ export const NostrPlugin = {
                     }
                 };
                 const handleRelaySave = (newRelaysText) => { /* ... (Unchanged) ... */
+                    // TODO: This needs to be adapted to save relays as a property
+                    // on the settings note if relays are moved to the ontology settings.
                     const validRelays = newRelaysText.split('\n').map(r => r.trim()).filter(r => r.startsWith('ws'));
                     const uniqueRelays = [...new Set(validRelays)];
-                    coreAPI.saveSystemNote('config/nostr/relays', {relays: uniqueRelays}).then(() => coreAPI.showToast("Relays saved.", "success")).catch(err => coreAPI.showToast(`Error save: ${err.message}`, "error"));
+                    coreAPI.saveSystemNote('config/nostr/relays', {relays: uniqueRelays}).then(() => coreAPI.showToast("Legacy Relays saved.", "success")).catch(err => coreAPI.showToast(`Error save: ${err.message}`, "error"));
                 };
+                // TODO: Remove currentRelays if they move to ontology settings
                 const currentRelays = plugin._config.relays.join('\n');
 
                 // --- Render Logic (HTML structure largely unchanged, uses displayPubkey) ---
@@ -1119,13 +1197,50 @@ export const NostrPlugin = {
                         <textarea id="nostr-relays-textarea" rows="5" .value=${currentRelays}></textarea>
                         <button @click=${() => handleRelaySave(document.getElementById('nostr-relays-textarea').value)}>
                             Save Relays
+                             (Legacy Note)
                         </button>
-                        <p style="font-size: 0.8em; margin-top: 10px;">Auto-Lock Timeout (minutes, 0=disable):</p>
-                        <input type="number" min="0" step="1" value=${plugin._config.autoLockMinutes}
-                               @change=${(e) => coreAPI.dispatch({
-                                   type: 'CORE_SET_PLUGIN_SETTING',
-                                   payload: {pluginId, key: 'autoLockMinutes', value: parseInt(e.target.value, 10) || 0}
-                               })} style="width: 60px;">
+
+                        <hr>
+                        <h4>Plugin Configuration</h4>
+                        ${settingsNoteUI}
+                        ${settingsNote ? Object.keys(settingsOntology).sort((a, b) => (settingsOntology[a].order || 99) - (settingsOntology[b].order || 99)).map(key => {
+                    const schema = settingsOntology[key];
+                    const currentValue = displayConfig[key]; // Uses default if not set
+                    const inputId = `nostr-setting-${key}`;
+                    let inputElement;
+                    const isRequired = schema.required;
+
+                    // Debounced saver using PROPERTY_ADD/UPDATE
+                    const saveSetting = debounce((newValue) => {
+                        const existingProp = currentProperties.find(p => p.key === key);
+                        let actionType = existingProp ? 'PROPERTY_UPDATE' : 'PROPERTY_ADD';
+                        let payload = {};
+
+                        if (existingProp) {
+                            if (existingProp.value === newValue) return; // No change
+                            payload = { noteId: settingsNote.id, propertyId: existingProp.id, changes: { value: newValue } };
+                        } else {
+                            payload = { noteId: settingsNote.id, propertyData: { key: key, value: newValue, type: schema.type || 'text' } };
+                        }
+                        dispatch({ type: actionType, payload: payload });
+                        // TODO: Add save status indicator?
+                    }, 750);
+
+                    // Render appropriate input based on schema.type
+                    if (schema.type === 'number') {
+                        inputElement = html`<input type="number" id=${inputId} .value=${currentValue} ?required=${isRequired} min=${schema.min ?? ''} max=${schema.max ?? ''} step=${schema.step ?? ''} @input=${(e)=> saveSetting(parseInt(e.target.value, 10) || (schema.default ?? 0))}>`;
+                    } else { // Default text (add more types like textarea later)
+                        inputElement = html`<input type="text" id=${inputId} .value=${currentValue} ?required=${isRequired} placeholder=${schema.placeholder || ''} @input=${(e)=> saveSetting(e.target.value)}>`;
+                    }
+
+                    return html`
+                                <div class="setting-item">
+                                    <label for=${inputId}>${schema.label || key}${isRequired ? html`<span class="required-indicator">*</span>` : ''}</label>
+                                    ${inputElement}
+                                    ${schema.description ? html`<span class="field-hint">${schema.description}</span>` : ''}
+                                </div>
+                            `;
+                }) : ''}
                     </div>
                 `;
             },
@@ -1255,35 +1370,3 @@ export const NostrPlugin = {
     },
 
 };
-
-// --- CSS Injection (Add styles for deleted status) ---
-const injectNostrCSS = () => {
-    const css = `
-        /* ... (Previous styles unchanged) ... */
-        .nostr-status-widget { margin: 0 5px; padding: 0 5px; border-radius: 3px; white-space: nowrap; }
-        .nostr-status-widget[clickable] { cursor: pointer; }
-        .nostr-status-widget[clickable]:hover { background-color: var(--hover-background-color); }
-        .nostr-note-status { font-size: 0.8em; margin-left: 5px; opacity: 0.7; }
-        .nostr-note-status.deleted { opacity: 0.6; filter: grayscale(80%); } /* Style for deleted icon */
-        .nostr-share-button, .nostr-unshare-button, .nostr-status-deleted {}
-        .nostr-settings h4 { margin-top: 15px; margin-bottom: 5px; }
-        .nostr-settings form { margin-bottom: 15px; }
-        .nostr-settings label { display: block; margin: 8px 0 2px 0; font-weight: bold; }
-        .nostr-settings input[type="password"],
-        .nostr-settings input[type="text"],
-        .nostr-settings input[type="number"],
-        .nostr-settings textarea { width: 95%; max-width: 400px; padding: 6px; margin-bottom: 8px; border: 1px solid var(--border-color); background-color: var(--input-background-color); color: var(--text-color); border-radius: 3px; font-family: inherit; font-size: inherit; }
-         .nostr-settings button { margin-right: 5px; margin-top: 5px; }
-         .nostr-settings .error, .nostr-settings .error-message { color: var(--danger-color); font-size: 0.9em; margin-top: 5px;}
-         .nostr-settings button.danger { background-color: var(--danger-color-secondary); color: var(--danger-color); border-color: var(--danger-color);}
-         #nostr-relays-textarea { font-family: monospace; resize: vertical; min-height: 60px; }
-    `;
-    const styleId = 'nostr-plugin-styles';
-    if (!document.getElementById(styleId)) {
-        const styleElement = document.createElement('style');
-        styleElement.id = styleId;
-        styleElement.textContent = css;
-        document.head.appendChild(styleElement);
-    }
-};
-injectNostrCSS();

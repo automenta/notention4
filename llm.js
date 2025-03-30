@@ -44,28 +44,54 @@ export const LLMPlugin = {
         this._checkEssentialConfig();
 
         // Subscribe to settings changes to reload config if necessary
+        // TODO: Enhancement #0 might make this subscription redundant or need modification
+        // if settings are only driven by note properties. Investigate if core settings are still relevant.
         this._unsubscribe = coreAPI.subscribe((newState, oldState) => {
-            const newSettings = coreAPI.getPluginSettings(this.id);
-            const oldSettings = oldState.settings?.plugins?.[this.id] || {};
+            // For Enhancement #0, we also need to react to PROPERTY changes on the settings note
+            const settingsNote = this._coreAPI.getSystemNoteByType(`config/settings/${this.id}`);
+            const oldSettingsNote = oldState.notes?.[settingsNote?.id];
+            const newSettingsNote = newState.notes?.[settingsNote?.id];
 
-            if (JSON.stringify(newSettings) !== JSON.stringify(oldSettings)) {
-                console.log("LLMPlugin: Detected config change from state, reloading internal _config.");
+            // Basic check: Did note properties change?
+            const propsChanged = settingsNote && (
+                !oldSettingsNote ||
+                JSON.stringify(newSettingsNote?.properties) !== JSON.stringify(oldSettingsNote?.properties)
+            );
+
+            // Also check if the note itself was created/deleted
+            const noteExistenceChanged = (!oldState.notes?.[settingsNote?.id] && newState.notes?.[settingsNote?.id]) ||
+                (oldState.notes?.[settingsNote?.id] && !newState.notes?.[settingsNote?.id]);
+
+
+            if (propsChanged || noteExistenceChanged) {
+                console.log("LLMPlugin: Detected settings note change, reloading config.");
                 this._loadConfig();
-                // Re-check config after reload
                 this._checkEssentialConfig();
+                // Trigger UI refresh if settings panel is visible
+                //this._coreAPI.requestRender(); // Request a general re-render
             }
+            // Keep original core settings check? Maybe remove if fully property-driven.
+            // const newSettings = coreAPI.getPluginSettings(this.id);
+            // const oldSettings = oldState.settings?.plugins?.[this.id] || {};
+            // if (JSON.stringify(newSettings) !== JSON.stringify(oldSettings)) {
+            //     console.log("LLMPlugin: Detected config change from state, reloading internal _config.");
+            //     this._loadConfig();
+            //     this._checkEssentialConfig();
+            // }
         });
     },
 
+
     // Loads config from System Note and Core Settings
     _loadConfig() {
-        const settings = this._coreAPI.getPluginSettings(this.id) || {};
-        const configNote = this._coreAPI.getSystemNoteByType('config/llm');
-        let noteConfig = {};
-        if (configNote?.content) {
+        // Enhancement #0: Load from System Note Properties
+        const settingsNote = this._coreAPI.getSystemNoteByType('config/settings/llm');
+        let noteSettings = {};
+        if (settingsNote) {
             try {
-                noteConfig = JSON.parse(configNote.content);
-                console.log("LLMPlugin: Loaded config from System Note 'config/llm'");
+                const propsApi = this._coreAPI.getPluginAPI('properties');
+                noteSettings = this._mapPropsToObject(propsApi?.getPropertiesForNote(settingsNote.id) || []);
+                console.log("LLMPlugin: Loaded config from System Note 'config/settings/llm'");
             } catch (e) {
                 console.error("LLMPlugin: Error parsing config/llm system note JSON.", e);
                 this._coreAPI.showGlobalStatus("LLM Config Note Error: Invalid JSON.", "error", 5000);
@@ -74,18 +100,18 @@ export const LLMPlugin = {
             console.log("LLMPlugin: System Note 'config/llm' not found or empty.");
         }
 
-        // Merge: Defaults < Note < Settings Panel
+        // Merge: Previous State <- Note Properties
+        // Settings Panel settings are now *driven* by the note properties.
         const mergedConfig = {
             // Start with previous config state to preserve non-setting values if any
             ...this._config,
-            // Apply defaults explicitly in case they were missing
-            //apiKey: null,
-            //endpointUrl: null,
-            //modelName: null,
-            //defaultTemperature: 0.7,
-            //defaultMaxTokens: 1024,
-            ...(noteConfig || {}), // Override with note config
-            ...settings // Override with specific settings panel values
+            // Load defaults from ontology if value is missing from noteSettings
+            ...(this._getDefaultSettings()), // Get defaults from ontology definition
+            ...(noteSettings || {}), // Override with note settings
+            // 'settings' from core state is no longer used for config values
+            // ...settings // DEPRECATED by Enhancement #0
+
+
         };
 
         // Update internal config state
@@ -94,7 +120,9 @@ export const LLMPlugin = {
             endpointUrl: mergedConfig.endpointUrl || null,
             modelName: mergedConfig.modelName || null,
             defaultTemperature: mergedConfig.defaultTemperature ?? 0.7,
-            defaultMaxTokens: mergedConfig.defaultMaxTokens ?? 1024,
+            // Ensure numeric conversion for props that might be strings initially
+            defaultMaxTokens: mergedConfig.defaultMaxTokens ? parseInt(mergedConfig.defaultMaxTokens, 10) : 1024,
+
         };
 
         // Clear sensitive data from log output
@@ -106,6 +134,29 @@ export const LLMPlugin = {
         }
         console.log("LLMPlugin: Config loaded/updated", logConfig);
     },
+
+    // --- Helper for Enhancement #0 ---
+    _mapPropsToObject(properties = []) {
+        const settings = {};
+        properties.forEach(prop => {
+            settings[prop.key] = prop.value;
+        });
+        return settings;
+    },
+    // --- Helper for Enhancement #0 ---
+    _getDefaultSettings() {
+        const defaults = {};
+        const ontology = this.getSettingsOntology(); // Call own method
+        if (!ontology) return defaults;
+
+        for (const key in ontology) {
+            if (ontology[key].hasOwnProperty('default')) {
+                defaults[key] = ontology[key].default;
+            }
+        }
+        return defaults;
+    },
+
 
     // Check essential config and show warnings if needed
     _checkEssentialConfig() {
@@ -363,53 +414,116 @@ export const LLMPlugin = {
         }; // end return
     }, // end providesServices
 
+    // --- Added for Enhancement #0 ---
+    getSettingsOntology() {
+        // Define the structure and metadata for this plugin's settings
+        return {
+            'apiKey': {
+                type: 'password', label: 'API Key', order: 2,
+                description: 'Required for most cloud services (OpenAI, Anthropic, etc.). Leave empty if the endpoint does not require a key (e.g., local Ollama).'
+            },
+            'endpointUrl': {
+                type: 'url', label: 'Base URL (Endpoint)', order: 1,
+                placeholder: 'e.g., http://localhost:11434/v1 or https://api.openai.com/v1',
+                description: 'For OpenAI & compatible APIs (Ollama, LM Studio, etc.). Leave empty ONLY if Langchain defaults work for you (rarely).'
+            },
+            'modelName': {
+                type: 'text', label: 'Model Name', required: true, order: 3,
+                placeholder: 'e.g., gpt-4o, ollama/llama3, claude-3-haiku-20240307',
+                description: 'Required. Must match a model available at your endpoint/service.'
+            },
+            'defaultTemperature': {
+                type: 'number', label: 'Default Temperature', min: 0, max: 2, step: 0.1, default: 0.7, order: 4,
+                description: 'Controls randomness (0=deterministic, ~0.7=balanced, >1=more random). Default: 0.7'
+            },
+            'defaultMaxTokens': {
+                type: 'number', label: 'Default Max Tokens', min: 1, step: 1, default: 1024, order: 5,
+                placeholder: 'e.g., 1024', description: 'Max completion length. Default: 1024. Check model limits.'
+            }
+        };
+    },
+
     // --- UI Slot Registration ---
     registerUISlots() {
         return {
+            // --- REWRITTEN for Enhancement #0 ---
             [SLOT_SETTINGS_PANEL_SECTION]: (props) => {
                 const {state, dispatch} = props;
-                const currentSettings = this._coreAPI.getPluginSettings(this.id) || {};
-                const displayConfig = {
-                    apiKey: currentSettings.apiKey ?? this._config.apiKey ?? '',
-                    endpointUrl: currentSettings.endpointUrl ?? this._config.endpointUrl ?? '',
-                    modelName: currentSettings.modelName ?? this._config.modelName ?? '',
-                    defaultTemperature: currentSettings.defaultTemperature ?? this._config.defaultTemperature ?? 0.7,
-                    defaultMaxTokens: currentSettings.defaultMaxTokens ?? this._config.defaultMaxTokens ?? 1024,
-                };
                 const pluginId = this.id;
-                const configNote = this._coreAPI.getSystemNoteByType('config/llm');
-                const isModelNameMissing = !this._config.modelName; // Check based on internal config state
+                const settingsOntology = this.getSettingsOntology(); // Get own schema
+                const settingsNote = this._coreAPI.getSystemNoteByType(`config/settings/${pluginId}`);
+                const propsApi = this._coreAPI.getPluginAPI('properties');
+                const currentProperties = settingsNote ? (propsApi?.getPropertiesForNote(settingsNote.id) || []) : [];
+
+                // Convert current properties to a simple { key: value } map for easy lookup
+                const currentValues = this._mapPropsToObject(currentProperties);
+
+                // Get defaults from ontology definition
+                const defaultValues = this._getDefaultSettings();
+
+                const displayConfig = {
+                    ...defaultValues, // Start with defaults
+                    ...currentValues // Override with actual values from note properties
+                };
+                const isModelNameMissing = !displayConfig.modelName; // Check based on current/default value
+
+                if (!settingsNote) {
+                    // Render button to create the settings note
+                    return html`
+                        <div class="settings-section llm-settings">
+                            <h4>${this.name}</h4>
+                            <p>Settings note not found.</p>
+                            <button @click=${() => dispatch({
+                        type: 'CORE_ADD_NOTE', payload: {
+                            name: `${this.name} Settings`,
+                            systemType: `config/settings/${pluginId}`,
+                            content: `Stores configuration properties for the ${pluginId} plugin.`
+                        }})}>Create Settings Note</button>
+                        </div>
+                    `;
+                }
 
 
-                // --- Debounced Save Handler ---
-                const createDebouncedSaver = (key) => {
+                // --- Debounced Save Handler using PROPERTY_ADD/UPDATE ---
+                const createDebouncedSaver = (key, schema) => {
                     if (!this._debouncedSaveFunctions[key]) {
                         this._debouncedSaveFunctions[key] = this._coreAPI.utils.debounce((value) => {
                             console.log(`LLMPlugin: Saving setting ${key} =`, typeof value === 'string' && value.length > 50 ? value.substring(0, 50) + '...' : value); // Avoid logging long values like keys
 
-                            // Update internal state immediately for UI responsiveness? Maybe not needed.
-                            // this._config[key] = value; // Risky? State should flow from core.
+                            const existingProp = currentProperties.find(p => p.key === key);
+                            let actionType = 'PROPERTY_ADD';
+                            let payload = {
+                                noteId: settingsNote.id,
+                                propertyData: { key: key, value: value, type: schema.type || 'text' }
+                            };
 
-                            dispatch({
-                                type: 'CORE_SET_PLUGIN_SETTING',
-                                payload: {pluginId, key, value}
-                            });
+                            if (existingProp) {
+                                // Only dispatch update if value actually changed
+                                if (existingProp.value !== value) {
+                                    actionType = 'PROPERTY_UPDATE';
+                                    payload = {
+                                        noteId: settingsNote.id,
+                                        propertyId: existingProp.id,
+                                        changes: { value: value }
+                                    };
+                                    dispatch({ type: actionType, payload: payload });
+                                } else {
+                                    // Value hasn't changed, don't dispatch anything
+                                    return;
+                                }
+                            } else {
+                                dispatch({ type: actionType, payload: payload });
+                            }
 
                             // Update UI status - REMOVED requestRender
                             clearTimeout(this._saveStatusTimeout);
                             this._uiSaveStatus = 'saved';
-
-                            // The state update from dispatch should trigger re-render via props change
+                            // Need to manually trigger re-render as dispatch doesn't guarantee immediate prop update reflection
+                            //this._coreAPI.requestRender();
 
                             this._saveStatusTimeout = setTimeout(() => {
                                 this._uiSaveStatus = 'idle';
-                                // Force UI update to hide "Saved ✓" - REMOVED requestRender
-                                // Rely on state change propagation again.
-                                // If the UI framework needs explicit refresh after timeout,
-                                // we might need a different mechanism.
-                                // For Lit, maybe trigger a property update.
-                                dispatch({type: 'CORE_PLUGIN_STATE_REFRESH', payload: {pluginId}}); // Example custom action if needed
-
+                                //this._coreAPI.requestRender(); // Hide "Saved" message
                             }, 2000);
 
                         }, 750);
@@ -419,7 +533,7 @@ export const LLMPlugin = {
 
                 // --- Input Handlers ---
                 const handleInput = (key, value) => {
-                    createDebouncedSaver(key)(value);
+                    createDebouncedSaver(key, settingsOntology[key])(value);
                 };
 
                 const handleNumberInput = (key, value, isFloat = false) => {
@@ -431,6 +545,9 @@ export const LLMPlugin = {
                     }
                 };
 
+                // --- Dynamic Form Rendering ---
+                const sortedKeys = Object.keys(settingsOntology).sort((a, b) => (settingsOntology[a].order || 99) - (settingsOntology[b].order || 99));
+
 
                 return html`
                     <div class="settings-section llm-settings">
@@ -439,59 +556,59 @@ export const LLMPlugin = {
                             <span class="save-status ${this._uiSaveStatus === 'saved' ? 'visible' : ''}">Saved ✓</span>
                         </h4>
                         <p class="settings-description">
-                            Configure access to LLMs via LangChain.js. Uses OpenAI-compatible settings.
-                            These settings override values from the 'config/llm' System Note if present. Autosaves on
-                            change.
+                            Configure LLM access. Settings are stored as properties on System Note: ${settingsNote.id}. Autosaves on change.
                         </p>
-                        ${configNote ? html`<p class="settings-description info">ℹ️ System Note 'config/llm' found (ID:
-                            ${configNote.id}). Values from that note are used as defaults.</p>` : ''}
                         ${isModelNameMissing ? html`<p class="settings-description warning">⚠️ Model Name is required
                             for the plugin to function. Please enter one below.</p>` : ''}
 
 
-                        <div class="setting-item">
-                            <label for="llm-endpointUrl">Base URL (Endpoint):</label>
-                            <input
-                                    type="url"
-                                    id="llm-endpointUrl"
-                                    placeholder="Optional: e.g., http://localhost:11434/v1 or https://api.openai.com/v1"
-                                    .value=${displayConfig.endpointUrl}
-                                    @input=${(e) => handleInput('endpointUrl', e.target.value.trim())}
-                            >
-                            <span class="field-hint">For OpenAI & compatible APIs (Ollama, LM Studio, etc.). Leave empty ONLY if Langchain defaults work for you (rarely).</span>
-                        </div>
+                        ${sortedKeys.map(key => {
+                    const schema = settingsOntology[key];
+                    const currentValue = displayConfig[key]; // Uses default if not set
+                    const inputId = `llm-setting-${key}`;
+                    let inputElement;
+                    const isRequired = schema.required;
 
-                        <div class="setting-item">
-                            <label for="llm-apiKey">API Key:</label>
-                            <input
-                                    type="password"
-                                    id="llm-apiKey"
-                                    placeholder="Required for most cloud services (OpenAI, Anthropic, etc.)"
-                                    .value=${displayConfig.apiKey}
-                                    @input=${(e) => handleInput('apiKey', e.target.value)}
-                            >
-                            <span class="field-hint">Leave empty if the endpoint doesn't require a key (e.g., local Ollama).</span>
-                        </div>
+                    // Determine input type and common attributes
+                    const commonAttrs = {
+                        id: inputId,
+                        '.value': currentValue ?? '', // Use ?? for null/undefined, ensuring empty string for input value
+                        placeholder: schema.placeholder || '',
+                        required: isRequired,
+                        'aria-required': String(isRequired)
+                    };
+                    const style = (isRequired && !currentValue) ? 'border-color: var(--vscode-inputValidation-warningBorder, orange);' : '';
 
-                        <div class="setting-item">
-                            <label for="llm-modelName">Model Name:<span class="required-indicator">*</span></label>
-                            <input
-                                    type="text"
-                                    id="llm-modelName"
-                                    placeholder="e.g., gpt-4o, ollama/llama3, claude-3-haiku-20240307"
-                                    .value=${displayConfig.modelName}
-                                    @input=${(e) => handleInput('modelName', e.target.value.trim())}
-                                    required
-                                    aria-required="true"
-                                    style="${isModelNameMissing ? 'border-color: var(--vscode-inputValidation-warningBorder, orange);' : ''}"
-                            >
-                            <span class="field-hint">Required. Must match a model available at your endpoint/service.</span>
-                        </div>
 
-                        <div class="setting-item">
-                            <label for="llm-defaultTemperature">Default Temperature:</label>
-                            <input
-                                    type="number" id="llm-defaultTemperature"
+                    // TODO: Add support for select, checkbox, textarea based on schema.type
+                    if (schema.type === 'number') {
+                        inputElement = html`<input type="number" ...=${commonAttrs} style=${style}
+                                     min=${schema.min ?? ''} max=${schema.max ?? ''} step=${schema.step ?? ''}
+                                     @input=${(e) => handleNumberInput(key, e.target.value, schema.step && String(schema.step).includes('.'))}>`;
+                    } else if (schema.type === 'password') {
+                        inputElement = html`<input type="password" ...=${commonAttrs} style=${style}
+                                     @input=${(e) => handleInput(key, e.target.value)}>`;
+                    } else if (schema.type === 'url') {
+                        inputElement = html`<input type="url" ...=${commonAttrs} style=${style}
+                                     @input=${(e) => handleInput(key, e.target.value.trim())}>`;
+                    } else { // Default to text
+                        inputElement = html`<input type="text" ...=${commonAttrs} style=${style}
+                                     @input=${(e) => handleInput(key, e.target.value.trim())}>`;
+                    }
+
+                    return html`
+                                 <div class="setting-item">
+                                     <label for=${inputId}>${schema.label || key}${isRequired ? html`<span class="required-indicator">*</span>` : ''}</label>
+                                     ${inputElement}
+                                     ${schema.description ? html`<span class="field-hint">${schema.description}</span>` : ''}
+                                 </div>
+                             `;
+                })}
+                        <!-- Old hardcoded fields removed -->
+                        <!--
+                        <div class="setting-item">...</div>
+                        <div class="setting-item">...</div>
+                        <div class="setting-item">...</div>
                                     min="0" max="2" step="0.1"
                                     .value=${displayConfig.defaultTemperature}
                                     @input=${(e) => handleNumberInput('defaultTemperature', e.target.value, true)}
@@ -509,6 +626,7 @@ export const LLMPlugin = {
                                     @input=${(e) => handleNumberInput('defaultMaxTokens', e.target.value, false)}
                             >
                             <span class="field-hint">Max completion length. Default: 1024. Check model limits.</span>
+                        -->
                         </div>
                     </div>
                 `;
@@ -518,4 +636,20 @@ export const LLMPlugin = {
 }; // end registerUISlots
 
 // Optional cleanup remains the same
-// LLMPlugin.cleanup = function() { ... };
+LLMPlugin.cleanup = function() {
+    console.log("LLMPlugin: Cleaning up.");
+    if (this._unsubscribe) {
+        this._unsubscribe();
+        this._unsubscribe = null;
+    }
+    // Clear any pending timeouts
+    clearTimeout(this._saveStatusTimeout);
+    // Clear debounced functions to avoid memory leaks if plugin is re-initialized
+    for (const key in this._debouncedSaveFunctions) {
+        if (this._debouncedSaveFunctions[key].cancel) { // Check if debounce lib provides cancel
+            this._debouncedSaveFunctions[key].cancel();
+        }
+    }
+    this._debouncedSaveFunctions = {};
+    this._coreAPI = null; // Release reference to core API
+};

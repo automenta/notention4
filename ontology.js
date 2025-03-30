@@ -22,7 +22,10 @@ const ONTOLOGY = {
     },
     keywords: {
         categories: ["Work", "Personal", "Research", "Ideas"],
-        tags: ["important", "urgent", "review"]
+        tags: ["important", "urgent", "review"],
+        // Added for Enhancement #4 (Property Add Menu suggestions)
+        commonProperties: ["dueDate", "assignee", "status", "project", "priority"] // Added priority for #2
+
     }
 };
 
@@ -192,9 +195,21 @@ export const OntologyPlugin = {
                 getUIHints: (propertyOrType) => {
                     // TODO: Implement logic using this._ontologyData?.uiHints
                     // Example: Look up propertyOrType in this._ontologyData.uiHints
+                    // Ensure getUIHints returns something useful (e.g., emojis)
                     const defaultHints = {icon: '📝', color: '#888'}; // Default icon and color
-                    return this._ontologyData?.uiHints?.[propertyOrType] || defaultHints;
+                    const hints = this._ontologyData?.uiHints?.[propertyOrType] || this._ontologyData?.uiHints?.[propertyOrType.toLowerCase()] || defaultHints;
+                    // Simple emoji additions
+                    if (!hints.icon || hints.icon === defaultHints.icon) {
+                        if (propertyOrType.toLowerCase().includes('date')) hints.icon = '📅';
+                        else if (propertyOrType.toLowerCase().includes('url')) hints.icon = '🔗';
+                        else if (propertyOrType.toLowerCase().includes('priority')) hints.icon = '⭐'; // Added for #2
+                        else if (propertyOrType.toLowerCase().includes('tag')) hints.icon = '#️⃣';
+                        else if (propertyOrType.toLowerCase().includes('assignee')) hints.icon = '👤';
+                        else if (propertyOrType.toLowerCase().includes('status')) hints.icon = '📊';
+                    }
+                    return hints;
                 },
+
 
                 /**
                  * Retrieves the entire loaded ontology data structure. Use with caution.
@@ -202,6 +217,9 @@ export const OntologyPlugin = {
                  * @returns {object | null} The raw ontology data object, or null if not loaded.
                  */
                 getRawData: () => this._ontologyData,
+
+                /** Added for Enhancement #4 */
+                getCommonProperties: () => this._ontologyData?.keywords?.commonProperties || [],
             }
         };
     },
@@ -227,17 +245,17 @@ export const OntologyPlugin = {
                     return html`
                         <div class="settings-section">
                             <h4>${this.name}</h4>
-                            <p>Configure semantic types, templates, and hints.</p>
+                            <p>Configure semantic types, templates, keywords, and hints.</p>
                             <p>Configuration is stored in the 'config/ontology' system note.</p>
                             <button
-                                @click=${() => {
-                        this.coreAPI.dispatch({type: 'CORE_SELECT_NOTE', payload: {noteId: noteId}});
-                        this.coreAPI.dispatch({type: 'CORE_CLOSE_MODAL'});
-                    }}>
+                                    @click=${() => {
+                                        this.coreAPI.dispatch({type: 'CORE_SELECT_NOTE', payload: {noteId: noteId}});
+                                        this.coreAPI.dispatch({type: 'CORE_CLOSE_MODAL'});
+                                    }}>
                                 Edit Ontology Config Note
                             </button>
-                             <span class="settings-hint"> (ID: ${noteId})</span>
-                             <p class="settings-hint">Last loaded update: ${this._configNoteLastUpdate ? new Date(this._configNoteLastUpdate).toLocaleString() : 'Never'}</p>
+                            <span class="settings-hint"> (ID: ${noteId})</span>
+                            <p class="settings-hint">Last loaded update: ${this._configNoteLastUpdate ? new Date(this._configNoteLastUpdate).toLocaleString() : 'Never'}</p>
                         </div>
                     `;
                 } else {
@@ -246,22 +264,22 @@ export const OntologyPlugin = {
                     return html`
                         <div class="settings-section">
                             <h4>${this.name}</h4>
-                             <p>Configure semantic types, templates, and hints.</p>
-                             <p>Configuration note not found.</p>
+                            <p>Configure semantic types, templates, keywords, and hints.</p>
+                            <p>Configuration note not found.</p>
                             <button
-                                @click=${() => {
-                        this.coreAPI.dispatch({
-                            type: 'CORE_ADD_NOTE',
-                            payload: {
-                                name: 'Ontology Configuration',
-                                systemType: 'config/ontology',
-                                content: ontology_str
-                            }
-                        });
-                        // Maybe close modal after adding? Or let user select it?
-                        // this.coreAPI.dispatch({ type: 'CORE_CLOSE_MODAL' });
-                        this.coreAPI.showGlobalStatus("Ontology config note created. Edit it to customize.", "info", 5000);
-                    }}>
+                                    @click=${() => {
+                                        this.coreAPI.dispatch({
+                                            type: 'CORE_ADD_NOTE',
+                                            payload: {
+                                                name: 'Ontology Configuration',
+                                                systemType: 'config/ontology',
+                                                content: ontology_str
+                                            }
+                                        });
+                                        // Maybe close modal after adding? Or let user select it?
+                                        // this.coreAPI.dispatch({ type: 'CORE_CLOSE_MODAL' });
+                                        this.coreAPI.showGlobalStatus("Ontology config note created. Edit it to customize.", "info", 5000);
+                                    }}>
                                 Create Ontology Config Note
                             </button>
                         </div>
