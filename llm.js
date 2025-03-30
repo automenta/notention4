@@ -408,6 +408,73 @@ export const LLMPlugin = {
                     }
                 },
 
+                /**
+                 * Generates note content based on a template and properties using the LLM.
+                 * @param {string} templateName - The name of the template to use (must exist in ontology).
+                 * @param {Array<object>} properties - Array of property objects ({key, value, type}) for the current note.
+                 * @param {object} [options={}] - Additional options for the LLM call (temperature, model, etc.).
+                 * @returns {Promise<string|null>} The generated content string, or null on failure.
+                 */
+                generateContent: async (templateName, properties = [], options = {}) => {
+                    const ontologyService = this._coreAPI.getService('OntologyService');
+                    if (!ontologyService) {
+                        this._coreAPI.showGlobalStatus("LLM Error: Ontology service unavailable.", "error", 5000);
+                        console.error("LLMPlugin.generateContent: OntologyService not available.");
+                        return null;
+                    }
+
+                    const templates = ontologyService.getTemplates();
+                    const template = templates.find(t => t.name === templateName);
+
+                    if (!template) {
+                        this._coreAPI.showGlobalStatus(`LLM Error: Template "${templateName}" not found.`, "error", 5000);
+                        console.error(`LLMPlugin.generateContent: Template not found: ${templateName}`);
+                        return null;
+                    }
+
+                    // Construct the prompt
+                    let propertiesString = "Current Note Properties:\n";
+                    if (properties.length > 0) {
+                        properties.forEach(p => {
+                            propertiesString += `- ${p.key}: ${p.value}\n`;
+                        });
+                    } else {
+                        propertiesString += "- None\n";
+                    }
+
+                    const prompt = `
+Generate note content based on the following template structure and property values.
+Fill in the details logically based on the provided properties. If a property seems relevant to a template section but isn't provided, make a reasonable placeholder or omit it gracefully.
+Adhere to the overall structure and tone suggested by the template.
+
+Template Name: ${template.name}
+Template Structure:
+---
+${template.content}
+---
+
+${propertiesString}
+
+Generated Note Content:
+`;
+                    const generateOptions = { ...options, stream: false }; // Force non-stream for generation
+
+                    try {
+                        const response = await this.prompt(prompt, generateOptions); // Use existing prompt method
+                        const generatedContent = response?.choices?.[0]?.message?.content?.trim();
+                        if (!generatedContent) {
+                            throw new Error("LLM did not return valid content.");
+                        }
+                        return generatedContent;
+                    } catch (error) {
+                        console.error("LLMPlugin: Content generation failed.", error);
+                        if (error.message !== "LLM model name is not configured.") { // Avoid duplicate error
+                            this._coreAPI.showGlobalStatus("AI Content Generation Error", "error", 5000);
+                        }
+                        return null; // Return null on failure
+                    }
+                },
+
                 generateEmbeddings: async (text, options = {}) => {
                     if (!text || typeof text !== 'string') {
                         this._coreAPI.showGlobalStatus("Embeddings Error: Input must be text.", "error", 4000);

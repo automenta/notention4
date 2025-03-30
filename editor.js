@@ -417,6 +417,10 @@ function renderToolbarContent(editorInstance) {
                 @click=${() => RichTextEditorPlugin._handleInsertTemplate()}>
             📄 Insert
         </button>
+        <button title="Generate Content via AI" class="toolbar-button llm-action-button"
+                @click=${() => RichTextEditorPlugin._handleGenerateContent()}>
+            ✨ Generate
+        </button>
     `;
 }
 
@@ -825,6 +829,58 @@ export const RichTextEditorPlugin = {
             }
         };
     },
+
+    // --- Added for Enhancement #7 (Content Generation) ---
+    async _handleGenerateContent() {
+        if (!this.coreAPI || !this._editorInstance || !this._currentNoteId) return;
+
+        const ontologyService = this.coreAPI.getService('OntologyService');
+        const llmService = this.coreAPI.getService('LLMService');
+        const propertiesAPI = this.coreAPI.getPluginAPI('properties'); // Or get from state
+
+        if (!ontologyService || !llmService || !propertiesAPI) {
+            this.coreAPI.showGlobalStatus("Cannot generate content: Required services (Ontology, LLM, Properties) not available.", "warning");
+            return;
+        }
+
+        const templates = ontologyService.getTemplates();
+        if (!templates || templates.length === 0) {
+            this.coreAPI.showGlobalStatus("No templates found in ontology for generation.", "info");
+            return;
+        }
+
+        // Get current note properties
+        const currentProperties = propertiesAPI.getPropertiesForNote(this._currentNoteId);
+
+        // Prompt user to select a template
+        // TODO: Replace prompt with a proper modal/dropdown selection UI
+        const templateNames = templates.map((t, i) => `${i + 1}: ${t.name}`).join('\n');
+        const choice = prompt(`Select template to generate content from:\n${templateNames}`);
+        const index = parseInt(choice, 10) - 1;
+
+        if (!isNaN(index) && templates[index]) {
+            const selectedTemplate = templates[index];
+            this.coreAPI.showGlobalStatus(`Generating content using template "${selectedTemplate.name}"...`, "info");
+
+            try {
+                const generatedContent = await llmService.generateContent(selectedTemplate.name, currentProperties);
+
+                if (generatedContent) {
+                    // Use EditorService to insert the generated content
+                    this.providesServices().EditorService.insertContentAtCursor?.(generatedContent);
+                    this.coreAPI.showGlobalStatus("AI content generated and inserted.", "success", 3000);
+                } else {
+                    // Error message handled by LLMService or generateContent function
+                    this.coreAPI.showGlobalStatus("AI content generation failed.", "warning", 4000);
+                }
+            } catch (error) {
+                console.error("EditorPlugin: Error during content generation call:", error);
+                this.coreAPI.showGlobalStatus(`Error generating content: ${error.message}`, "error", 5000);
+            }
+        }
+    },
+    // --- End Enhancement #7 ---
+
 
     // --- Added for Enhancement #3 ---
     _handleInsertTemplate() {
