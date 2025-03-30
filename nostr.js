@@ -490,10 +490,7 @@ export const NostrPlugin = {
     providesServices: () => ({
         'NostrService': {
             connect: () => {
-                if (NostrPlugin._identityStatus !== 'unlocked') {
-                    console.warn("NostrService: Cannot connect, identity locked.");
-                    return;
-                }
+                if (NostrPlugin._identityStatus !== 'unlocked') return console.warn("NostrService: Cannot connect, identity locked.");
                 if (NostrPlugin._connectionStatus === 'connected' || NostrPlugin._connectionStatus === 'connecting') return;
                 if (!NostrPlugin._config.relays || NostrPlugin._config.relays.length === 0) {
                     console.warn("NostrService: No relays configured.");

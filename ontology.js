@@ -219,13 +219,9 @@ export const OntologyPlugin = {
         };
     },
 
-    /**
-     * Registers UI components for specific slots.
-     * @returns {object} A map of slot names to render functions.
-     */
-    registerUISlots: function () { // Use function() to ensure 'this' refers to the plugin instance
+    registerUISlots: function () {
         return {
-            [SLOT_SETTINGS_PANEL_SECTION]: (props) => {
+            [SLOT_SETTINGS_PANEL_SECTION]: (props) =>
                 // Render function needs access to coreAPI, likely via props or global scope
                 // Using global coreAPI as per the example structure provided
                 const configNote = this.coreAPI.getSystemNoteByType('config/ontology');

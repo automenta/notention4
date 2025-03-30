@@ -267,8 +267,7 @@ export const PropertiesPlugin = {
                         ${propertiesData.length > 0 ? html`
                             <div class="properties-list">
                                 ${propertiesData.map(prop => html`
-                                    <button
-                                            class="property-pill ${prop.key.toLowerCase() === 'priority' ? getPriorityClass(parseInt(prop.value, 10) || 5) : ''}"
+                                    <button class="property-pill ${prop.key.toLowerCase() === 'priority' ? getPriorityClass(parseInt(prop.value, 10) || 5) : ''}"
                                             @click=${() => handlePropertyClick(prop)}
                                             title="Click to edit/delete\nType: ${prop.type || 'text'}\nCreated: ${coreAPI.utils.formatDate(prop.createdAt)}\nUpdated: ${coreAPI.utils.formatDate(prop.updatedAt)}"
                                     >

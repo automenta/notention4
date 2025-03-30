@@ -319,10 +319,9 @@ export const LLMPlugin = {
                         }
                         throw error;
                     }
-                }, // end callLLM
+                },
 
                 summarizeText: async (text, options = {}) => {
-                    // (Keep existing implementation)
                     if (!text || typeof text !== 'string' || text.trim().length < 50) {
                         console.log("LLMPlugin: Text too short or invalid for summarization, returning original.");
                         return text;
@@ -331,8 +330,7 @@ export const LLMPlugin = {
                     const summaryOptions = {...options, stream: false};
 
                     try {
-                        // Use the main callLLM method of this service
-                        const response = await this.prompt(prompt, summaryOptions); // Will check config
+                        const response = await this.prompt(prompt, summaryOptions);
                         const summary = response?.choices?.[0]?.message?.content?.trim();
                         if (!summary) {
                             console.error("LLMPlugin: Could not extract summary from LLM response.", response);
@@ -341,16 +339,14 @@ export const LLMPlugin = {
                         return summary;
                     } catch (error) {
                         console.error("LLMPlugin: Summarization failed.", error);
-                        // Avoid duplicate messages if it's a config error
                         if (error.message !== "LLM model name is not configured.") {
                             this._coreAPI.showGlobalStatus("Summarization Error", "error", 5000);
                         }
-                        throw error; // Re-throw
+                        throw error;
                     }
                 },
 
                 generateEmbeddings: async (text, options = {}) => {
-                    // (Keep existing implementation)
                     if (!text || typeof text !== 'string') {
                         this._coreAPI.showGlobalStatus("Embeddings Error: Input must be text.", "error", 4000);
                         throw new Error("generateEmbeddings requires a non-empty string input.");
@@ -371,12 +367,12 @@ export const LLMPlugin = {
                     } catch (error) {
                         console.error("LLMPlugin: Error generating embeddings.", error);
                         this._coreAPI.showGlobalStatus(`Embeddings Error: ${error.message}`, "error", 8000);
-                        throw error; // Re-throw
+                        throw error;
                     }
                 },
-            } // end LLMService
-        }; // end return
-    }, // end providesServices
+            }
+        };
+    },
 
     // --- Added for Enhancement #0 ---
     getSettingsOntology() {
