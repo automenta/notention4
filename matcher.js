@@ -28,6 +28,34 @@ export const MatcherPlugin = {
         console.log(`MatcherPlugin: Initialized. LLM Service available: ${!!this.llmService}`);
     },
 
+    // --- Added for Enhancement #5 ---
+    getSettingsOntology() {
+        return {
+            'propWeight': {
+                type: 'number', label: 'Property Match Weight', order: 1,
+                min: 0, max: 1, step: 0.05, default: 0.7,
+                description: 'Importance of property similarity (0 to 1). Total weight with Vector should ideally be 1.'
+            },
+            'vectorWeight': {
+                type: 'number', label: 'Vector Match Weight', order: 2,
+                min: 0, max: 1, step: 0.05, default: 0.3,
+                description: 'Importance of text embedding similarity (0 to 1). Requires LLM plugin.'
+            },
+            'scoreThreshold': {
+                type: 'number', label: 'Display Score Threshold', order: 3,
+                min: 0, max: 1, step: 0.05, default: 0.3,
+                description: 'Minimum combined score (0 to 1) required to display a related note.'
+            },
+            'topN': {
+                type: 'number', label: 'Max Related Notes', order: 4,
+                min: 1, max: 20, step: 1, default: 5,
+                description: 'Maximum number of related notes to display.'
+            }
+        };
+    },
+    // --- End Enhancement #5 ---
+
+
     providesServices() {
         // Expose the main MatcherService
         return {
@@ -85,19 +113,26 @@ export const MatcherPlugin = {
                     }
 
                     // --- 3. Combine Scores ---
-                    // TODO: Make weights configurable via settings?
-                    const propWeight = 0.7;
-                    const vectorWeight = 0.3;
+                    const settings = this.coreAPI.getPluginSettings(this.id);
+                    const defaultOntology = this.getSettingsOntology(); // Get defaults defined in the plugin
+                    const propWeight = settings?.propWeight ?? defaultOntology.propWeight.default ?? 0.7;
+                    const vectorWeight = settings?.vectorWeight ?? defaultOntology.vectorWeight.default ?? 0.3;
+
                     let finalScore = 0;
                     let explanation = "";
 
+                    // Normalize weights if they don't add up to 1 (optional, but good practice)
+                    const totalWeight = propWeight + (vectorAvailable ? vectorWeight : 0);
+                    const normPropWeight = totalWeight > 0 ? propWeight / totalWeight : 1; // If total is 0, give prop full weight
+                    const normVectorWeight = totalWeight > 0 && vectorAvailable ? vectorWeight / totalWeight : 0;
+
                     if (vectorAvailable) {
-                        finalScore = (propScoreResult.score * propWeight) + (vectorScoreResult.score * vectorWeight);
-                        explanation = `Property Match (${(propWeight * 100).toFixed(0)}%): ${propScoreResult.explanation}\nVector Match (${(vectorWeight * 100).toFixed(0)}%): ${vectorScoreResult.explanation}`;
+                        finalScore = (propScoreResult.score * normPropWeight) + (vectorScoreResult.score * normVectorWeight);
+                        explanation = `Property Match (${(normPropWeight * 100).toFixed(0)}%): ${propScoreResult.explanation}\nVector Match (${(normVectorWeight * 100).toFixed(0)}%): ${vectorScoreResult.explanation}`;
                     } else {
-                        // If vector isn't available or failed, property score takes full weight
-                        finalScore = propScoreResult.score;
-                        explanation = `Property Match (100%): ${propScoreResult.explanation}\nVector Match: ${vectorScoreResult.explanation}`; // Still show why vector failed/disabled
+                        // If vector isn't available or failed, property score takes full weight (normPropWeight will be 1)
+                        finalScore = propScoreResult.score * normPropWeight;
+                        explanation = `Property Match (${(normPropWeight * 100).toFixed(0)}%): ${propScoreResult.explanation}\nVector Match: ${vectorScoreResult.explanation}`; // Still show why vector failed/disabled
                     }
 
                     // Clamp score between 0 and 1
@@ -222,9 +257,12 @@ export const MatcherPlugin = {
 
                 const results = (await Promise.all(similarityPromises)).filter(r => r !== null);
 
-                // Filter, sort, and limit results
-                const topN = 5; // Configurable?
-                const scoreThreshold = 0.3; // Configurable?
+                // Filter, sort, and limit results using configured settings
+                const settings = pluginInstance.coreAPI.getPluginSettings(pluginInstance.id);
+                const defaultOntology = pluginInstance.getSettingsOntology();
+                const topN = settings?.topN ?? defaultOntology.topN.default ?? 5;
+                const scoreThreshold = settings?.scoreThreshold ?? defaultOntology.scoreThreshold.default ?? 0.3;
+
                 const topMatches = results
                     .filter(r => r.score >= scoreThreshold)
                     .sort((a, b) => b.score - a.score) // Sort descending by score
@@ -269,12 +307,47 @@ export const MatcherPlugin = {
     },
 
 
-     // --- UI Rendering for Related Notes Panel ---
+     // --- UI Rendering ---
      registerUISlots() {
         const pluginId = this.id;
         const coreAPI = this.coreAPI; // Capture coreAPI
+        const pluginInstance = this; // Capture plugin instance for handlers
+
+        // --- Debounced Save Handler --- (Similar to LLMPlugin)
+        const debouncedSaveFunctions = {};
+        const createDebouncedSaver = (key, schema, currentProperties, settingsNoteId, dispatch) => {
+            if (!debouncedSaveFunctions[key]) {
+                debouncedSaveFunctions[key] = coreAPI.utils.debounce((value) => {
+                    console.log(`MatcherPlugin: Saving setting ${key} =`, value);
+                    const existingProp = currentProperties.find(p => p.key === key);
+                    let actionType = 'PROPERTY_ADD';
+                    let payload = {
+                        noteId: settingsNoteId,
+                        propertyData: { key: key, value: value, type: schema.type || 'text' }
+                    };
+
+                    if (existingProp) {
+                        if (existingProp.value !== value) {
+                            actionType = 'PROPERTY_UPDATE';
+                            payload = {
+                                noteId: settingsNoteId,
+                                propertyId: existingProp.id,
+                                changes: { value: value }
+                            };
+                            dispatch({ type: actionType, payload: payload });
+                        } else { return; } // No change
+                    } else {
+                        dispatch({ type: actionType, payload: payload });
+                    }
+                    // TODO: Add UI save status feedback?
+                }, 750);
+            }
+            return debouncedSaveFunctions[key];
+        };
+
 
         return {
+            // --- Related Notes Panel ---
             [SLOT_EDITOR_PLUGIN_PANELS]: (props) => {
                 const { state, dispatch, noteId, html } = props;
                 if (!noteId) return ''; // No note selected
@@ -342,6 +415,91 @@ export const MatcherPlugin = {
                         }
                         .error-message { color: var(--danger-color); }
                     </style>
+                `;
+            },
+
+            // --- Settings Panel Section ---
+            [SLOT_SETTINGS_PANEL_SECTION]: (props) => {
+                const { state, dispatch, html } = props;
+                const settingsOntology = pluginInstance.getSettingsOntology();
+                const settingsNote = coreAPI.getSystemNoteByType(`config/settings/${pluginId}`);
+                const propsApi = coreAPI.getPluginAPI('properties');
+                const currentProperties = settingsNote ? (propsApi?.getPropertiesForNote(settingsNote.id) || []) : [];
+
+                // Convert current properties to a simple { key: value } map
+                const currentValues = {};
+                currentProperties.forEach(p => { currentValues[p.key] = p.value; });
+
+                // Get defaults from ontology definition
+                const defaultValues = {};
+                Object.keys(settingsOntology).forEach(key => {
+                    if (settingsOntology[key].hasOwnProperty('default')) {
+                        defaultValues[key] = settingsOntology[key].default;
+                    }
+                });
+
+                const displayConfig = { ...defaultValues, ...currentValues };
+
+                // --- Input Handlers ---
+                const handleInput = (key, value, schema) => {
+                    createDebouncedSaver(key, schema, currentProperties, settingsNote.id, dispatch)(value);
+                };
+                const handleNumberInput = (key, value, schema) => {
+                    const isFloat = schema.step && String(schema.step).includes('.');
+                    const number = isFloat ? parseFloat(value) : parseInt(value, 10);
+                    if (!isNaN(number)) {
+                        handleInput(key, number, schema);
+                    } else if (value === '') {
+                        handleInput(key, null, schema); // Save null when field is cleared
+                    }
+                };
+
+                // --- Render Logic ---
+                if (!settingsNote) {
+                    return html`
+                        <div class="settings-section matcher-settings">
+                            <h4>${pluginInstance.name}</h4>
+                            <p>Settings note not found.</p>
+                            <button @click=${() => dispatch({
+                                type: 'CORE_ADD_NOTE', payload: {
+                                    name: `${pluginInstance.name} Settings`,
+                                    systemType: `config/settings/${pluginId}`,
+                                    content: `Stores configuration properties for the ${pluginId} plugin.`
+                                }})}>Create Settings Note</button>
+                        </div>`;
+                }
+
+                const sortedKeys = Object.keys(settingsOntology).sort((a, b) => (settingsOntology[a].order || 99) - (settingsOntology[b].order || 99));
+
+                return html`
+                    <div class="settings-section matcher-settings">
+                        <h4>${pluginInstance.name}</h4>
+                        <p class="settings-description">Configure matching behavior. Autosaves on change.</p>
+                        ${sortedKeys.map(key => {
+                            const schema = settingsOntology[key];
+                            const currentValue = displayConfig[key];
+                            const inputId = `matcher-setting-${key}`;
+                            let inputElement;
+
+                            if (schema.type === 'number') {
+                                const isFloat = schema.step && String(schema.step).includes('.');
+                                inputElement = html`<input type="number" id=${inputId} .value=${currentValue ?? ''}
+                                                           min=${schema.min ?? ''} max=${schema.max ?? ''} step=${schema.step ?? ''}
+                                                           @input=${(e) => handleNumberInput(key, e.target.value, schema)}>`;
+                            } else { // Default text (add more types if needed)
+                                inputElement = html`<input type="text" id=${inputId} .value=${currentValue ?? ''}
+                                                           placeholder=${schema.placeholder || ''}
+                                                           @input=${(e) => handleInput(key, e.target.value, schema)}>`;
+                            }
+
+                            return html`
+                                <div class="setting-item">
+                                    <label for=${inputId}>${schema.label || key}</label>
+                                    ${inputElement}
+                                    ${schema.description ? html`<span class="field-hint">${schema.description}</span>` : ''}
+                                </div>`;
+                        })}
+                    </div>
                 `;
             }
         };
