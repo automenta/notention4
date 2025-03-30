@@ -8,7 +8,8 @@ import {Editor} from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import {html, render as litRender} from 'lit';
 
-import {Utils} from "./util.js";
+import {Utils} from "./util.js"; const debounce = Utils.debounce;
+
 import {SLOT_EDITOR_CONTENT_AREA} from './ui.js';
 
 // --- Abstract Base Class (Optional but good practice) ---

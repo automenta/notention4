@@ -221,7 +221,7 @@ export const OntologyPlugin = {
 
     registerUISlots: function () {
         return {
-            [SLOT_SETTINGS_PANEL_SECTION]: (props) =>
+            [SLOT_SETTINGS_PANEL_SECTION]: (props) => {
                 // Render function needs access to coreAPI, likely via props or global scope
                 // Using global coreAPI as per the example structure provided
                 const configNote = this.coreAPI.getSystemNoteByType('config/ontology');
@@ -278,8 +278,8 @@ export const OntologyPlugin = {
                     `;
                 }
             }
-        };
-    },
+        }
+    }
 
     // No primary reducer needed as state (_ontologyData) is managed internally
     // based on external note changes detected via subscription.

@@ -7,7 +7,7 @@
 // - CoreAPI utilities (utils, showToast, showConfirmationDialog, saveSystemNote, getSystemNoteByType)
 // - UI Slot constants
 
-
+import {Utils} from "./util.js"; const debounce = Utils.debounce;
 import {SimplePool} from 'nostr-tools/pool'
 import {getEventHash, getPublicKey} from 'nostr-tools/pure'
 import {
@@ -626,17 +626,14 @@ export const NostrPlugin = {
                         sub.unsub();
                     } catch (e) {
                         console.warn("Error unsubscribing:", e);
-                        } catch (e) {
-                            console.warn("Error unsubscribing:", e);
-                        }
-                    });
+                    }
                     NostrPlugin._poolSubscriptions.delete(subId);
                 } else {
                     console.warn(`Unknown subId [${subId}]`);
                 }
             },
 
-            getPublicKey: () =>
+            getPublicKey: () => {
                 if (NostrPlugin._identityStatus === 'unlocked' && NostrPlugin._decryptedHexPrivKey) {
                     try {
                         return NostrTools.getPublicKey(NostrPlugin._decryptedHexPrivKey);
@@ -671,6 +668,7 @@ export const NostrPlugin = {
             }
         };
     },
+
     // --- Reducer (Handles pluginRuntimeState) ---
     registerReducer: () => {
         const pluginId = NostrPlugin.id;
