@@ -300,7 +300,7 @@ export const NostrPlugin = {
             this._decryptedHexPrivKey = hexPrivKey;
             this._identityStatus = 'unlocked';
             this._identityError = null;
-            this.coreAPI.dispatch({type: 'NOSTR_IDENTITY_STATUS_UPDATE', payload: 'unlocked', pubkey: pubkey});
+            this._updateIdentityStatus('unlocked', {pubkey: pubkey});
             this.coreAPI.showToast("Nostr identity unlocked.", "success");
 
             this._startAutoLockTimer(); // Start auto-lock timer on successful unlock
@@ -314,12 +314,7 @@ export const NostrPlugin = {
             this._identityError = error.message || 'Incorrect passphrase or corrupted data.';
             this._decryptedHexPrivKey = null;
             this._decryptedNsec = null;
-            this.coreAPI.dispatch({
-                type: 'NOSTR_IDENTITY_STATUS_UPDATE',
-                payload: 'error',
-                error: this._identityError,
-                pubkey: pubkey
-            });
+            this._updateIdentityStatus('error', {error: this._identityError, pubkey: pubkey});
             this.coreAPI.showToast(`Error: ${this._identityError}`, "error");
             return false;
         } finally {
@@ -381,7 +376,7 @@ export const NostrPlugin = {
             this._decryptedHexPrivKey = hexPrivKey;
             this._identityStatus = 'unlocked';
             this._identityError = null;
-            this.coreAPI.dispatch({type: 'NOSTR_IDENTITY_STATUS_UPDATE', payload: 'unlocked', pubkey: pubkey});
+            this._updateIdentityStatus('unlocked', {pubkey: pubkey});
             this.coreAPI.showToast("Nostr identity saved and unlocked.", "success");
 
             this._startAutoLockTimer(); // Start auto-lock timer after setup
@@ -394,7 +389,7 @@ export const NostrPlugin = {
             this._identityError = `Failed to encrypt or save identity: ${error.message}`;
             this._decryptedNsec = null;
             this._decryptedHexPrivKey = null;
-            this.coreAPI.dispatch({type: 'NOSTR_IDENTITY_STATUS_UPDATE', payload: 'error', error: this._identityError});
+            this._updateIdentityStatus('error', {error: this._identityError});
             this.coreAPI.showToast("Error: Failed to save identity.", "error");
             return false;
         } finally {

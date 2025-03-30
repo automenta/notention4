@@ -340,24 +340,32 @@ export const SemanticParserPlugin = {
         const parseFn = this.llmService ? this._parseWithLLM.bind(this) : this._parseWithHeuristics.bind(this);
 
         parseFn(content, noteId)
-            .then(suggestions => {
-                // Ensure suggestions have unique IDs and default status
-                const processedSuggestions = suggestions.map(s => ({
-                    ...s,
-                    id: s.id || utils.generateUUID(),
-                    status: s.status || 'pending'
-                }));
-                this.coreAPI.dispatch({
-                    type: 'PARSER_SUGGESTIONS_RECEIVED',
-                    payload: {noteId, suggestions: processedSuggestions}
-                });
-            })
+            .then(suggestions => this._processSuggestions(noteId, suggestions))
             .catch(err => {
                 console.error("Parser: Error during parsing", {noteId, error: err});
                 this.coreAPI.showGlobalStatus("Error parsing note content.", "error");
                 // Clear suggestions on error?
                 this.coreAPI.dispatch({type: 'PARSER_CLEAR_SUGGESTIONS', payload: {noteId}});
             });
+    },
+
+    /**
+     * Processes and dispatches suggestions, ensuring unique IDs and default status.
+     * @param {string} noteId - The ID of the note.
+     * @param {ParserSuggestion[]} suggestions - Array of suggestion objects.
+     * @private
+     */
+    _processSuggestions(noteId, suggestions) {
+        // Ensure suggestions have unique IDs and default status
+        const processedSuggestions = suggestions.map(s => ({
+            ...s,
+            id: s.id || utils.generateUUID(),
+            status: s.status || 'pending'
+        }));
+        this.coreAPI.dispatch({
+            type: 'PARSER_SUGGESTIONS_RECEIVED',
+            payload: {noteId, suggestions: processedSuggestions}
+        });
     },
 
     /**
