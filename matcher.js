@@ -201,7 +201,15 @@ export const MatcherPlugin = {
                         case 'list':
                             matchScore = this._compareLists(valueA, valueB);
                             break;
-                        case 'reference': // Simple ID match for now
+                        case 'reference':
+                            // High score for exact match of reference values (note names/IDs)
+                            if (typeof valueA === 'string' && typeof valueB === 'string' && valueA.toLowerCase() === valueB.toLowerCase()) {
+                                matchScore = 0.95; // High score for direct reference match
+                            } else {
+                                matchScore = 0; // No match if references differ
+                            }
+                            // TODO: Future: Resolve references to actual note IDs and compare IDs
+                            break;
                         case 'url':
                         case 'location': // Basic string match for now
                         case 'text':
