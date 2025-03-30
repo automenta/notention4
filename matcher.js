@@ -110,9 +110,50 @@ export const MatcherPlugin = {
     },
 
     registerReducer() {
-        // Reducer primarily handles invalidating/cleaning the embedding cache in runtimeCache
+        const pluginId = this.id;
+        // Reducer handles embedding cache AND related notes UI state
         return (draft, action) => {
+            // Initialize state structure if it doesn't exist
+            if (!draft.pluginRuntimeState[pluginId]) {
+                draft.pluginRuntimeState[pluginId] = { relatedNotes: {} }; // { [noteId]: { isLoading: boolean, matches: MatchResult[] } }
+            }
+            const matcherState = draft.pluginRuntimeState[pluginId];
+
             switch (action.type) {
+                // --- Related Notes UI State ---
+                case 'MATCHER_FIND_RELATED_START': {
+                    const { noteId } = action.payload;
+                    if (!matcherState.relatedNotes[noteId]) matcherState.relatedNotes[noteId] = {};
+                    matcherState.relatedNotes[noteId].isLoading = true;
+                    matcherState.relatedNotes[noteId].matches = []; // Clear previous matches
+                    matcherState.relatedNotes[noteId].error = null;
+                    break;
+                }
+                case 'MATCHER_FIND_RELATED_SUCCESS': {
+                    const { noteId, matches } = action.payload;
+                    if (!matcherState.relatedNotes[noteId]) matcherState.relatedNotes[noteId] = {};
+                    matcherState.relatedNotes[noteId].isLoading = false;
+                    matcherState.relatedNotes[noteId].matches = matches;
+                    matcherState.relatedNotes[noteId].error = null;
+                    break;
+                }
+                case 'MATCHER_FIND_RELATED_FAILURE': {
+                    const { noteId, error } = action.payload;
+                    if (!matcherState.relatedNotes[noteId]) matcherState.relatedNotes[noteId] = {};
+                    matcherState.relatedNotes[noteId].isLoading = false;
+                    matcherState.relatedNotes[noteId].error = error;
+                    break;
+                }
+                 case 'CORE_SELECT_NOTE': {
+                    // Optionally clear results for the previously selected note to save memory?
+                    // const previousNoteId = draft.uiState.selectedNoteId; // This is tricky, state might already be updated
+                    // if (previousNoteId && matcherState.relatedNotes[previousNoteId]) {
+                    //     delete matcherState.relatedNotes[previousNoteId];
+                    // }
+                    break;
+                 }
+
+                // --- Embedding Cache State ---
                 // On update, the cache key using `updatedAt` will naturally become stale.
                 // No explicit invalidation needed here if _getOrGenerateEmbedding checks timestamp.
                 // case 'CORE_UPDATE_NOTE': { ... break; }
@@ -144,8 +185,167 @@ export const MatcherPlugin = {
                     break;
                 }
             }
+            // No return needed when mutating draft
         };
     },
+
+    // --- Middleware for Triggering Background Matching ---
+    registerMiddleware() {
+        const pluginInstance = this; // Capture 'this' for use in debounced function
+
+        // Debounced function to trigger matching for a specific note
+        const debouncedTriggerMatching = Utils.debounce(async (noteId, state, dispatch) => {
+            if (!noteId) return;
+            const targetNote = state.notes[noteId];
+            if (!targetNote || targetNote.isArchived) return; // Don't match for non-existent or archived notes
+
+            console.log(`Matcher Middleware: Triggering related notes search for ${noteId}`);
+            dispatch({ type: 'MATCHER_FIND_RELATED_START', payload: { noteId } });
+
+            try {
+                const matcherService = pluginInstance.coreAPI.getService('MatcherService');
+                if (!matcherService) throw new Error("MatcherService not available.");
+
+                const allOtherNotes = state.noteOrder
+                    .map(id => state.notes[id])
+                    .filter(note => note && note.id !== noteId && !note.isArchived); // Exclude self and archived
+
+                const similarityPromises = allOtherNotes.map(async otherNote => {
+                    try {
+                        const result = await matcherService.calculateCompatibility(targetNote, otherNote);
+                        return { note: otherNote, score: result.score, explanation: result.explanation };
+                    } catch (error) {
+                        console.error(`Matcher Middleware: Error comparing ${noteId} with ${otherNote.id}`, error);
+                        return null; // Ignore errors for individual comparisons
+                    }
+                });
+
+                const results = (await Promise.all(similarityPromises)).filter(r => r !== null);
+
+                // Filter, sort, and limit results
+                const topN = 5; // Configurable?
+                const scoreThreshold = 0.3; // Configurable?
+                const topMatches = results
+                    .filter(r => r.score >= scoreThreshold)
+                    .sort((a, b) => b.score - a.score) // Sort descending by score
+                    .slice(0, topN);
+
+                dispatch({ type: 'MATCHER_FIND_RELATED_SUCCESS', payload: { noteId, matches: topMatches } });
+
+            } catch (error) {
+                console.error(`Matcher Middleware: Failed to find related notes for ${noteId}`, error);
+                dispatch({ type: 'MATCHER_FIND_RELATED_FAILURE', payload: { noteId, error: error.message } });
+            }
+        }, 1000); // Debounce time (e.g., 1 second after selection or update)
+
+
+        return storeApi => next => action => {
+            const result = next(action); // Pass action along first
+            const state = storeApi.getState(); // Get state *after* action is processed
+
+            // Trigger on note selection
+            if (action.type === 'CORE_SELECT_NOTE') {
+                const selectedNoteId = action.payload.noteId;
+                debouncedTriggerMatching.cancel(); // Cancel any pending match from previous selection/edit
+                if (selectedNoteId) {
+                    // Trigger immediately or with short delay? Let's use the debounce.
+                    debouncedTriggerMatching(selectedNoteId, state, storeApi.dispatch);
+                }
+            }
+
+            // Trigger on note content/property update (debounced)
+            // Check if the updated note is the currently selected one
+            if ((action.type === 'CORE_UPDATE_NOTE' || action.type === 'PROPERTY_ADD' || action.type === 'PROPERTY_UPDATE' || action.type === 'PROPERTY_DELETE') && action.payload.noteId === state.uiState.selectedNoteId) {
+                 const noteId = action.payload.noteId;
+                 // Only trigger if content or properties actually changed
+                 if (action.type === 'CORE_UPDATE_NOTE' && !action.payload.changes?.content) {
+                     // If only name changed, maybe don't re-trigger? For now, let it re-trigger.
+                 }
+                 debouncedTriggerMatching(noteId, state, storeApi.dispatch);
+            }
+
+            return result;
+        };
+    },
+
+
+     // --- UI Rendering for Related Notes Panel ---
+     registerUISlots() {
+        const pluginId = this.id;
+        const coreAPI = this.coreAPI; // Capture coreAPI
+
+        return {
+            [SLOT_EDITOR_PLUGIN_PANELS]: (props) => {
+                const { state, dispatch, noteId, html } = props;
+                if (!noteId) return ''; // No note selected
+
+                const matcherState = state.pluginRuntimeState?.[pluginId]?.relatedNotes?.[noteId];
+                const { isLoading = false, matches = [], error = null } = matcherState || {};
+
+                const handleNoteClick = (relatedNoteId) => {
+                    dispatch({ type: 'CORE_SELECT_NOTE', payload: { noteId: relatedNoteId } });
+                };
+
+                let content;
+                if (isLoading) {
+                    content = html`<div class="loading-indicator">Finding related notes...</div>`;
+                } else if (error) {
+                    content = html`<div class="error-message">Error: ${error}</div>`;
+                } else if (matches.length === 0) {
+                    content = html`<p class="no-matches-message">No related notes found.</p>`;
+                } else {
+                    content = html`
+                        <ul class="related-notes-list">
+                            ${matches.map(match => html`
+                                <li class="related-note-item" title="Score: ${match.score.toFixed(3)}\n${match.explanation}">
+                                    <button class="related-note-link" @click=${() => handleNoteClick(match.note.id)}>
+                                        ${match.note.name || 'Untitled Note'}
+                                    </button>
+                                    <span class="related-note-score">(${(match.score * 100).toFixed(0)}%)</span>
+                                </li>
+                            `)}
+                        </ul>
+                    `;
+                }
+
+                // Use <details> for collapsibility
+                return html`
+                    <details class="matcher-related-notes-panel plugin-panel" open>
+                        <summary class="plugin-panel-title">Related Notes</summary>
+                        <div class="plugin-panel-content">
+                            ${content}
+                        </div>
+                    </details>
+                    <style>
+                        .matcher-related-notes-panel summary { cursor: pointer; }
+                        .related-notes-list { list-style: none; padding: 0; margin: 0; }
+                        .related-note-item {
+                            padding: 4px 0;
+                            border-bottom: 1px solid var(--vscode-editorWidget-border, var(--border-color));
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                        }
+                        .related-note-item:last-child { border-bottom: none; }
+                        .related-note-link {
+                            background: none; border: none; padding: 0; margin: 0;
+                            color: var(--link-color); text-decoration: none; cursor: pointer;
+                            text-align: left;
+                        }
+                        .related-note-link:hover { text-decoration: underline; }
+                        .related-note-score {
+                            font-size: 0.85em; color: var(--secondary-text-color);
+                            margin-left: 8px; white-space: nowrap;
+                         }
+                        .loading-indicator, .error-message, .no-matches-message {
+                            padding: 8px; color: var(--secondary-text-color); font-style: italic;
+                        }
+                        .error-message { color: var(--danger-color); }
+                    </style>
+                `;
+            }
+        };
+     },
 
     // --- Internal Score Calculation Methods ---
 
