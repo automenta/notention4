@@ -305,7 +305,11 @@ class UIRenderer {
     }, 500);
     _handleContentInput = Utils.debounce((noteId, value) => {
         this._dispatch({type: 'CORE_UPDATE_NOTE', payload: {noteId, changes: {content: value}}});
-    }, 700); // Longer debounce for content
+    }, 700);
+
+    _dispatchAction = (action) => {
+        this._dispatch(action);
+    }
 
     // --- VDOM Rendering Functions ---
 
@@ -516,8 +520,8 @@ class UIRenderer {
     _renderWelcomeMessage(state) {
         const noteCount = state.noteOrder.filter(id => !state.notes[id]?.isArchived).length;
         const message = noteCount > 0
-            ? 'Select a note or click "➕ Add Note".'
-            : 'Click "➕ Add Note" to get started!';
+            ? `Select a note or click "➕ Add Note".`
+            : `Click "➕ Add Note" to get started!`;
         return html`
             <div class="welcome-message"><h2>Welcome!</h2>
                 <p>${message}</p></div>`;
@@ -596,28 +600,28 @@ class UIRenderer {
     } // Convenience
 
     _handleOpenSettings = () => {
-        this._dispatch({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
+        this._dispatchAction({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
     };
 
     _handleCloseModal = () => {
-        this._dispatch({type: 'CORE_CLOSE_MODAL'});
+        this._dispatchAction({type: 'CORE_CLOSE_MODAL'});
     };
 
     _handleAddNote = () => {
-        this._dispatch({type: 'CORE_ADD_NOTE'});
+        this._dispatchAction({type: 'CORE_ADD_NOTE'});
     };
 
     _handleSelectNote = (noteId) => {
-        this._dispatch({type: 'CORE_SELECT_NOTE', payload: {noteId}});
+        this._dispatchAction({type: 'CORE_SELECT_NOTE', payload: {noteId}});
     };
 
     _handleArchiveNote = (noteId) => {
-        this._dispatch({type: 'CORE_ARCHIVE_NOTE', payload: {noteId}});
+        this._dispatchAction({type: 'CORE_ARCHIVE_NOTE', payload: {noteId}});
     };
 
     _handleDeleteNote = (noteId, noteName) => {
         if (confirm(`Are you sure you want to permanently delete "${noteName || 'Untitled Note'}"?`)) {
-            this._dispatch({type: 'CORE_DELETE_NOTE', payload: {noteId}});
+            this._dispatchAction({type: 'CORE_DELETE_NOTE', payload: {noteId}});
         }
     };
 
@@ -625,7 +629,7 @@ class UIRenderer {
         const key = e.target.dataset.settingKey;
         const value = e.target.value;
         if (key) {
-            this._dispatch({type: 'CORE_SET_CORE_SETTING', payload: {key, value}});
+            this._dispatchAction({type: 'CORE_SET_CORE_SETTING', payload: {key, value}});
         }
     };
 
@@ -680,8 +684,8 @@ class UIRenderer {
     };
 
     _handleClearState = () => {
-        if (confirm("WARNING: This will delete ALL your notes and settings locally and cannot be undone. Are you absolutely sure?")) {
-            if (confirm("SECOND WARNING: Please confirm again that you want to erase everything.")) {
+        if (confirm(`WARNING: This will delete ALL your notes and settings locally and cannot be undone. Are you absolutely sure?`)) {
+            if (confirm(`SECOND WARNING: Please confirm again that you want to erase everything.`)) {
                 window._clearState(); // Call the debug function exposed globally
             }
         }

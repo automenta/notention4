@@ -1,6 +1,5 @@
-import {SLOT_EDITOR_BELOW_CONTENT} from './ui.js';
-
 import './parser.css';
+import {SLOT_EDITOR_BELOW_CONTENT} from './ui.js';
 
 
 export const PropertiesPlugin = {
