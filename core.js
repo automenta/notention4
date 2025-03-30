@@ -1267,7 +1267,7 @@ const initialAppState = {
         modalType: null,
         modalProps: null,
         globalStatus: null,
-        noteListSortMode: 'time', // Default sort mode
+        // noteListSortMode: 'time', // Default sort mode <-- Removed duplicate
     },
     pluginRuntimeState: {},
     runtimeCache: {},
