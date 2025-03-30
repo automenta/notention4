@@ -297,16 +297,6 @@ class UIRenderer {
     _rootElement = null;
     _slotRegistry = new Map(); // Map<slotName, Array<{pluginId, renderFn}>>
     _scrollPositions = {}; // Store scroll positions before render
-    _handleSearchInput = Utils.debounce((e) => {
-        this._stateManager.dispatch({type: 'CORE_SEARCH_TERM_CHANGED', payload: {searchTerm: e.target.value}});
-    }, 300);
-    _handleTitleInput = Utils.debounce((noteId, value) => {
-        this._stateManager.dispatch({type: 'CORE_UPDATE_NOTE', payload: {noteId, changes: {name: value}}});
-    }, 500);
-    _handleContentInput = Utils.debounce((noteId, value) => {
-        this._stateManager.dispatch({type: 'CORE_UPDATE_NOTE', payload: {noteId, changes: {content: value}}});
-    }, 700);
-
     // --- VDOM Rendering Functions ---
 
     constructor(stateManager, rootElementId = 'app') {
@@ -570,7 +560,7 @@ class UIRenderer {
 
     _renderSlot(state, slotName, noteId = null) {
         const components = this._slotRegistry.get(slotName) || [];
-        if (components.length === 0) return ''; // Return empty if no components for this slot
+        if (components.length === 0) return '';
 
         return components.map(({pluginId, renderFn}) => {
             try {
@@ -591,25 +581,15 @@ class UIRenderer {
         });
     }
 
-    _handleOpenSettings = () => {
-        this._stateManager.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
-    };
+    _handleOpenSettings = () => this._stateManager.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
 
-    _handleCloseModal = () => {
-        this._stateManager.dispatch({type: 'CORE_CLOSE_MODAL'});
-    };
+    _handleCloseModal = () => this._stateManager.dispatch({type: 'CORE_CLOSE_MODAL'});
 
-    _handleAddNote = () => {
-        this._stateManager.dispatch({type: 'CORE_ADD_NOTE'});
-    };
+    _handleAddNote = () => this._stateManager.dispatch({type: 'CORE_ADD_NOTE'});
 
-    _handleSelectNote = (noteId) => {
-        this._stateManager.dispatch({type: 'CORE_SELECT_NOTE', payload: {noteId}});
-    };
+    _handleSelectNote = (noteId) => this._stateManager.dispatch({type: 'CORE_SELECT_NOTE', payload: {noteId}});
 
-    _handleArchiveNote = (noteId) => {
-        this._stateManager.dispatch({type: 'CORE_ARCHIVE_NOTE', payload: {noteId}});
-    };
+    _handleArchiveNote = (noteId) => this._stateManager.dispatch({type: 'CORE_ARCHIVE_NOTE', payload: {noteId}});
 
     _handleDeleteNote = (noteId, noteName) => {
         if (confirm(`Are you sure you want to permanently delete "${noteName || 'Untitled Note'}"?`)) {
@@ -626,9 +606,7 @@ class UIRenderer {
     };
 
     // --- Event Handler for #2 (Priority Sort) ---
-    _handleSortChange = (e) => {
-        this._stateManager.dispatch({type: 'CORE_SET_NOTE_LIST_SORT_MODE', payload: e.target.value});
-    }
+    _handleSortChange = (e) => this._stateManager.dispatch({type: 'CORE_SET_NOTE_LIST_SORT_MODE', payload: e.target.value});
 
     // --- Rendering Helper for #2 (Priority Sort Button) ---
     _renderSortControl = (state) => html`... sort control ...` // Placeholder - added directly in main template below
