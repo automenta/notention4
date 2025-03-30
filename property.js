@@ -5,11 +5,17 @@ import {SLOT_EDITOR_BELOW_CONTENT} from './ui.js';
 export const PropertiesPlugin = {
     id: 'properties',
     name: 'Note Properties',
-    dependencies: [], // No dependencies for this foundational plugin
+    dependencies: ['ontology'], // Added ontology dependency
     coreAPI: null, // Will be injected by init
+    ontologyService: null, // To be injected
 
     init(coreAPI) {
         this.coreAPI = coreAPI;
+        this.ontologyService = coreAPI.getService('OntologyService'); // Get OntologyService
+        if (!this.ontologyService) {
+            // This should ideally not happen due to the dependency declaration, but check anyway.
+            console.error("PropertiesPlugin: CRITICAL - OntologyService not available despite dependency. Features will be broken.");
+        }
         console.log("PropertiesPlugin: Initialized.");
     },
 
