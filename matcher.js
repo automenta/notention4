@@ -179,33 +179,59 @@ export const MatcherPlugin = {
                 const typeB = propB.type || this.ontologyService.inferType(valueB, key);
 
                 let matchScore = 0;
-                // TODO: Implement more sophisticated type-based comparisons using ontology hints/rules
-                if (typeA === typeB) {
-                    // Basic comparison for now
-                    if (valueA === valueB) {
-                        matchScore = 1.0;
-                    } else if (typeof valueA === 'string' && typeof valueB === 'string') {
-                        // Simple partial match: common prefix length (crude)
-                        let common = 0;
-                        while (common < valueA.length && common < valueB.length && valueA[common].toLowerCase() === valueB[common].toLowerCase()) {
-                            common++;
-                        }
-                        matchScore = common / Math.max(valueA.length, valueB.length, 1); // Avoid div by zero
-                        matchScore = isNaN(matchScore) ? 0 : matchScore * 0.5; // Penalize non-exact string match
-                    } else if (typeof valueA === 'number' && typeof valueB === 'number') {
-                        // Score based on relative difference
-                        const diff = Math.abs(valueA - valueB);
-                        const range = Math.max(Math.abs(valueA), Math.abs(valueB), 1); // Avoid div by zero
-                        matchScore = Math.max(0, 1 - (diff / range)); // Closer values get higher score
-                        matchScore = isNaN(matchScore) ? 0 : matchScore * 0.8; // Penalize non-exact number match
-                    }
-                    // Add more type comparisons (tags, dates, locations) here
-                } // Else: type mismatch, score remains 0
+                let comparisonType = 'Mismatch';
 
-                if (matchScore > 0) {
+                if (typeA === typeB) {
+                    comparisonType = typeA; // Use the matched type for comparison logic
+                    switch (typeA) {
+                        case 'date':
+                            matchScore = this._compareDates(valueA, valueB);
+                            break;
+                        case 'number':
+                            if (typeof valueA === 'number' && typeof valueB === 'number') {
+                                const diff = Math.abs(valueA - valueB);
+                                const range = Math.max(Math.abs(valueA), Math.abs(valueB), 1);
+                                matchScore = Math.max(0, 1 - (diff / range));
+                                matchScore = isNaN(matchScore) ? 0 : matchScore * 0.9; // Slightly penalize non-exact
+                            } else { matchScore = (valueA == valueB) ? 0.5 : 0; } // Loose equality check if not numbers
+                            break;
+                        case 'boolean':
+                            matchScore = (valueA === valueB) ? 1.0 : 0;
+                            break;
+                        case 'list':
+                            matchScore = this._compareLists(valueA, valueB);
+                            break;
+                        case 'reference': // Simple ID match for now
+                        case 'url':
+                        case 'location': // Basic string match for now
+                        case 'text':
+                        default: // Default to string comparison
+                            if (valueA === valueB) {
+                                matchScore = 1.0;
+                            } else if (typeof valueA === 'string' && typeof valueB === 'string') {
+                                // Simple Jaccard index for words? Or keep prefix match? Let's try Jaccard.
+                                const wordsA = new Set(valueA.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+                                const wordsB = new Set(valueB.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+                                if (wordsA.size > 0 || wordsB.size > 0) {
+                                     matchScore = this._jaccardIndex(wordsA, wordsB) * 0.7; // Penalize non-exact text
+                                } else {
+                                     matchScore = 0; // No meaningful words
+                                }
+                            } else { // Different underlying types treated as string
+                                matchScore = (String(valueA) === String(valueB)) ? 0.8 : 0; // Penalize type coercion match
+                            }
+                            break;
+                    }
+                } else {
+                    // Type mismatch - potential for future cross-type comparison (e.g., string "10" vs number 10)
+                    matchScore = 0; // Keep score 0 for type mismatches for now
+                    comparisonType = `Mismatch (${typeA} vs ${typeB})`;
+                }
+
+                if (matchScore > 0.01) { // Use a small threshold to count as matching
                     totalScore += matchScore;
                     matchingPropertiesCount++;
-                    explanations.push(`'${key}': Match=${matchScore.toFixed(2)}`);
+                    explanations.push(`'${key}' (${comparisonType}): ${matchScore.toFixed(2)}`);
                 }
             }
         }
@@ -346,6 +372,61 @@ export const MatcherPlugin = {
         const similarity = dotProduct / (magA * magB);
         return isNaN(similarity) ? 0 : similarity; // Handle potential NaN if magnitudes somehow become invalid
     },
+
+    /**
+     * Compares two date strings and returns a score based on proximity.
+     * @param {string} dateStrA
+     * @param {string} dateStrB
+     * @returns {number} Score between 0 and 1.
+     * @private
+     */
+    _compareDates(dateStrA, dateStrB) {
+        try {
+            const dateA = new Date(dateStrA);
+            const dateB = new Date(dateStrB);
+            if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) return 0; // Invalid date format
+
+            const diffMillis = Math.abs(dateA.getTime() - dateB.getTime());
+            const diffDays = diffMillis / (1000 * 60 * 60 * 24);
+
+            // Score decreases as difference increases. Score is ~1 for same day, ~0.5 for 1 day diff, etc.
+            // Adjust the denominator to control how quickly the score drops off.
+            const score = 1 / (1 + diffDays);
+            return score;
+        } catch (e) {
+            console.warn("MatcherPlugin: Error comparing dates", dateStrA, dateStrB, e);
+            return 0; // Error during parsing/comparison
+        }
+    },
+
+    /**
+     * Compares two lists (arrays or comma-separated strings) using Jaccard index.
+     * @param {Array|string} listA
+     * @param {Array|string} listB
+     * @returns {number} Jaccard index score (0 to 1).
+     * @private
+     */
+    _compareLists(listA, listB) {
+        const setA = new Set(Array.isArray(listA) ? listA : String(listA).split(',').map(s => s.trim()).filter(s => s));
+        const setB = new Set(Array.isArray(listB) ? listB : String(listB).split(',').map(s => s.trim()).filter(s => s));
+
+        return this._jaccardIndex(setA, setB);
+    },
+
+    /**
+     * Calculates the Jaccard index (intersection over union) for two sets.
+     * @param {Set<any>} setA
+     * @param {Set<any>} setB
+     * @returns {number} Jaccard index (0 to 1).
+     * @private
+     */
+     _jaccardIndex(setA, setB) {
+        if (!(setA instanceof Set) || !(setB instanceof Set)) return 0;
+        const intersectionSize = new Set([...setA].filter(x => setB.has(x))).size;
+        const unionSize = setA.size + setB.size - intersectionSize;
+
+        return unionSize === 0 ? 1 : intersectionSize / unionSize; // Return 1 if both sets are empty? Or 0? Let's say 1.
+    }
 };
 
 // Example of how another plugin might use the MatcherService:
