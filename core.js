@@ -349,6 +349,12 @@ class UIRenderer {
                     <div class="sidebar-actions">
                         <button id="core-add-note" title="Add New Note" @click=${this._handleAddNote}>➕ Add Note
                         </button>
+                        <!-- Sort Control -->
+                        <select id="core-note-sort" title="Sort Notes By" @change=${this._handleSortChange}
+                                .value=${state.uiState.noteListSortMode || 'time'}>
+                            <option value="time">Sort: Time</option>
+                            <option value="priority">Sort: Priority</option>
+                        </select>
                         <!-- Slot for actions below Add Note -->
                         <div data-slot="${SLOT_SIDEBAR_NOTE_LIST_ACTIONS}">
                             ${this._renderSlot(state, SLOT_SIDEBAR_NOTE_LIST_ACTIONS)}
@@ -382,16 +388,37 @@ class UIRenderer {
 
     _renderNoteListItems(state) {
         const {notes, noteOrder, uiState} = state;
-        const {selectedNoteId, searchTerm} = uiState;
+        const {selectedNoteId, searchTerm, noteListSortMode = 'time'} = uiState; // Default to 'time'
         const lowerSearchTerm = searchTerm.toLowerCase();
 
-        const filteredNoteIds = noteOrder.filter(id => {
+        // 1. Filter notes
+        let filteredNoteIds = noteOrder.filter(id => {
             const note = notes[id];
             if (!note || note.isArchived) return false;
             if (!searchTerm) return true;
             return (note.name.toLowerCase().includes(lowerSearchTerm) || note.content.toLowerCase().includes(lowerSearchTerm));
         });
 
+        // 2. Sort filtered notes
+        const getPriority = (noteId) => {
+            const note = notes[noteId];
+            const props = note?.pluginData?.properties?.properties || [];
+            const priorityProp = props.find(p => p.key?.toLowerCase() === 'priority');
+            // Default to a mid-range priority (e.g., 5) if not found or invalid
+            return priorityProp ? (parseInt(priorityProp.value, 10) || 5) : 5;
+        };
+
+        filteredNoteIds.sort((a, b) => {
+            if (noteListSortMode === 'priority') {
+                // Sort by priority descending (higher first)
+                return getPriority(b) - getPriority(a);
+            } else { // Default to 'time'
+                // Sort by updatedAt descending (newer first)
+                return (notes[b]?.updatedAt || 0) - (notes[a]?.updatedAt || 0);
+            }
+        });
+
+        // 3. Render sorted list
         if (filteredNoteIds.length === 0) {
             return html`
                 <li style="padding: 1rem; color: var(--secondary-text-color);">
