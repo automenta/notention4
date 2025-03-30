@@ -641,95 +641,11 @@ class UIRenderer {
     // --- Rendering Helper for #2 (Priority Sort Button) ---
     _renderSortControl = (state) => html`... sort control ...` // Placeholder - added directly in main template below
 
-    _handleNoteListKeyDown = (event) => {
-        const list = event.currentTarget; // The <ul> element
-        const currentItem = document.activeElement;
-
-        if (!currentItem || !list.contains(currentItem) || !currentItem.matches('.note-list-item')) {
-            // If focus is not on an item, focus the first one on down arrow
-            if (event.key === 'ArrowDown') {
-                const firstItem = list.querySelector('.note-list-item');
-                if (firstItem) {
-                    firstItem.focus();
-                    event.preventDefault();
-                }
-            }
-            return;
-        }
-
-        let nextItem = null;
-        if (event.key === 'ArrowDown') {
-            nextItem = currentItem.nextElementSibling;
-            while (nextItem && !nextItem.matches('.note-list-item')) { // Skip non-item elements if any
-                nextItem = nextItem.nextElementSibling;
-            }
-            event.preventDefault();
-        } else if (event.key === 'ArrowUp') {
-            nextItem = currentItem.previousElementSibling;
-            while (nextItem && !nextItem.matches('.note-list-item')) {
-                nextItem = nextItem.previousElementSibling;
-            }
-            event.preventDefault();
-        } else if (event.key === 'Enter' || event.key === ' ') {
-            const noteId = currentItem.dataset.noteId;
-            if (noteId) {
-                this._handleSelectNote(noteId);
-                event.preventDefault();
-            }
-        }
-
-        if (nextItem) {
-            nextItem.focus(); // Move focus
-        }
-    };
-
     _handleClearState = () => {
         if (confirm(`WARNING: This will delete ALL your notes and settings locally and cannot be undone. Are you absolutely sure?`)) {
             if (confirm(`SECOND WARNING: Please confirm again that you want to erase everything.`)) {
                 window._clearState(); // Call the debug function exposed globally
             }
-        }
-    };
-
-    _handleNoteListKeyDown = (event) => {
-        const list = event.currentTarget; // The <ul> element
-        const currentItem = document.activeElement;
-
-        if (!currentItem || !list.contains(currentItem) || !currentItem.matches('.note-list-item')) {
-            // If focus is not on an item, focus the first one on down arrow
-            if (event.key === 'ArrowDown') {
-                const firstItem = list.querySelector('.note-list-item');
-                if (firstItem) {
-                    firstItem.focus();
-                    event.preventDefault();
-                }
-            }
-            return;
-        }
-
-        let nextItem = null;
-        if (event.key === 'ArrowDown') {
-            nextItem = currentItem.nextElementSibling;
-            while (nextItem && !nextItem.matches('.note-list-item')) { // Skip non-item elements if any
-                nextItem = nextItem.nextElementSibling;
-            }
-            event.preventDefault();
-        } else if (event.key === 'ArrowUp') {
-            nextItem = currentItem.previousElementSibling;
-            while (nextItem && !nextItem.matches('.note-list-item')) {
-                nextItem = nextItem.previousElementSibling;
-            }
-            event.preventDefault();
-        } else if (event.key === 'Enter' || event.key === ' ') {
-            const noteId = currentItem.dataset.noteId;
-            if (noteId) {
-                this._handleSelectNote(noteId);
-                event.preventDefault();
-            }
-        }
-
-        if (nextItem) {
-            nextItem.focus(); // Move focus
         }
     };
 
