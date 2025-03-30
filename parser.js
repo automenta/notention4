@@ -424,10 +424,58 @@ export const SemanticParserPlugin = {
         });
 
 
-        // 2. Apply Simple Key: Value pattern (less specific, avoid processed indices)
+        // 2. Apply Wiki-style Link pattern [[Note Name]]
+        const wikiLinkRegex = /\[\[(?<linkText>[^\]]+)\]\]/g;
+        let wikiMatch;
+        while ((wikiMatch = wikiLinkRegex.exec(content)) !== null) {
+            if (processedIndices.has(wikiMatch.index)) continue; // Skip if already processed
+
+            const linkText = wikiMatch.groups.linkText.trim();
+            if (linkText) {
+                const location = { start: wikiMatch.index, end: wikiMatch.index + wikiMatch[0].length };
+                // Use a default key like 'related' or 'link' for references
+                const key = 'related';
+                suggestions.push({
+                    id: utils.generateUUID(),
+                    source: 'heuristic (wikilink)',
+                    property: { key: key, value: linkText, type: 'reference' },
+                    status: 'pending',
+                    location: location,
+                    confidence: 0.7 // Reasonably confident about the intent
+                });
+                // Mark indices as processed
+                for (let i = location.start; i < location.end; i++) {
+                    processedIndices.add(i);
+                }
+            }
+        }
+
+
+        // 3. Apply Simple Key: Value pattern (less specific, avoid processed indices)
         const keyValueRegex = /^\s*(?<key>[a-zA-Z0-9\s_-]+?)\s*:\s*(?<value>.*)$/;
         lines.forEach((line, lineIndex) => {
-            const lineStartOffset = content.indexOf(line); // Find start index (approximate if line repeats)
+            // Find start index (approximate if line repeats). Need a more robust way if lines repeat often.
+            // This simple indexOf might pick the wrong line if identical lines exist.
+            // A more complex approach would involve tracking line numbers and offsets.
+            let lineStartOffset = -1;
+            let searchFromIndex = 0;
+            while (lineStartOffset === -1 && searchFromIndex < content.length) {
+                const potentialOffset = content.indexOf(line, searchFromIndex);
+                if (potentialOffset === -1) break; // Line not found
+                // Basic check: ensure this offset hasn't been fully processed already
+                let isProcessed = true;
+                for(let i = 0; i < line.length; i++) {
+                    if (!processedIndices.has(potentialOffset + i)) {
+                        isProcessed = false;
+                        break;
+                    }
+                }
+                if (!isProcessed) {
+                    lineStartOffset = potentialOffset;
+                }
+                searchFromIndex = potentialOffset + 1; // Start next search after this potential match
+            }
+            if (lineStartOffset === -1) return; // Skip if line couldn't be reliably located or was fully processed
             const match = line.match(keyValueRegex);
 
             if (match && match.groups.key && match.groups.value) {
