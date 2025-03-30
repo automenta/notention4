@@ -77,7 +77,7 @@ class StateManager {
 
     getStoreApi() {
         return {
-            getState: this.getState.bind(this),
+            getState: () => this.getState(),
             dispatch: (action) => this._dispatchChain(action), // Use the composed chain
         };
     }
