@@ -450,8 +450,97 @@ export const RichTextEditorPlugin = {
     registerUISlots() {
         return {
             [SLOT_EDITOR_CONTENT_AREA]: (props) => {
-                const {state, dispatch, noteId} = props;
+                const { state, dispatch, noteId } = props;
                 const note = noteId ? state.notes[noteId] : null;
+
+                const renderNoteContentWithProperties = (content, noteId) => {
+                    if (!content) return html``;
+
+                    const propertyRegex = /\[\[(\w+):([^\]]+)\]\]/g;
+                    const parts = [];
+                    let lastIndex = 0;
+                    let match;
+
+                    while ((match = propertyRegex.exec(content)) !== null) {
+                        const propertyName = match[1];
+                        const propertyValue = match[2];
+                        const textBefore = content.substring(lastIndex, match.index);
+
+                        if (textBefore) {
+                            parts.push(html`${textBefore}`);
+                        }
+
+                        parts.push(html`
+                            <span class="inline-property"
+                                  data-property-key="${propertyName}"
+                                  @click="${(event) => startInlinePropertyEdit(event, propertyName, propertyValue, noteId)}"
+                                  style="background-color: lightyellow; border-bottom: 1px dashed gray; padding: 0 2px; cursor: pointer;">
+                                ${propertyValue}
+                            </span>
+                        `);
+                        lastIndex = propertyRegex.lastIndex;
+                    }
+
+                    const textAfter = content.substring(lastIndex);
+                    if (textAfter) {
+                        parts.push(html`${textAfter}`);
+                    }
+
+                    return html`${parts}`;
+                };
+
+                const startInlinePropertyEdit = (event, propertyName, propertyValue, noteId) => {
+                    const propertySpan = event.target;
+                    const inputElement = document.createElement('input');
+                    inputElement.type = 'text';
+                    inputElement.value = propertyValue;
+                    inputElement.dataset.propertyKey = propertyName;
+                    inputElement.dataset.noteId = noteId;
+
+                    inputElement.addEventListener('blur', (blurEvent) => {
+                        const newValue = blurEvent.target.value;
+                        const propKey = blurEvent.target.dataset.propertyKey;
+                        const currentNoteId = blurEvent.target.dataset.noteId;
+
+                        dispatch({
+                            type: 'CORE_UPDATE_NOTE',
+                            payload: {
+                                noteId: currentNoteId,
+                                changes: {
+                                    pluginData: {
+                                        properties: {
+                                            [propKey]: newValue
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
+                        requestAnimationFrame(() => {
+                            const mountPoint = document.getElementById('editor-mount-point');
+                            if (mountPoint) {
+                                litRender(renderNoteContentWithProperties(state.notes[currentNoteId]?.content || '', currentNoteId), mountPoint);
+                            }
+                        });
+                    });
+
+                    inputElement.addEventListener('keydown', (keydownEvent) => {
+                        if (keydownEvent.key === 'Enter') {
+                            inputElement.blur();
+                        } else if (keydownEvent.key === 'Escape') {
+                            requestAnimationFrame(() => {
+                                const mountPoint = document.getElementById('editor-mount-point');
+                                if (mountPoint) {
+                                    litRender(renderNoteContentWithProperties(state.notes[noteId]?.content || '', noteId), mountPoint);
+                                }
+                            });
+                        }
+                    });
+
+                    propertySpan.replaceWith(inputElement);
+                    inputElement.focus();
+                };
+
                 //const editorSettings = this.coreAPI.getPluginSettings(this.id) || {};
                 const debounceTime = 500; //editorSettings.debounceTime ?? 500;
 
@@ -550,13 +639,31 @@ export const RichTextEditorPlugin = {
                              style="flex-grow: 1; overflow-y: auto; border: 1px solid var(--border-color, #ccc); border-top: none; border-radius: 0 0 4px 4px; padding: 10px;"
                              class="tiptap-editor-content">
                             <!-- Tiptap editor attaches here -->
-                            ${!note && !this._editorInstance ? html`
+                            ${note ? renderNoteContentWithProperties(note.content, noteId) : html`
                                 <div style="color: var(--secondary-text-color); padding: 10px;">Select or create a
                                     note.
-                                </div>` : ''}
+                                </div>`}
                         </div>
                     </div>
                     <style>
+                        .inline-property {
+                            background-color: lightyellow;
+                            border-bottom: 1px dashed gray;
+                            padding: 0 2px;
+                            cursor: pointer;
+                        }
+
+                        .inline-property:hover {
+                            background-color: yellow;
+                        }
+
+                         .inline-property input[type="text"] {
+                            border: 1px solid var(--border-color, #ccc);
+                            padding: 2px;
+                            border-radius: 2px;
+                            font-size: inherit;
+                        }
+
                         .editor-toolbar {
                             display: flex;
                             flex-wrap: wrap;
