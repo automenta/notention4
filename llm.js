@@ -322,11 +322,12 @@ export const LLMPlugin = {
                 },
 
                 summarizeText: async (text, options = {}) => {
-                    if (!text || typeof text !== 'string' || text.trim().length < 50) {
-                        console.log("LLMPlugin: Text too short or invalid for summarization, returning original.");
-                        return text;
+                    if (!text || typeof text !== 'string' || text.trim().length < 20) { // Reduced minimum length
+                        console.log("LLMPlugin: Text too short or invalid for summarization.");
+                        this._coreAPI.showGlobalStatus("Text too short to summarize.", "warning", 3000);
+                        return null; // Return null to indicate failure
                     }
-                    const prompt = `Please summarize the following text concisely:\n\n"${text}"\n\nSummary:`;
+                    const prompt = `Please summarize the following text concisely:\n\n---\n${text}\n---\n\nConcise Summary:`;
                     const summaryOptions = {...options, stream: false};
 
                     try {
@@ -342,7 +343,68 @@ export const LLMPlugin = {
                         if (error.message !== "LLM model name is not configured.") {
                             this._coreAPI.showGlobalStatus("Summarization Error", "error", 5000);
                         }
-                        throw error;
+                        // Don't re-throw if model not configured, already handled
+                        if (error.message !== "LLM model name is not configured.") {
+                             throw error; // Re-throw other errors
+                        }
+                        return null; // Return null on failure
+                    }
+                },
+
+                getActions: async (text, options = {}) => {
+                    if (!text || typeof text !== 'string' || text.trim().length < 10) {
+                        console.log("LLMPlugin: Text too short for action generation.");
+                        this._coreAPI.showGlobalStatus("Text too short to suggest actions.", "warning", 3000);
+                        return null;
+                    }
+                    const prompt = `Based on the following text, suggest a short list of actionable next steps or tasks (e.g., "Schedule meeting", "Draft email to X", "Research Y"). Output ONLY a numbered list. If no actions are clear, output "None".\n\n---\n${text}\n---\n\nNumbered List of Actions:`;
+                    const actionOptions = { ...options, stream: false }; // Force non-stream for simple list
+
+                    try {
+                        const response = await this.prompt(prompt, actionOptions);
+                        const actionsText = response?.choices?.[0]?.message?.content?.trim();
+                        if (!actionsText || actionsText.toLowerCase() === 'none') {
+                            return []; // Return empty array if no actions or "None"
+                        }
+                        // Basic parsing of numbered list
+                        return actionsText.split('\n')
+                            .map(line => line.replace(/^\d+\.\s*/, '').trim()) // Remove numbering
+                            .filter(action => action.length > 0);
+                    } catch (error) {
+                        console.error("LLMPlugin: Action generation failed.", error);
+                        if (error.message !== "LLM model name is not configured.") {
+                            this._coreAPI.showGlobalStatus("Action Suggestion Error", "error", 5000);
+                        }
+                        return null; // Return null on failure
+                    }
+                },
+
+                answerQuestion: async (contextText, question, options = {}) => {
+                     if (!contextText || typeof contextText !== 'string' || contextText.trim().length < 10) {
+                        this._coreAPI.showGlobalStatus("Context text too short to answer question.", "warning", 3000);
+                        return null;
+                    }
+                     if (!question || typeof question !== 'string' || question.trim().length < 3) {
+                        this._coreAPI.showGlobalStatus("Please provide a valid question.", "warning", 3000);
+                        return null;
+                    }
+
+                    const prompt = `Based *only* on the following text, answer the question concisely. If the answer is not found in the text, say "The answer is not found in the provided text."\n\nContext Text:\n---\n${contextText}\n---\n\nQuestion: ${question}\n\nAnswer:`;
+                    const answerOptions = { ...options, stream: false }; // Force non-stream
+
+                    try {
+                        const response = await this.prompt(prompt, answerOptions);
+                        const answer = response?.choices?.[0]?.message?.content?.trim();
+                        if (!answer) {
+                            throw new Error("Failed to extract answer from LLM response.");
+                        }
+                        return answer;
+                    } catch (error) {
+                        console.error("LLMPlugin: Answering question failed.", error);
+                         if (error.message !== "LLM model name is not configured.") {
+                            this._coreAPI.showGlobalStatus("Error Answering Question", "error", 5000);
+                        }
+                        return null; // Return null on failure
                     }
                 },
 

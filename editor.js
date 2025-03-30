@@ -803,6 +803,23 @@ export const RichTextEditorPlugin = {
                 blur: () => this._editorInstance?.blur(),
                 hasFocus: () => this._editorInstance?.hasFocus() ?? false,
                 isEditorActive: () => !!this._editorInstance && !this._editorInstance._tiptapInstance?.isDestroyed,
+                getSelectedText: () => {
+                    if (!this._editorInstance || this._editorInstance.inactive()) return '';
+                    const { from, to, empty } = this._editorInstance.getSelection() || {};
+                    if (empty || !from || !to) return '';
+                    try {
+                        return this._editorInstance._tiptapInstance.state.doc.textBetween(from, to, ' ');
+                    } catch (e) {
+                        console.error("EditorService.getSelectedText Error:", e);
+                        return '';
+                    }
+                },
+                insertContentAtCursor: (content) => { // Ensure this is exposed
+                    if (this._editorInstance && !this._editorInstance.inactive()) {
+                        console.log("EditorService: Inserting content at cursor:", content.substring(0, 50) + "...");
+                        this._editorInstance._tiptapInstance?.commands.insertContent(content);
+                    }
+                },
                 // Avoid exposing the raw Tiptap instance directly if possible
                 // getTiptapInstance: () => this._editorInstance?._tiptapInstance,
             }

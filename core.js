@@ -475,6 +475,10 @@ class UIRenderer {
                     <button class="core-delete-note" @click=${() => this._handleDeleteNote(note.id, note.name)}
                             title="Delete Note" aria-label="Delete Note">Delete</button>
                     ${this._renderSlot(state, SLOT_EDITOR_HEADER_ACTIONS, note.id)}
+                    <!-- LLM Action Buttons -->
+                    <button class="editor-header-button llm-action-button" @click=${() => this._handleLlmSummarize(note.id)} title="Summarize selection or note">Summarize</button>
+                    <button class="editor-header-button llm-action-button" @click=${() => this._handleLlmAskQuestion(note.id)} title="Ask question about note content">Ask</button>
+                    <button class="editor-header-button llm-action-button" @click=${() => this._handleLlmGetActions(note.id)} title="Suggest actions based on note content">Actions</button>
                 </div>
             </div>
             <div class="editor-content-wrapper"
@@ -579,6 +583,101 @@ class UIRenderer {
             }
         });
     }
+
+    // --- LLM Action Handlers ---
+    async _handleLlmSummarize(noteId) {
+        const coreAPI = window.realityNotebookCore;
+        const editorService = coreAPI?.getService('EditorService');
+        const llmService = coreAPI?.getService('LLMService');
+        if (!editorService || !llmService) return coreAPI?.showGlobalStatus("LLM/Editor service not ready.", "warning");
+
+        const selectedText = editorService.getSelectedText();
+        const textToSummarize = selectedText || editorService.getContent(); // Summarize selection or whole note
+
+        if (!textToSummarize || textToSummarize.trim().length < 20) {
+            return coreAPI.showGlobalStatus("Not enough text selected/available to summarize.", "info");
+        }
+
+        coreAPI.showGlobalStatus("Summarizing with AI...", "info");
+        try {
+            const summary = await llmService.summarizeText(textToSummarize);
+            if (summary) {
+                // Insert summary below current content or replace selection? Let's insert below.
+                const currentContent = editorService.getContent();
+                const summaryBlock = `\n\n---\n**AI Summary:**\n${summary}\n---`;
+                // If text was selected, maybe replace it instead? For now, always append.
+                // editorService.setContent(currentContent + summaryBlock); // Append
+                editorService.insertContentAtCursor(summaryBlock); // Insert at cursor
+                coreAPI.showGlobalStatus("Summary generated.", "success", 3000);
+            } else {
+                // Error/null handled within summarizeText
+            }
+        } catch (e) {
+            console.error("Summarize action failed:", e);
+            // Error shown by LLMService
+        }
+    }
+
+    async _handleLlmAskQuestion(noteId) {
+        const coreAPI = window.realityNotebookCore;
+        const editorService = coreAPI?.getService('EditorService');
+        const llmService = coreAPI?.getService('LLMService');
+        if (!editorService || !llmService) return coreAPI?.showGlobalStatus("LLM/Editor service not ready.", "warning");
+
+        const question = prompt("Ask a question about the note content:");
+        if (!question || question.trim().length < 3) return;
+
+        const contextText = editorService.getContent();
+        if (!contextText || contextText.trim().length < 10) {
+            return coreAPI.showGlobalStatus("Note content is too short.", "info");
+        }
+
+        coreAPI.showGlobalStatus("Asking AI...", "info");
+        try {
+            const answer = await llmService.answerQuestion(contextText, question);
+            if (answer) {
+                // Display answer - use status bar for now
+                coreAPI.showGlobalStatus(`Answer: ${answer}`, "info", 15000); // Show for longer
+                // TODO: Display in a more persistent way (panel, modal?)
+            } else {
+                // Error/null handled within answerQuestion
+            }
+        } catch (e) {
+            console.error("Ask Question action failed:", e);
+            // Error shown by LLMService
+        }
+    }
+
+    async _handleLlmGetActions(noteId) {
+        const coreAPI = window.realityNotebookCore;
+        const editorService = coreAPI?.getService('EditorService');
+        const llmService = coreAPI?.getService('LLMService');
+        if (!editorService || !llmService) return coreAPI?.showGlobalStatus("LLM/Editor service not ready.", "warning");
+
+        const textForActions = editorService.getContent();
+        if (!textForActions || textForActions.trim().length < 10) {
+            return coreAPI.showGlobalStatus("Note content is too short to suggest actions.", "info");
+        }
+
+        coreAPI.showGlobalStatus("Suggesting actions with AI...", "info");
+        try {
+            const actions = await llmService.getActions(textForActions);
+            if (actions === null) {
+                // Error handled within getActions
+            } else if (actions.length > 0) {
+                const actionsString = actions.map((a, i) => `${i + 1}. ${a}`).join('\n');
+                coreAPI.showGlobalStatus(`Suggested Actions:\n${actionsString}`, "info", 15000);
+                // TODO: Display in a panel with buttons to add as tasks?
+            } else {
+                coreAPI.showGlobalStatus("No specific actions suggested by AI.", "info", 3000);
+            }
+        } catch (e) {
+            console.error("Get Actions action failed:", e);
+            // Error shown by LLMService
+        }
+    }
+    // --- End LLM Action Handlers ---
+
 
     _handleOpenSettings = () => this._stateManager.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
 
