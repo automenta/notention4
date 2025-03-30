@@ -4,13 +4,20 @@
  */
 "use strict";
 
-import {Editor} from '@tiptap/core';
+import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
-import {html, render as litRender} from 'lit';
+// Ensure lit is imported correctly based on your setup
+const { html, render: litRender } = window.lit ?? window.litHtml ?? { html: null, render: null };
+if (!html || !litRender) {
+    console.error("Lit-html not found. UI rendering will fail.");
+    // Provide dummy functions to prevent further errors immediately
+    window.litHtml = { html: (strings, ...values) => strings.join(''), render: () => {} };
+}
 
-import {Utils} from "./util.js"; const debounce = Utils.debounce;
 
-import {SLOT_EDITOR_CONTENT_AREA} from './ui.js';
+import { Utils } from "./util.js"; const debounce = Utils.debounce;
+
+import { SLOT_EDITOR_CONTENT_AREA } from './ui.js';
 
 // --- Abstract Base Class (Optional but good practice) ---
 class AbstractEditorLibrary {
@@ -448,32 +455,61 @@ export const RichTextEditorPlugin = {
     },
 
     registerUISlots() {
-        const renderNoteContentWithProperties = (content, noteId) => {
-            if (!content) return html``;
+        // --- Helper Function to get input value based on type ---
+        // Moved outside startInlinePropertyEdit for clarity
+        const getInputPropertyValue = (inputElement, propertyType) => {
+            switch (propertyType) {
+                case 'boolean':
+                    return inputElement.checked;
+                case 'number':
+                    // Use valueAsNumber for better handling of empty strings vs 0
+                    // Fallback to parseFloat if valueAsNumber isn't supported/reliable
+                    return !isNaN(inputElement.valueAsNumber) ? inputElement.valueAsNumber : (inputElement.value ? parseFloat(inputElement.value) : null);
+                case 'date':
+                case 'time':
+                case 'datetime-local':
+                case 'url':
+                case 'text':
+                case 'textarea': // Added textarea
+                default:
+                    return inputElement.value;
+            }
+        };
 
-            const propertyRegex = /\[\[(\w+):([^\]]+)\]\]/g;
+        // --- Helper Function to render the property spans ---
+        // IMPORTANT: This function demonstrates the logic but rendering interactive elements
+        // directly into Tiptap's content area requires using Tiptap NodeViews for robustness.
+        // This simple version might conflict with Tiptap's rendering.
+        const renderNoteContentWithProperties = (content, noteId, propertiesData = [], dispatch) => {
+            if (!content || !html) return html``; // Check if lit-html is available
+
+            // Find properties mentioned in the content like [[key]] or [[key:value]]
+            const propertyRegex = /\[\[([a-zA-Z0-9_ -]+?)(?::([^\]]+))?\]\]/g; // Matches [[key]] or [[key:value]]
             const parts = [];
             let lastIndex = 0;
             let match;
 
             while ((match = propertyRegex.exec(content)) !== null) {
-                const propertyName = match[1];
-                const propertyValue = match[2];
-                const textBefore = content.substring(lastIndex, match.index);
+                const key = match[1].trim();
+                // Find the corresponding property data to get its type and actual value
+                const propData = propertiesData.find(p => p.key.toLowerCase() === key.toLowerCase());
+                const value = propData?.value ?? match[2] ?? ''; // Use stored value if available, else fallback
+                const type = propData?.type ?? 'text'; // Use stored type, default to text
 
+                const textBefore = content.substring(lastIndex, match.index);
                 if (textBefore) {
                     parts.push(html`${textBefore}`);
                 }
 
+                // Pass type to the click handler
                 parts.push(html`
                     <span class="inline-property"
-                          data-property-key="${propertyName}"
-                          title="${propertyName} (click to edit)"
-                          @click="${(event) => startInlinePropertyEdit(event, propertyName, propertyValue, noteId)}"
+                          data-property-key="${key}"
+                          title="${key} (${type}) - Click to edit"
+                          @click="${(event) => startInlinePropertyEdit(event, key, value, type, noteId, dispatch, propertiesData)}"
                           style="background-color: lightgoldenrodyellow; border: 1px dotted lightgray; padding: 0 2px; cursor: pointer; border-radius: 2px;">
-                        ${propertyValue}
-                    </span>
-                `);
+                        ${value}
+                    </span>`);
                 lastIndex = propertyRegex.lastIndex;
             }
 
@@ -482,96 +518,181 @@ export const RichTextEditorPlugin = {
                 parts.push(html`${textAfter}`);
             }
 
+            // If no matches, return the original content wrapped
+            if (parts.length === 0) {
+                return html`${content}`;
+            }
+
             return html`${parts}`;
         };
 
-        const startInlinePropertyEdit = (event, propertyName, propertyValue, noteId) => {
+        // --- Helper Function to handle the inline editing start ---
+        const startInlinePropertyEdit = (event, propertyName, propertyValue, propertyType, noteId, dispatch, propertiesData) => {
+            event.stopPropagation(); // Prevent triggering other editor events if possible
             const propertySpan = event.target;
-            const inputElement = document.createElement('input');
-            inputElement.type = 'text';
-            inputElement.value = propertyValue;
+            let inputElement;
+
+            // Find the full property object to get its ID for the update action
+            const currentProp = propertiesData.find(p => p.key.toLowerCase() === propertyName.toLowerCase());
+            if (!currentProp) {
+                console.warn(`Inline Edit: Could not find property data for key "${propertyName}"`);
+                // Optionally create the property first? For now, just prevent editing.
+                // Maybe dispatch PROPERTY_ADD here? Needs careful thought.
+                return;
+            }
+            const propertyId = currentProp.id;
+
+            // Create input based on type
+            switch (propertyType) {
+                case 'number':
+                    inputElement = document.createElement('input');
+                    inputElement.type = 'number';
+                    inputElement.value = propertyValue;
+                    inputElement.step = 'any'; // Allow decimals by default
+                    break;
+                case 'date':
+                    inputElement = document.createElement('input');
+                    inputElement.type = 'date';
+                    // Ensure value is in YYYY-MM-DD format for the input
+                    try {
+                        inputElement.value = propertyValue ? new Date(propertyValue).toISOString().split('T')[0] : '';
+                    } catch { inputElement.value = ''; }
+                    break;
+                case 'time':
+                    inputElement = document.createElement('input');
+                    inputElement.type = 'time';
+                    inputElement.value = propertyValue; // Assumes HH:MM format
+                    break;
+                case 'datetime-local':
+                    inputElement = document.createElement('input');
+                    inputElement.type = 'datetime-local';
+                    // Needs YYYY-MM-DDTHH:MM format
+                    try {
+                        inputElement.value = propertyValue ? new Date(propertyValue).toISOString().slice(0, 16) : '';
+                    } catch { inputElement.value = ''; }
+                    break;
+                case 'boolean':
+                    inputElement = document.createElement('input');
+                    inputElement.type = 'checkbox';
+                    inputElement.checked = Boolean(propertyValue);
+                    // Style checkbox appropriately for inline use
+                    inputElement.style.display = 'inline-block';
+                    inputElement.style.verticalAlign = 'middle';
+                    inputElement.style.marginLeft = '4px';
+                    inputElement.style.marginRight = '4px';
+                    break;
+                case 'url':
+                    inputElement = document.createElement('input');
+                    inputElement.type = 'url';
+                    inputElement.value = propertyValue;
+                    break;
+                case 'textarea': // Added textarea support
+                    inputElement = document.createElement('textarea');
+                    inputElement.value = propertyValue;
+                    inputElement.rows = 3; // Example size
+                    inputElement.style.width = '150px'; // Example size
+                    break;
+                case 'text':
+                default:
+                    inputElement = document.createElement('input');
+                    inputElement.type = 'text';
+                    inputElement.value = propertyValue;
+                    break;
+            }
+
+            // Common attributes and styling
             inputElement.dataset.propertyKey = propertyName;
             inputElement.dataset.noteId = noteId;
+            inputElement.dataset.propertyType = propertyType; // Store type
+            inputElement.classList.add('inline-property-input'); // Add class for styling
+            inputElement.style.fontSize = 'inherit'; // Match surrounding text size
 
-            inputElement.addEventListener('blur', (blurEvent) => {
-                const newValue = blurEvent.target.value;
-                const propKey = blurEvent.target.dataset.propertyKey;
-                const currentNoteId = blurEvent.target.dataset.noteId;
+            // --- Event Listeners for the Input ---
+            const saveChanges = (target) => {
+                const newValue = getInputPropertyValue(target, propertyType); // Use helper
+                const propKey = target.dataset.propertyKey;
+                const currentNoteId = target.dataset.noteId;
+                const currentPropType = target.dataset.propertyType;
 
-                dispatch({
-                    type: 'PROPERTY_UPDATE',
-                    payload: {
-                        noteId: currentNoteId,
-                        propertyId: propertiesData.find(p => p.key === propKey)?.id, // Find propertyId
-                        changes: {
-                            value: newValue,
-                            // type: currentPropType // Optionally send type, though reducer has it already
-                        }
-                    }
-                });
-
-                requestAnimationFrame(() => {
-                    const mountPoint = document.getElementById('editor-mount-point');
-                    if (mountPoint) {
-                        litRender(renderNoteContentWithProperties(state.notes[currentNoteId]?.content || '', currentNoteId, state.notes[currentNoteId]?.pluginData?.properties?.properties || []), mountPoint); // Pass propertiesData
-                    }
-            const newValue = getInputPropertyValue(inputElement, currentPropType); // Helper function
-            const propKey = blurEvent.target.dataset.propertyKey;
-            const currentNoteId = blurEvent.target.dataset.noteId;
- 
-            dispatch({
-                type: 'PROPERTY_UPDATE',
-                payload: {
-                    noteId: currentNoteId,
-                    propertyId: propertiesData.find(p => p.key === propKey)?.id,
-                    changes: {
-                        value: newValue,
-                        type: currentPropType
-                    }
-                }
-            });
- 
-            requestAnimationFrame(() => {
-                const mountPoint = document.getElementById('editor-mount-point');
-                if (mountPoint) {
-                    litRender(renderNoteContentWithProperties(state.notes[currentNoteId]?.content || '', currentNoteId), mountPoint);
-                }
-            });
-        });
- 
-        inputElement.addEventListener('change', (changeEvent) => { // For types like checkbox, select, range, date, time, datetime-local
-            if (currentPropType === 'boolean' || currentPropType === 'select' || currentPropType === 'range' || currentPropType === 'date' || currentPropType === 'time' || currentPropType === 'datetime-local') {
-                inputElement.blur(); // Trigger blur to save on change for these types
-            }
-        });
- 
- 
-        inputElement.addEventListener('keydown', (keydownEvent) => {
-                if (keydownEvent.key === 'Enter') {
-                    inputElement.blur();
-                } else if (keydownEvent.key === 'Escape') {
-                    requestAnimationFrame(() => {
-                        const mountPoint = document.getElementById('editor-mount-point');
-                        if (mountPoint) {
-                            litRender(renderNoteContentWithProperties(state.notes[noteId]?.content || '', noteId, state.notes[noteId]?.pluginData?.properties?.properties || []), mountPoint); // Pass propertiesData
+                // Only dispatch if value changed or if it's a boolean (checkbox state might change without value changing if initial value was non-standard)
+                if (newValue !== propertyValue || propertyType === 'boolean') {
+                    console.log(`Inline Edit Save: Key=${propKey}, NewValue=${newValue}, Type=${currentPropType}`);
+                    dispatch({
+                        type: 'PROPERTY_UPDATE',
+                        payload: {
+                            noteId: currentNoteId,
+                            propertyId: propertyId, // Use the ID found earlier
+                            changes: {
+                                value: newValue,
+                                type: currentPropType // Send type back to ensure it's preserved
+                            }
                         }
                     });
+                    // Note: The state change will trigger a re-render via the subscription,
+                    // which should replace the input with the updated span (if rendering logic allows).
+                } else {
+                    // No change, just revert UI
+                    replaceInputWithSpan();
+                }
+            };
+
+            const replaceInputWithSpan = () => {
+                // Check if the input is still in the DOM before trying to replace
+                if (inputElement.parentNode) {
+                    inputElement.replaceWith(propertySpan);
+                }
+            };
+
+            inputElement.addEventListener('blur', (blurEvent) => {
+                // Use setTimeout to allow click events on potential buttons (like a save button if added later)
+                // to fire before the input is removed.
+                setTimeout(() => {
+                    // Check if focus moved to another element related to this edit (e.g., a custom save button)
+                    // For now, assume blur means save or cancel (handled by keydown)
+                    if (document.activeElement !== inputElement) {
+                        saveChanges(blurEvent.target);
+                    }
+                }, 100); // Small delay
+            });
+
+            // Save on change for specific types
+            inputElement.addEventListener('change', (changeEvent) => {
+                const type = changeEvent.target.dataset.propertyType;
+                if (['boolean', 'date', 'time', 'datetime-local', 'select'].includes(type)) { // Add 'select' if implemented
+                    inputElement.blur(); // Trigger blur to save
                 }
             });
 
+            inputElement.addEventListener('keydown', (keydownEvent) => {
+                if (keydownEvent.key === 'Enter') {
+                    keydownEvent.preventDefault(); // Prevent form submission if inside one
+                    inputElement.blur(); // Trigger save via blur
+                } else if (keydownEvent.key === 'Escape') {
+                    keydownEvent.preventDefault();
+                    // Just replace the input with the original span, discarding changes
+                    replaceInputWithSpan();
+                }
+            });
+
+            // Replace span with input and focus
             propertySpan.replaceWith(inputElement);
             inputElement.focus();
+            // Select text for text-based inputs
+            if (['text', 'number', 'url', 'textarea'].includes(propertyType)) {
+                inputElement.select();
+            }
         };
 
 
+        // --- Main Slot Renderer ---
         return {
             [SLOT_EDITOR_CONTENT_AREA]: (props) => {
                 const { state, dispatch, noteId } = props;
                 const note = noteId ? state.notes[noteId] : null;
-                const propertiesData = note?.pluginData?.properties?.properties || []; // Get propertiesData
+                // Get properties data needed for rendering inline spans (though rendering happens elsewhere)
+                const propertiesData = note?.pluginData?.properties?.properties || [];
 
-                //const editorSettings = this.coreAPI.getPluginSettings(this.id) || {};
-                const debounceTime = 500; //editorSettings.debounceTime ?? 500;
+                const debounceTime = 500;
 
                 // --- Editor Mount/Update Logic (deferred to next frame) ---
                 requestAnimationFrame(() => {
@@ -654,47 +775,63 @@ export const RichTextEditorPlugin = {
                         }
                         this._updateToolbarUI();
                     }
-                });
+                }); // End of requestAnimationFrame
 
                 // --- Render Structure (Toolbar container + Mount Point) ---
                 // The toolbar *content* is rendered dynamically by _updateToolbarUI
+                // Inline property rendering logic is defined above but NOT called here,
+                // as Tiptap controls the content area. True inline editing needs NodeViews.
                 return html`
                     <div class="editor-container" style="display: flex; flex-direction: column; height: 100%;">
-                        <div id="editor-toolbar-container" class="editor-toolbar" role="toolbar"
-                             aria-label="Text Formatting">
+                        <div id="editor-toolbar-container" class="editor-toolbar" role="toolbar" aria-label="Text Formatting">
                             <!-- Toolbar content rendered here by _updateToolbarUI -->
                         </div>
                         <div id="editor-mount-point"
                              style="flex-grow: 1; overflow-y: auto; border: 1px solid var(--border-color, #ccc); border-top: none; border-radius: 0 0 4px 4px; padding: 10px;"
                              class="tiptap-editor-content">
-                            <!-- Tiptap editor attaches here -->
-                            ${note ? renderNoteContentWithProperties(note.content, noteId, propertiesData) : html` // Pass propertiesData
-                                <div style="color: var(--secondary-text-color); padding: 10px;">Select or create a
-                                    note.
-                                </div>`}
+                            <!-- Tiptap editor attaches here. Inline properties won't render correctly without NodeViews -->
+                            ${!note ? html`<div style="color: var(--secondary-text-color); padding: 10px;">Select or create a note.</div>` : ''}
                         </div>
                     </div>
                     <style>
+                        /* Styles for inline properties and inputs */
                         .inline-property {
-                            background-color: lightgoldenrodyellow; /* More subtle background */
-                            border: 1px dotted lightgray; /* Dotted border for less intrusion */
+                            background-color: lightgoldenrodyellow;
+                            border: 1px dotted lightgray;
                             padding: 0 2px;
                             cursor: pointer;
-                            border-radius: 2px; /* Slightly rounded corners */
-                        }
-
-                        .inline-property:hover {
-                            background-color: gold; /* More pronounced hover */
-                            border-style: dashed; /* Change border on hover */
-                        }
-
-                         .inline-property input[type="text"] {
-                            border: 1px solid var(--border-color, #ccc);
-                            padding: 2px;
                             border-radius: 2px;
-                            font-size: inherit;
+                            white-space: nowrap; /* Prevent wrapping */
+                        }
+                        .inline-property:hover {
+                            background-color: gold;
+                            border-style: dashed;
+                        }
+                        .inline-property-input { /* Style the inputs */
+                            border: 1px solid var(--accent-color, blue);
+                            padding: 1px 2px;
+                            border-radius: 2px;
+                            font-size: inherit; /* Match surrounding text */
+                            font-family: inherit;
+                            vertical-align: baseline; /* Align with text */
+                            margin: 0 1px; /* Small spacing */
+                        }
+                        .inline-property-input[type="checkbox"] {
+                             height: 0.9em; /* Adjust size */
+                             width: 0.9em;
+                             vertical-align: middle; /* Center checkbox */
+                        }
+                        .inline-property-input[type="date"],
+                        .inline-property-input[type="time"],
+                        .inline-property-input[type="datetime-local"] {
+                            padding: 0 2px; /* Adjust padding for date/time */
+                        }
+                        .inline-property-input[type="textarea"] {
+                            vertical-align: top; /* Align textarea better */
+                            resize: vertical; /* Allow vertical resize */
                         }
 
+                        /* ... other existing styles for toolbar, tiptap content etc. ... */
                         .editor-toolbar {
                             display: flex;
                             flex-wrap: wrap;
