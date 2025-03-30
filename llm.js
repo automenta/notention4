@@ -642,7 +642,7 @@ export const LLMPlugin = {
 }; // end registerUISlots
 
 // Optional cleanup remains the same
-LLMPlugin.cleanup = function () {
+LLMPlugin.cleanup = function() {
     console.log("LLMPlugin: Cleaning up.");
     if (this._unsubscribe) {
         this._unsubscribe();
