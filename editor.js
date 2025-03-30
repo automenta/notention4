@@ -649,14 +649,16 @@ export const RichTextEditorPlugin = {
                     </div>
                     <style>
                         .inline-property {
-                            background-color: lightyellow;
-                            border-bottom: 1px dashed gray;
+                            background-color: lightgoldenrodyellow; /* More subtle background */
+                            border: 1px dotted lightgray; /* Dotted border for less intrusion */
                             padding: 0 2px;
                             cursor: pointer;
+                            border-radius: 2px; /* Slightly rounded corners */
                         }
 
                         .inline-property:hover {
-                            background-color: yellow;
+                            background-color: gold; /* More pronounced hover */
+                            border-style: dashed; /* Change border on hover */
                         }
 
                          .inline-property input[type="text"] {
