@@ -1,6 +1,7 @@
 "use strict";
 
 import {SLOT_SETTINGS_PANEL_SECTION} from './ui.js'; // Assuming ui.js exports it
+import {Utils} from './util.js'; // Import Utils
 
 // Default ontology - Enhanced Structure
 const ONTOLOGY = {
