@@ -477,233 +477,10 @@ export const RichTextEditorPlugin = {
     },
 
     registerUISlots() {
-        // --- Helper Function to get input value based on type ---
-        // Moved outside startInlinePropertyEdit for clarity
-        const getInputPropertyValue = (inputElement, propertyType) => {
-            switch (propertyType) {
-                case 'boolean':
-                    return inputElement.checked;
-                case 'number':
-                    // Use valueAsNumber for better handling of empty strings vs 0
-                    // Fallback to parseFloat if valueAsNumber isn't supported/reliable
-                    return !isNaN(inputElement.valueAsNumber) ? inputElement.valueAsNumber : (inputElement.value ? parseFloat(inputElement.value) : null);
-                case 'date':
-                case 'time':
-                case 'datetime-local':
-                case 'url':
-                case 'text':
-                case 'textarea': // Added textarea
-                default:
-                    return inputElement.value;
-            }
-        };
 
-        // --- Helper Function to render the property spans ---
-        // IMPORTANT: This function demonstrates the logic but rendering interactive elements
-        // directly into Tiptap's content area requires using Tiptap NodeViews for robustness.
-        // This simple version might conflict with Tiptap's rendering.
-        const renderNoteContentWithProperties = (content, noteId, propertiesData = [], dispatch) => {
-            if (!content || !html) return html``; // Check if lit-html is available
-
-            // Find properties mentioned in the content like [[key]] or [[key:value]]
-            const propertyRegex = /\[\[([a-zA-Z0-9_ -]+?)(?::([^\]]+))?\]\]/g; // Matches [[key]] or [[key:value]]
-            const parts = [];
-            let lastIndex = 0;
-            let match;
-
-            while ((match = propertyRegex.exec(content)) !== null) {
-                const key = match[1].trim();
-                // Find the corresponding property data to get its type and actual value
-                const propData = propertiesData.find(p => p.key.toLowerCase() === key.toLowerCase());
-                const value = propData?.value ?? match[2] ?? ''; // Use stored value if available, else fallback
-                const type = propData?.type ?? 'text'; // Use stored type, default to text
-
-                const textBefore = content.substring(lastIndex, match.index);
-                if (textBefore) {
-                    parts.push(html`${textBefore}`);
-                }
-
-                // Pass type to the click handler
-                parts.push(html`
-                    <span class="inline-property"
-                          data-property-key="${key}"
-                          title="${key} (${type}) - Click to edit"
-                          @click="${(event) => startInlinePropertyEdit(event, key, value, type, noteId, dispatch, propertiesData)}"
-                          style="background-color: lightgoldenrodyellow; border: 1px dotted lightgray; padding: 0 2px; cursor: pointer; border-radius: 2px;">
-                        ${value}
-                    </span>`);
-                lastIndex = propertyRegex.lastIndex;
-            }
-
-            const textAfter = content.substring(lastIndex);
-            if (textAfter) {
-                parts.push(html`${textAfter}`);
-            }
-
-            // If no matches, return the original content wrapped
-            if (parts.length === 0) {
-                return html`${content}`;
-            }
-
-            return html`${parts}`;
-        };
-
-        // --- Helper Function to handle the inline editing start ---
-        const startInlinePropertyEdit = (event, propertyName, propertyValue, propertyType, noteId, dispatch, propertiesData) => {
-            event.stopPropagation(); // Prevent triggering other editor events if possible
-            const propertySpan = event.target;
-            let inputElement;
-
-            // Find the full property object to get its ID for the update action
-            const currentProp = propertiesData.find(p => p.key.toLowerCase() === propertyName.toLowerCase());
-            if (!currentProp) {
-                console.warn(`Inline Edit: Could not find property data for key "${propertyName}"`);
-                // Optionally create the property first? For now, just prevent editing.
-                // Maybe dispatch PROPERTY_ADD here? Needs careful thought.
-                return;
-            }
-            const propertyId = currentProp.id;
-
-            // Create input based on type
-            switch (propertyType) {
-                case 'number':
-                    inputElement = document.createElement('input');
-                    inputElement.type = 'number';
-                    inputElement.value = propertyValue;
-                    inputElement.step = 'any'; // Allow decimals by default
-                    break;
-                case 'date':
-                    inputElement = document.createElement('input');
-                    inputElement.type = 'date';
-                    // Ensure value is in YYYY-MM-DD format for the input
-                    try {
-                        inputElement.value = propertyValue ? new Date(propertyValue).toISOString().split('T')[0] : '';
-                    } catch { inputElement.value = ''; }
-                    break;
-                case 'time':
-                    inputElement = document.createElement('input');
-                    inputElement.type = 'time';
-                    inputElement.value = propertyValue; // Assumes HH:MM format
-                    break;
-                case 'datetime-local':
-                    inputElement = document.createElement('input');
-                    inputElement.type = 'datetime-local';
-                    // Needs YYYY-MM-DDTHH:MM format
-                    try {
-                        inputElement.value = propertyValue ? new Date(propertyValue).toISOString().slice(0, 16) : '';
-                    } catch { inputElement.value = ''; }
-                    break;
-                case 'boolean':
-                    inputElement = document.createElement('input');
-                    inputElement.type = 'checkbox';
-                    inputElement.checked = Boolean(propertyValue);
-                    // Style checkbox appropriately for inline use
-                    inputElement.style.display = 'inline-block';
-                    inputElement.style.verticalAlign = 'middle';
-                    inputElement.style.marginLeft = '4px';
-                    inputElement.style.marginRight = '4px';
-                    break;
-                case 'url':
-                    inputElement = document.createElement('input');
-                    inputElement.type = 'url';
-                    inputElement.value = propertyValue;
-                    break;
-                case 'textarea': // Added textarea support
-                    inputElement = document.createElement('textarea');
-                    inputElement.value = propertyValue;
-                    inputElement.rows = 3; // Example size
-                    inputElement.style.width = '150px'; // Example size
-                    break;
-                case 'text':
-                default:
-                    inputElement = document.createElement('input');
-                    inputElement.type = 'text';
-                    inputElement.value = propertyValue;
-                    break;
-            }
-
-            // Common attributes and styling
-            inputElement.dataset.propertyKey = propertyName;
-            inputElement.dataset.noteId = noteId;
-            inputElement.dataset.propertyType = propertyType; // Store type
-            inputElement.classList.add('inline-property-input'); // Add class for styling
-            inputElement.style.fontSize = 'inherit'; // Match surrounding text size
-
-            // --- Event Listeners for the Input ---
-            const saveChanges = (target) => {
-                const newValue = getInputPropertyValue(target, propertyType); // Use helper
-                const propKey = target.dataset.propertyKey;
-                const currentNoteId = target.dataset.noteId;
-                const currentPropType = target.dataset.propertyType;
-
-                // Only dispatch if value changed or if it's a boolean (checkbox state might change without value changing if initial value was non-standard)
-                if (newValue !== propertyValue || propertyType === 'boolean') {
-                    console.log(`Inline Edit Save: Key=${propKey}, NewValue=${newValue}, Type=${currentPropType}`);
-                    dispatch({
-                        type: 'PROPERTY_UPDATE',
-                        payload: {
-                            noteId: currentNoteId,
-                            propertyId: propertyId, // Use the ID found earlier
-                            changes: {
-                                value: newValue,
-                                type: currentPropType // Send type back to ensure it's preserved
-                            }
-                        }
-                    });
-                    // Note: The state change will trigger a re-render via the subscription,
-                    // which should replace the input with the updated span (if rendering logic allows).
-                } else {
-                    // No change, just revert UI
-                    replaceInputWithSpan();
-                }
-            };
-
-            const replaceInputWithSpan = () => {
-                // Check if the input is still in the DOM before trying to replace
-                if (inputElement.parentNode) {
-                    inputElement.replaceWith(propertySpan);
-                }
-            };
-
-            inputElement.addEventListener('blur', (blurEvent) => {
-                // Use setTimeout to allow click events on potential buttons (like a save button if added later)
-                // to fire before the input is removed.
-                setTimeout(() => {
-                    // Check if focus moved to another element related to this edit (e.g., a custom save button)
-                    // For now, assume blur means save or cancel (handled by keydown)
-                    if (document.activeElement !== inputElement) {
-                        saveChanges(blurEvent.target);
-                    }
-                }, 100); // Small delay
-            });
-
-            // Save on change for specific types
-            inputElement.addEventListener('change', (changeEvent) => {
-                const type = changeEvent.target.dataset.propertyType;
-                if (['boolean', 'date', 'time', 'datetime-local', 'select'].includes(type)) { // Add 'select' if implemented
-                    inputElement.blur(); // Trigger blur to save
-                }
-            });
-
-            inputElement.addEventListener('keydown', (keydownEvent) => {
-                if (keydownEvent.key === 'Enter') {
-                    keydownEvent.preventDefault(); // Prevent form submission if inside one
-                    inputElement.blur(); // Trigger save via blur
-                } else if (keydownEvent.key === 'Escape') {
-                    keydownEvent.preventDefault();
-                    // Just replace the input with the original span, discarding changes
-                    replaceInputWithSpan();
-                }
-            });
-
-            // Replace span with input and focus
-            propertySpan.replaceWith(inputElement);
-            inputElement.focus();
-            // Select text for text-based inputs
-            if (['text', 'number', 'url', 'textarea'].includes(propertyType)) {
-                inputElement.select();
-            }
-        };
+        // --- REMOVED getInputPropertyValue ---
+        // --- REMOVED renderNoteContentWithProperties ---
+        // --- REMOVED startInlinePropertyEdit ---
 
 
         // --- Main Slot Renderer ---
@@ -711,8 +488,8 @@ export const RichTextEditorPlugin = {
             [SLOT_EDITOR_CONTENT_AREA]: (props) => {
                 const { state, dispatch, noteId } = props;
                 const note = noteId ? state.notes[noteId] : null;
-                // Get properties data needed for rendering inline spans (though rendering happens elsewhere)
-                const propertiesData = note?.pluginData?.properties?.properties || [];
+                // Properties data is no longer directly used for rendering here
+                // const propertiesData = note?.pluginData?.properties?.properties || [];
 
                 const debounceTime = 500;
 
@@ -727,19 +504,16 @@ export const RichTextEditorPlugin = {
                     // --- Initialization ---
                     if (!this._editorInstance && note) {
                         try {
-                            // Ensure any previous instance state is cleared (though destroy should handle)
+                            // Ensure any previous instance state is cleared
                             this._destroyEditor();
 
                             this._editorInstance = new TiptapEditor(mountPoint, {
                                 content: note.content || '',
-                                onSelectionUpdate: () => this._updateToolbarUI(), // Use bound method
+                                onSelectionUpdate: () => this._updateToolbarUI(),
                                 onChange: debounce(() => {
                                     if (!this._editorInstance || !this._currentNoteId || this._editorInstance._isUpdatingInternally) return;
-
                                     const currentEditorContent = this._editorInstance.getContent();
                                     const noteInState = this.coreAPI.getState().notes[this._currentNoteId];
-
-                                    // Only dispatch if the note exists and content has changed
                                     if (noteInState && currentEditorContent !== noteInState.content) {
                                         dispatch({
                                             type: 'CORE_UPDATE_NOTE',
@@ -751,58 +525,49 @@ export const RichTextEditorPlugin = {
                                     }
                                 }, debounceTime),
                                 editorOptions: {},
+                                // Pass services needed by NodeViews
+                                dispatch: dispatch,
+                                ontologyService: this.coreAPI.getService('OntologyService')
                             });
                             this._currentNoteId = noteId;
-                            this._updateToolbarUI(); // Render toolbar after successful init
-                            // Optional: Focus after loading/creating
-                            // this._editorInstance.focus();
+                            this._updateToolbarUI();
                         } catch (error) {
                             console.error(`${this.name}: Failed to initialize Tiptap editor:`, error);
                             mountPoint.innerHTML = `<div style="color: red;">Error initializing editor.</div>`;
                             this._destroyEditor();
                         }
                     } else if (this._editorInstance) {
+                        // --- Update Logic (largely unchanged, but relies on Tiptap rendering) ---
                         const noteChanged = note && this._currentNoteId !== noteId;
                         const editorHasFocus = this._editorInstance.hasFocus();
 
-                        // Scenario 1: Switching Notes
                         if (noteChanged) {
                             this._editorInstance.setContent(note.content || '');
                             this._currentNoteId = noteId;
                             this._updateToolbarUI();
-                            // Optional: Focus when switching note
-                            // if (!editorHasFocus) this._editorInstance.focus();
-                        }
-                        // Scenario 2: Same Note Selected
-                        else if (note) {
+                        } else if (note) {
                             const externalContentChanged = note.content !== this._editorInstance.getContent();
-
-                            // Apply external changes ONLY if editor isn't focused to prevent overwriting typing
                             if (externalContentChanged && !editorHasFocus) {
                                 this._editorInstance.setContent(note.content || '');
-                                // Toolbar likely doesn't need update here unless content affects active states
-                                // this._updateToolbarUI();
                             } else if (externalContentChanged && editorHasFocus) {
-                                // Log potentially skipped update due to focus (for debugging)
                                 // console.log(`${this.name}: Skipped external content update for note ${noteId} because editor has focus.`);
                             }
                         } else if (!note && this._currentNoteId) {
                             this._destroyEditor();
                             this._currentNoteId = null;
-                            mountPoint.innerHTML = '';
+                            mountPoint.innerHTML = ''; // Clear mount point
                         }
                     } else if (!note && !this._editorInstance) {
-                        if (!mountPoint.hasChildNodes() && !mountPoint.textContent?.trim()) {
-                            mountPoint.innerHTML = `<div style="color: var(--secondary-text-color); padding: 10px;">Select or create a note.</div>`;
+                        // Clear mount point if no note and no editor instance
+                        if (!mountPoint.hasChildNodes() || mountPoint.textContent?.trim()) {
+                             mountPoint.innerHTML = ''; // Clear previous content like "Select note"
                         }
-                        this._updateToolbarUI();
+                        this._updateToolbarUI(); // Ensure toolbar is cleared/updated
                     }
                 }); // End of requestAnimationFrame
 
                 // --- Render Structure (Toolbar container + Mount Point) ---
-                // The toolbar *content* is rendered dynamically by _updateToolbarUI
-                // Inline property rendering logic is defined above but NOT called here,
-                // as Tiptap controls the content area. True inline editing needs NodeViews.
+                // Tiptap now controls the content area entirely.
                 return html`
                     <div class="editor-container" style="display: flex; flex-direction: column; height: 100%;">
                         <div id="editor-toolbar-container" class="editor-toolbar" role="toolbar" aria-label="Text Formatting">
@@ -810,48 +575,85 @@ export const RichTextEditorPlugin = {
                         </div>
                         <div id="editor-mount-point"
                              style="flex-grow: 1; overflow-y: auto; border: 1px solid var(--border-color, #ccc); border-top: none; border-radius: 0 0 4px 4px; padding: 10px;"
-                             class="tiptap-editor-content">
-                            <!-- Tiptap editor attaches here. Inline properties won't render correctly without NodeViews -->
-                            ${!note ? html`<div style="color: var(--secondary-text-color); padding: 10px;">Select or create a note.</div>` : ''}
+                             class="tiptap-editor-content" data-note-id=${noteId || ''}>
+                            <!-- Tiptap editor attaches here. NodeViews handle inline properties. -->
+                            ${!note && !this._editorInstance ? html`<div style="color: var(--secondary-text-color); padding: 10px;">Select or create a note.</div>` : ''}
                         </div>
                     </div>
                     <style>
-                        /* Styles for inline properties and inputs */
-                        .inline-property {
-                            background-color: lightgoldenrodyellow;
-                            border: 1px dotted lightgray;
-                            padding: 0 2px;
+                        /* --- REMOVED .inline-property styles --- */
+                        /* --- REMOVED .inline-property-input styles (now inside NodeView styles) --- */
+
+                        /* --- Styles for NodeView --- */
+                        .inline-property-nodeview {
+                            display: inline-block; /* Behave like a span */
+                            vertical-align: baseline;
+                            margin: 0 1px;
+                            padding: 0;
+                            border-radius: 3px;
+                            /* Add transition for smoother hover? */
+                        }
+                        .inline-property-nodeview .inline-property-display {
+                            display: inline-block; /* Needed for padding/border */
+                            background-color: var(--prop-inline-bg, #f0f0f0);
+                            border: 1px solid var(--prop-inline-border, #ddd);
+                            border-radius: 3px;
+                            padding: 0px 4px;
                             cursor: pointer;
-                            border-radius: 2px;
-                            white-space: nowrap; /* Prevent wrapping */
+                            white-space: nowrap;
+                            line-height: 1.4; /* Adjust for better vertical alignment */
+                            color: var(--prop-inline-text, #333);
                         }
-                        .inline-property:hover {
-                            background-color: gold;
-                            border-style: dashed;
+                        .inline-property-nodeview .inline-property-display:hover {
+                            background-color: var(--prop-inline-hover-bg, #e0e0e0);
+                            border-color: var(--prop-inline-hover-border, #ccc);
                         }
-                        .inline-property-input { /* Style the inputs */
+                        .inline-property-nodeview .property-icon {
+                            margin-right: 3px;
+                            font-size: 0.9em;
+                            opacity: 0.8;
+                        }
+                        .inline-property-nodeview .property-key {
+                            font-weight: 500; /* Slightly bolder key */
+                            margin-right: 2px;
+                            color: var(--prop-color, #555); /* Use color from hint */
+                        }
+                        .inline-property-nodeview .property-value {
+                            /* Styles for value */
+                        }
+                        /* Style when selected by Tiptap */
+                        .ProseMirror-selectednode > .inline-property-nodeview .inline-property-display { /* Target child */
+                            box-shadow: 0 0 0 2px var(--accent-color, blue);
+                            background-color: var(--prop-inline-hover-bg, #e0e0e0); /* Keep hover style when selected */
+                        }
+                        /* Input styling within NodeView */
+                        .inline-property-nodeview .inline-property-input {
                             border: 1px solid var(--accent-color, blue);
-                            padding: 1px 2px;
+                            padding: 0px 3px; /* Minimal padding */
                             border-radius: 2px;
-                            font-size: inherit; /* Match surrounding text */
+                            font-size: inherit;
                             font-family: inherit;
-                            vertical-align: baseline; /* Align with text */
-                            margin: 0 1px; /* Small spacing */
+                            vertical-align: baseline;
+                            line-height: 1.3; /* Match display */
+                            margin: 0; /* No extra margin */
+                            /* Adjust width based on type? */
                         }
-                        .inline-property-input[type="checkbox"] {
-                             height: 0.9em; /* Adjust size */
-                             width: 0.9em;
-                             vertical-align: middle; /* Center checkbox */
+                        .inline-property-nodeview .inline-property-input[type="checkbox"] {
+                            height: 0.9em; width: 0.9em; vertical-align: middle;
                         }
-                        .inline-property-input[type="date"],
-                        .inline-property-input[type="time"],
-                        .inline-property-input[type="datetime-local"] {
-                            padding: 0 2px; /* Adjust padding for date/time */
+                        .inline-property-nodeview .inline-property-input[type="date"],
+                        .inline-property-nodeview .inline-property-input[type="time"],
+                        .inline-property-nodeview .inline-property-input[type="datetime-local"] {
+                            padding: 0 2px;
                         }
-                        .inline-property-input[type="textarea"] {
-                            vertical-align: top; /* Align textarea better */
-                            resize: vertical; /* Allow vertical resize */
+                        .inline-property-nodeview .inline-property-input[type="range"] {
+                            vertical-align: middle;
+                            padding: 0;
                         }
+                        .inline-property-nodeview select.inline-property-input { /* Style select specifically */
+                            padding: 0 2px;
+                        }
+
 
                         /* ... other existing styles for toolbar, tiptap content etc. ... */
                         .editor-toolbar {
