@@ -494,81 +494,78 @@ export const NostrPlugin = {
     providesServices: () => ({
         'NostrService': {
             connect: () => {
-                const plugin = NostrPlugin;
-                // ... (Checks for unlocked, already connected, relays configured remain same) ...
-                if (plugin._identityStatus !== 'unlocked') { /* ... warning ... */
+                if (NostrPlugin._identityStatus !== 'unlocked') {
+                    console.warn("NostrService: Cannot connect, identity locked.");
                     return;
                 }
-                if (plugin._connectionStatus === 'connected' || plugin._connectionStatus === 'connecting') return;
-                if (!plugin._config.relays || plugin._config.relays.length === 0) { /* ... warning ... */
+                if (NostrPlugin._connectionStatus === 'connected' || NostrPlugin._connectionStatus === 'connecting') return;
+                if (!NostrPlugin._config.relays || NostrPlugin._config.relays.length === 0) {
+                    console.warn("NostrService: No relays configured.");
                     return;
                 }
 
-                console.log("NostrService: Connecting pool to relays:", plugin._config.relays);
-                plugin._connectionStatus = 'connecting';
-                plugin.coreAPI.dispatch({type: 'NOSTR_CONNECTION_STATUS_UPDATE', payload: 'connecting'});
+                console.log("NostrService: Connecting pool to relays:", NostrPlugin._config.relays);
+                NostrPlugin._connectionStatus = 'connecting';
+                NostrPlugin.coreAPI.dispatch({type: 'NOSTR_CONNECTION_STATUS_UPDATE', payload: 'connecting'});
 
                 // Ensure pool exists, pass EOSE timeout from config
-                if (!plugin._relayPool) {
-                    plugin._relayPool = new NostrTools.SimplePool({eoseSubTimeout: plugin._config.eoseTimeout});
+                if (!NostrPlugin._relayPool) {
+                    NostrPlugin._relayPool = new NostrTools.SimplePool({eoseSubTimeout: NostrPlugin._config.eoseTimeout});
                 }
 
-                // No explicit connect method needed for SimplePool, just start using it.
                 // Simulate connection establishment delay / success check
                 setTimeout(() => {
-                    if (plugin._connectionStatus === 'connecting') {
-                        plugin._connectionStatus = 'connected';
-                        plugin._connectionError = null;
-                        plugin.coreAPI.dispatch({type: 'NOSTR_CONNECTION_STATUS_UPDATE', payload: 'connected'});
-                        plugin.coreAPI.showToast("Nostr relay pool active.", "success");
-                        plugin._startAutoLockTimer(); // Reset timer on successful connection interaction
+                    if (NostrPlugin._connectionStatus === 'connecting') {
+                        NostrPlugin._connectionStatus = 'connected';
+                        NostrPlugin._connectionError = null;
+                        NostrPlugin.coreAPI.dispatch({type: 'NOSTR_CONNECTION_STATUS_UPDATE', payload: 'connected'});
+                        NostrPlugin.coreAPI.showToast("Nostr relay pool active.", "success");
+                        NostrPlugin._startAutoLockTimer(); // Reset timer on successful connection interaction
 
                         // Fetch own profile on connect
-                        const pubkey = plugin.getNostrService().getPublicKey();
+                        const pubkey = NostrPlugin.getNostrService().getPublicKey();
                         if (pubkey) {
-                            plugin.getNostrService().subscribe([{kinds: [0], authors: [pubkey], limit: 1}]);
+                            NostrPlugin.getNostrService().subscribe([{kinds: [0], authors: [pubkey], limit: 1}]);
                         }
                     }
-                }, 1000); // Shorter delay assumed
+                }, 1000);
             },
 
             disconnect: () => {
-                const plugin = NostrPlugin;
-                plugin._clearAutoLockTimer(); // Clear timer on disconnect
+                NostrPlugin._clearAutoLockTimer(); // Clear timer on disconnect
                 console.log("NostrService: Disconnecting pool...");
-                if (plugin._relayPool) {
-                    plugin._poolSubscriptions.forEach(sub => {
+                if (NostrPlugin._relayPool) {
+                    NostrPlugin._poolSubscriptions.forEach(sub => {
                         try {
                             sub.unsub();
                         } catch (e) {
                             console.warn("Error unsubscribing during disconnect:", e);
                         }
                     });
-                    plugin._poolSubscriptions.clear();
+                    NostrPlugin._poolSubscriptions.clear();
                     try {
-                        plugin._relayPool.close(plugin._config.relays);
+                        NostrPlugin._relayPool.close(NostrPlugin._config.relays);
                     } catch (e) {
                         console.warn("Error closing relay pool:", e);
                     }
-                    plugin._relayPool = null;
+                    NostrPlugin._relayPool = null;
                 }
-                if (plugin._connectionStatus !== 'disconnected') {
-                    plugin._connectionStatus = 'disconnected';
-                    plugin._connectionError = null;
-                    plugin.coreAPI.dispatch({type: 'NOSTR_CONNECTION_STATUS_UPDATE', payload: 'disconnected'});
-                    plugin.coreAPI.showToast("Disconnected from Nostr relays.", "info");
+                if (NostrPlugin._connectionStatus !== 'disconnected') {
+                    NostrPlugin._connectionStatus = 'disconnected';
+                    NostrPlugin._connectionError = null;
+                    NostrPlugin.coreAPI.dispatch({type: 'NOSTR_CONNECTION_STATUS_UPDATE', payload: 'disconnected'});
+                    NostrPlugin.coreAPI.showToast("Disconnected from Nostr relays.", "info");
                 }
             },
 
-            signEvent: async (eventTemplate) => { /* ... (Implementation unchanged) ... */
-                const plugin = NostrPlugin;
-                if (plugin._identityStatus !== 'unlocked' || !plugin._decryptedHexPrivKey) throw new Error("Nostr identity locked.");
+            signEvent: async (eventTemplate) => {
+                if (NostrPlugin._identityStatus !== 'unlocked' || !NostrPlugin._decryptedHexPrivKey) throw new Error("Nostr identity locked.");
                 if (!eventTemplate || typeof eventTemplate.kind !== 'number') throw new Error("Invalid event template.");
                 try {
                     eventTemplate.tags = eventTemplate.tags || [];
                     eventTemplate.created_at = eventTemplate.created_at || Math.floor(Date.now() / 1000);
-                    const signedEvent = NostrTools.finalizeEvent(eventTemplate, plugin._decryptedHexPrivKey);
-                    plugin._startAutoLockTimer();
+                    const signedEvent = NostrTools.finalizeEvent(eventTemplate, NostrPlugin._decryptedHexPrivKey);
+                    NostrPlugin._startAutoLockTimer();
                     return signedEvent;
                 } catch (error) {
                     console.error("NostrService: Error signing:", error);
@@ -577,89 +574,83 @@ export const NostrPlugin = {
             },
 
             publishEvent: async (eventTemplate) => {
-                const plugin = NostrPlugin;
-                if (plugin._connectionStatus !== 'connected' || !plugin._relayPool) { /* ... error ... */
+                if (NostrPlugin._connectionStatus !== 'connected' || !NostrPlugin._relayPool) {
                     throw new Error("Cannot publish: Not connected.");
                 }
-                const signedEvent = await plugin.getNostrService().signEvent(eventTemplate); // Also resets timer
+                const signedEvent = await NostrPlugin.getNostrService().signEvent(eventTemplate); // Also resets timer
 
                 console.log(`NostrService: Publishing kind ${signedEvent.kind} event:`, signedEvent.id);
                 try {
-                    const pubs = plugin._relayPool.publish(plugin._config.relays, signedEvent);
+                    const pubs = NostrPlugin._relayPool.publish(NostrPlugin._config.relays, signedEvent);
                     // Wait for pubs, potentially log success/failure per relay later
                     await Promise.allSettled(pubs); // Use allSettled to avoid stopping on first failure
                     console.log(`NostrService: Publish attempt finished for event ${signedEvent.id}.`);
-                    // Check results if needed: const results = await Promise.allSettled(pubs);
                     return signedEvent;
-                } catch (error) { /* ... error handling ... */
+                } catch (error) {
                     console.error("NostrService: Error publishing event:", signedEvent.id, error);
                     throw new Error(`Publish failed: ${error.message}`);
                 }
             },
 
             subscribe: (filters) => {
-                const plugin = NostrPlugin;
-                if (plugin._connectionStatus !== 'connected' || !plugin._relayPool) { /* ... error ... */
+                if (NostrPlugin._connectionStatus !== 'connected' || !NostrPlugin._relayPool) {
                     throw new Error("Cannot subscribe: Not connected.");
                 }
-                const subId = `sub_${plugin.coreAPI.utils.generateUUID()}`;
+                const subId = `sub_${NostrPlugin.coreAPI.utils.generateUUID()}`;
                 const filtersArray = Array.isArray(filters) ? filters : [filters];
-                plugin._startAutoLockTimer(); // Reset timer on interaction
+                NostrPlugin._startAutoLockTimer(); // Reset timer on interaction
 
                 console.log(`NostrService: Subscribing [${subId}]`, filtersArray);
                 try {
-                    const sub = plugin._relayPool.sub(plugin._config.relays, filtersArray, {id: subId}); // Pass subId hint? nostr-tools might not use it.
-                    plugin._poolSubscriptions.set(subId, sub);
+                    const sub = NostrPlugin._relayPool.sub(NostrPlugin._config.relays, filtersArray, {id: subId}); // Pass subId hint? nostr-tools might not use it.
+                    NostrPlugin._poolSubscriptions.set(subId, sub);
 
                     sub.on('event', event => {
-                        plugin._startAutoLockTimer(); // Reset timer on activity
-                        plugin.coreAPI.dispatch({
+                        NostrPlugin._startAutoLockTimer(); // Reset timer on activity
+                        NostrPlugin.coreAPI.dispatch({
                             type: 'NOSTR_EVENT_RECEIVED',
                             payload: {event, subscriptionId: subId}
                         });
                     });
                     sub.on('eose', (relayUrl) => {
-                        // console.log(`NostrService: EOSE for [${subId}] from ${relayUrl}`);
-                        plugin.coreAPI.dispatch({
+                        NostrPlugin.coreAPI.dispatch({
                             type: 'NOSTR_EOSE_RECEIVED',
                             payload: {subscriptionId: subId, relayUrl}
                         });
                     });
                     return subId;
-                } catch (error) { /* ... error handling ... */
+                } catch (error) {
                     console.error(`NostrService: Failed subscribe [${subId}]`, error);
                     throw new Error(`Subscribe failed: ${error.message}`);
                 }
             },
 
-            unsubscribe: (subId) => { /* ... (Implementation unchanged) ... */
-                const plugin = NostrPlugin;
-                if (!plugin._relayPool) return;
-                const sub = plugin._poolSubscriptions.get(subId);
+            unsubscribe: (subId) => {
+                if (!NostrPlugin._relayPool) return;
+                const sub = NostrPlugin._poolSubscriptions.get(subId);
                 if (sub) {
                     try {
                         sub.unsub();
                     } catch (e) {
+                        console.warn("Error unsubscribing:", e);
                     }
-                    plugin._poolSubscriptions.delete(subId);
+                    NostrPlugin._poolSubscriptions.delete(subId);
                 } else {
                     console.warn(`Unknown subId [${subId}]`);
                 }
             },
 
-            getPublicKey: () => { /* ... (Implementation unchanged) ... */
-                const plugin = NostrPlugin;
-                if (plugin._identityStatus === 'unlocked' && plugin._decryptedHexPrivKey) {
+            getPublicKey: () => {
+                if (NostrPlugin._identityStatus === 'unlocked' && NostrPlugin._decryptedHexPrivKey) {
                     try {
-                        return NostrTools.getPublicKey(plugin._decryptedHexPrivKey);
+                        return NostrTools.getPublicKey(NostrPlugin._decryptedHexPrivKey);
                     } catch (e) {
                         console.error("Error deriving pubkey:", e);
                     }
                 }
-                const note = plugin.coreAPI.getSystemNoteByType('config/nostr/identity');
+                const note = NostrPlugin.coreAPI.getSystemNoteByType('config/nostr/identity');
                 return note?.content?.pubkey || null;
             },
-            // ... (isUnlocked, getConnectionStatus, getIdentityStatus unchanged) ...
             isUnlocked: () => NostrPlugin._identityStatus === 'unlocked',
             getConnectionStatus: () => NostrPlugin._connectionStatus,
             getIdentityStatus: () => ({status: NostrPlugin._identityStatus, error: NostrPlugin._identityError}),
@@ -1101,7 +1092,7 @@ export const NostrPlugin = {
                 }
 
                 // --- Event Handlers (Mostly unchanged, added strength check feedback) ---
-                const handleSetupSubmit = (e) => { /* ... */
+                const handleSetupSubmit = (e) => {
                     e.preventDefault();
                     const f = e.target;
                     const pp = f.passphrase?.value;
@@ -1115,14 +1106,14 @@ export const NostrPlugin = {
                     });
                     f.reset();
                 };
-                const handleUnlockSubmit = (e) => { /* ... */
+                const handleUnlockSubmit = (e) => {
                     e.preventDefault();
                     const f = e.target;
                     dispatch({type: 'NOSTR_UNLOCK_REQUEST', payload: {passphrase: f.passphrase?.value}});
                 };
                 const handleLock = () => dispatch({type: 'NOSTR_LOCK_REQUEST'});
                 const handleClearIdentity = () => dispatch({type: 'NOSTR_CLEAR_IDENTITY_REQUEST'});
-                const handleGenerateNewKey = async () => { /* ... (Unchanged) ... */
+                const handleGenerateNewKey = async () => {
                     try {
                         if (typeof NostrTools?.generatePrivateKey !== 'function') throw new Error("nostrTools func missing");
                         const sk = NostrTools.generatePrivateKey();
@@ -1135,15 +1126,16 @@ export const NostrPlugin = {
                         coreAPI.showToast(`Keygen fail: ${e.message}`, "error");
                     }
                 };
-                const handleRelaySave = (newRelaysText) => { /* ... (Unchanged) ... */
+                const handleRelaySave = (newRelaysText) => {
                     // TODO: This needs to be adapted to save relays as a property
                     // on the settings note if relays are moved to the ontology settings.
                     const validRelays = newRelaysText.split('\n').map(r => r.trim()).filter(r => r.startsWith('ws'));
                     const uniqueRelays = [...new Set(validRelays)];
-                    coreAPI.saveSystemNote('config/nostr/relays', {relays: uniqueRelays}).then(() => coreAPI.showToast("Legacy Relays saved.", "success")).catch(err => coreAPI.showToast(`Error save: ${err.message}`, "error"));
+                    coreAPI.saveSystemNote('config/nostr/relays', {relays: uniqueRelays})
+                        .then(() => coreAPI.showToast("Legacy Relays saved.", "success"))
+                        .catch(err => coreAPI.showToast(`Error save: ${err.message}`, "error"));
                 };
-                // TODO: Remove currentRelays if they move to ontology settings
-                const currentRelays = plugin._config.relays.join('\n');
+                const currentRelays = NostrPlugin._config.relays.join('\n');
 
                 // --- Render Logic (HTML structure largely unchanged, uses displayPubkey) ---
                 let identitySectionHtml;
@@ -1191,10 +1183,7 @@ export const NostrPlugin = {
                         <h4>Relay Configuration</h4>
                         <p>One wss:// URL per line.</p>
                         <textarea id="nostr-relays-textarea" rows="5" .value=${currentRelays}></textarea>
-                        <button @click=${() => handleRelaySave(document.getElementById('nostr-relays-textarea').value)}>
-                            Save Relays
-                            (Legacy Note)
-                        </button>
+                        <button @click=${() => handleRelaySave(document.getElementById('nostr-relays-textarea').value)}>Save Relays (Legacy Note)</button>
 
                         <hr>
                         <h4>Plugin Configuration</h4>
@@ -1339,10 +1328,9 @@ export const NostrPlugin = {
 
                 if (nostrState.identityStatus !== 'unlocked') return '';
 
-                const isShared = nostrNoteData?.isShared || false;
-                const isDeletedRemotely = nostrNoteData?.isDeletedOnNostr || false;
-                const isPending = nostrState.pendingPublish?.[noteId];
-                const isConnected = nostrState.connectionStatus === 'connected';
+                const {isShared = false, isDeletedOnNostr = false} = nostrNoteData || {};
+                const {pendingPublish: isPending, connectionStatus: isConnected} = nostrState;
+                const isPendingPublish = isPending?.[noteId];
 
                 const handleShare = () => {
                     coreAPI.showToast("Sharing note on Nostr...", "info");
@@ -1364,15 +1352,15 @@ export const NostrPlugin = {
                 } else if (isShared) {
                     buttonHtml = html`
                         <button class="editor-header-button nostr-unshare-button" @click=${handleUnshare}
-                                title="Publish deletion event on Nostr" ?disabled=${isPending || !isConnected}>
-                            ${isPending ? 'Working...' : '🌐 Unshare'}
+                                title="Publish deletion event on Nostr" ?disabled=${isPendingPublish || isConnected !== 'connected'}>
+                            ${isPendingPublish ? 'Working...' : '🌐 Unshare'}
                         </button>`;
-                } else { // Not shared, not deleted remotely
+                } else {
                     buttonHtml = html`
                         <button class="editor-header-button nostr-share-button" @click=${handleShare}
-                                title="Share this note on Nostr" ?disabled=${isPending || !isConnected}>
-                            ${isPending ? 'Sharing...' : 'Share'}
-                            ${!isConnected ? ' (Offline)' : ''}
+                                title="Share this note on Nostr" ?disabled=${isPendingPublish || isConnected !== 'connected'}>
+                            ${isPendingPublish ? 'Sharing...' : 'Share'}
+                            ${isConnected !== 'connected' ? ' (Offline)' : ''}
                         </button>`;
                 }
                 return buttonHtml;
