@@ -295,12 +295,25 @@ export const SemanticParserPlugin = {
         const processedSuggestions = suggestions.map(s => ({
             ...s,
             id: s.id || utils.generateUUID(),
-            status: s.status || 'pending'
-        }));
+            status: s.status || 'pending',
+            // Ensure location exists for decoration
+            location: s.location || null
+        })).filter(s => s.location && typeof s.location.start === 'number' && typeof s.location.end === 'number'); // Filter out suggestions without valid locations
+
+        // Dispatch original action to update state
         this.coreAPI.dispatch({
             type: 'PARSER_SUGGESTIONS_RECEIVED',
             payload: {noteId, suggestions: processedSuggestions}
         });
+
+        // Dispatch action for editor to update decorations
+        // Ensure this happens *after* the state update is likely processed
+        setTimeout(() => {
+            this.coreAPI.dispatch({
+                type: 'PARSER_DECORATIONS_UPDATE_REQUEST',
+                payload: { noteId }
+            });
+        }, 0);
     },
 
     /**

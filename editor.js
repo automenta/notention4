@@ -5,8 +5,12 @@
 "use strict";
 
 import { Editor } from '@tiptap/core';
+import { Plugin as TiptapPlugin, PluginKey } from '@tiptap/pm/state'; // Use ProseMirror Plugin directly for decorations
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
 import { InlineProperty } from './InlineProperty.js'; // Import the new Node
+import tippy from 'tippy.js'; // Import tippy
+import 'tippy.js/dist/tippy.css'; // Import tippy CSS
 
 // Ensure lit is imported correctly based on your setup
 const { html, render: litRender } = window.lit ?? window.litHtml ?? { html: null, render: null };
@@ -130,6 +134,7 @@ class TiptapEditor extends AbstractEditorLibrary {
                         // Add other StarterKit options here if needed
                     }),
                     InlineProperty, // Add our custom node extension
+                    SuggestionPlugin(this._dispatch), // Add the new SuggestionPlugin
                     // Add more extensions like Placeholder, Link, etc.
                     ...(editorOptions.extensions || [])
                 ],
@@ -346,6 +351,223 @@ class TiptapEditor extends AbstractEditorLibrary {
         return !this._tiptapInstance || this._tiptapInstance.isDestroyed;
     }
 }
+
+
+// --- Suggestion Plugin (Tiptap/ProseMirror Plugin) ---
+const suggestionPluginKey = new PluginKey('suggestionPlugin');
+
+function SuggestionPlugin(dispatch) {
+    let currentNoteId = null;
+    let currentDecorationSet = DecorationSet.empty;
+    let tippyInstances = []; // To manage popovers
+
+    // Function to destroy existing Tippy instances
+    const destroyTippyInstances = () => {
+        tippyInstances.forEach(instance => instance.destroy());
+        tippyInstances = [];
+    };
+
+    // Function to create the popover content and setup actions
+    const createPopoverContent = (suggestion) => {
+        const container = document.createElement('div');
+        container.className = 'suggestion-popover';
+
+        const text = document.createElement('div');
+        text.className = 'suggestion-text';
+        text.innerHTML = `
+            Add property:
+            <strong class="suggestion-key">${suggestion.property.key}</strong> =
+            <em class="suggestion-value">${suggestion.displayText || suggestion.property.value}</em>
+            <span class="suggestion-source" title="Source: ${suggestion.source}${suggestion.confidence ? ` | Confidence: ${Math.round(suggestion.confidence * 100)}%` : ''}">
+                (${suggestion.source.replace('heuristic ', 'H:')}${suggestion.confidence ? ` ${Math.round(suggestion.confidence * 100)}%` : ''})
+            </span>
+        `;
+        container.appendChild(text);
+
+        const actions = document.createElement('div');
+        actions.className = 'suggestion-actions';
+
+        const confirmButton = document.createElement('button');
+        confirmButton.className = 'suggestion-confirm';
+        confirmButton.title = 'Confirm';
+        confirmButton.textContent = '✓';
+        confirmButton.onclick = () => {
+            dispatch({
+                type: 'PARSER_CONFIRM_SUGGESTION',
+                payload: { noteId: currentNoteId, suggestion }
+            });
+            // Optionally hide popover immediately
+            tippyInstances.forEach(instance => instance.hide());
+        };
+        actions.appendChild(confirmButton);
+
+        const ignoreButton = document.createElement('button');
+        ignoreButton.className = 'suggestion-ignore';
+        ignoreButton.title = 'Ignore';
+        ignoreButton.textContent = '✕';
+        ignoreButton.onclick = () => {
+            dispatch({
+                type: 'PARSER_IGNORE_SUGGESTION',
+                payload: { noteId: currentNoteId, suggestionId: suggestion.id }
+            });
+            tippyInstances.forEach(instance => instance.hide());
+        };
+        actions.appendChild(ignoreButton);
+
+        container.appendChild(actions);
+        return container;
+    };
+
+
+    return new TiptapPlugin({
+        key: suggestionPluginKey,
+        state: {
+            init() {
+                return { noteId: null, decorationSet: DecorationSet.empty };
+            },
+            apply(tr, pluginState, oldState, newState) {
+                // Handle meta transactions dispatched by the view update
+                const meta = tr.getMeta(suggestionPluginKey);
+                if (meta) {
+                    // Update noteId if changed
+                    if (meta.noteId !== undefined) {
+                        pluginState = { ...pluginState, noteId: meta.noteId };
+                        currentNoteId = meta.noteId; // Update local variable
+                    }
+                    // Update decorations if provided
+                    if (meta.decorationSet !== undefined) {
+                        pluginState = { ...pluginState, decorationSet: meta.decorationSet };
+                        currentDecorationSet = meta.decorationSet; // Update local variable
+                    }
+                }
+
+                // Map decorations through the transaction to adjust positions
+                const mappedSet = pluginState.decorationSet.map(tr.mapping, tr.doc);
+                if (mappedSet !== pluginState.decorationSet) {
+                     pluginState = { ...pluginState, decorationSet: mappedSet };
+                     currentDecorationSet = mappedSet; // Update local variable
+                }
+
+                return pluginState;
+            },
+        },
+        props: {
+            decorations(state) {
+                // Return the current decoration set from the plugin state
+                return this.getState(state).decorationSet;
+            },
+            // Optional: Handle clicks on decorations if needed, though widgets handle their own
+            // handleClickOn(view, pos, node, nodePos, event, direct) { ... }
+        },
+        // View updates allow reacting to external state changes (like Redux store)
+        view(editorView) {
+            // --- Subscribe to Redux state changes ---
+            const store = window.realityNotebookCore; // Access the global core API/store
+            let previousSuggestionsJson = null; // Cache to detect actual changes
+
+            const unsubscribe = store.subscribe((newState, oldState) => {
+                const pluginState = suggestionPluginKey.getState(editorView.state);
+                const noteId = pluginState?.noteId; // Get current note ID from plugin state
+
+                if (!noteId) { // No note selected in editor
+                    if (currentDecorationSet !== DecorationSet.empty) {
+                         // Clear decorations if no note is selected but we still have some
+                         destroyTippyInstances();
+                         editorView.dispatch(
+                             editorView.state.tr.setMeta(suggestionPluginKey, { decorationSet: DecorationSet.empty })
+                         );
+                    }
+                    previousSuggestionsJson = null;
+                    return;
+                }
+
+                // Get suggestions for the *current* note from the *new* Redux state
+                const suggestions = newState.pluginRuntimeState?.parser?.suggestions?.[noteId] || [];
+                const pendingSuggestions = suggestions.filter(s => s.status === 'pending' && s.location);
+                const currentSuggestionsJson = JSON.stringify(pendingSuggestions.map(s => ({ id: s.id, loc: s.location }))); // Check only relevant parts
+
+                // Only update decorations if suggestions actually changed for this note
+                if (currentSuggestionsJson !== previousSuggestionsJson) {
+                    // console.log(`SuggestionPlugin: Suggestions changed for note ${noteId}, updating decorations.`);
+                    previousSuggestionsJson = currentSuggestionsJson;
+                    destroyTippyInstances(); // Clear old popovers before creating new decorations
+
+                    const decorations = pendingSuggestions.map(suggestion => {
+                        const { start, end } = suggestion.location;
+                        // Create the inline highlight decoration
+                        const highlightDeco = Decoration.inline(start, end, {
+                            class: 'suggestion-highlight',
+                            nodeName: 'span', // Use span for inline styling
+                        });
+
+                        // Create the widget decoration (button)
+                        const widgetDeco = Decoration.widget(end, (view, getPos) => { // Place widget at the end
+                            const button = document.createElement('button');
+                            button.className = 'suggestion-action-button';
+                            button.textContent = '💡'; // Suggestion icon
+                            button.dataset.suggestionId = suggestion.id;
+
+                            // Use Tippy for the popover
+                            const instance = tippy(button, {
+                                content: createPopoverContent(suggestion),
+                                allowHTML: true,
+                                interactive: true,
+                                trigger: 'click', // Show on click
+                                placement: 'bottom-start',
+                                appendTo: () => editorView.dom.parentElement || document.body, // Append to editor parent
+                                hideOnClick: true, // Hide when clicking outside or on actions
+                                onShow(instance) {
+                                    // Close other popovers when one shows
+                                    tippyInstances.filter(i => i !== instance).forEach(i => i.hide());
+                                },
+                                onDestroy(instance) {
+                                     // Remove from our tracking array
+                                     tippyInstances = tippyInstances.filter(i => i !== instance);
+                                }
+                            });
+                            tippyInstances.push(instance); // Track the instance
+
+                            return button;
+                        }, { side: 1 }); // Bias towards the right
+
+                        return [highlightDeco, widgetDeco];
+                    }).flat(); // Flatten the array of arrays
+
+                    // Dispatch transaction to update plugin state with new decorations
+                    editorView.dispatch(
+                        editorView.state.tr.setMeta(suggestionPluginKey, { decorationSet: DecorationSet.create(editorView.state.doc, decorations) })
+                    );
+                }
+            });
+
+            return {
+                // Called when the view is destroyed
+                destroy() {
+                    destroyTippyInstances(); // Clean up popovers
+                    unsubscribe(); // Unsubscribe from Redux store
+                },
+                // Called when the view updates (e.g., editor content changes)
+                update(view, prevState) {
+                    // Check if the note ID associated with the editor has changed
+                    const newNoteId = view.dom.dataset.noteId || null; // Assuming noteId is on the mount point
+                    const oldNoteId = prevState ? (suggestionPluginKey.getState(prevState)?.noteId) : null;
+
+                    if (newNoteId !== oldNoteId) {
+                        // console.log(`SuggestionPlugin: Note ID changed from ${oldNoteId} to ${newNoteId}. Updating plugin state.`);
+                        // Dispatch transaction to update noteId in plugin state
+                        // This will trigger the Redux subscription listener to fetch new suggestions
+                         destroyTippyInstances(); // Clear popovers for old note
+                         view.dispatch(
+                             view.state.tr.setMeta(suggestionPluginKey, { noteId: newNoteId, decorationSet: DecorationSet.empty }) // Reset decorations for new note
+                         );
+                         previousSuggestionsJson = null; // Reset suggestion cache
+                    }
+                }
+            };
+        }
+    });
+}
+
 
 // --- Toolbar Rendering Function ---
 function renderToolbarContent(editorInstance) {
