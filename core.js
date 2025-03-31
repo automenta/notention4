@@ -636,11 +636,12 @@ class UIRenderer {
         try {
             const answer = await llmService.answerQuestion(contextText, question);
             if (answer) {
-                // Display answer - use status bar for now
-                coreAPI.showGlobalStatus(`Answer: ${answer}`, "info", 15000); // Show for longer
-                // TODO: Display in a more persistent way (panel, modal?)
+                // Insert answer into the editor
+                const answerBlock = `\n\n---\n**Q:** ${question}\n**A:** ${answer}\n---`;
+                editorService.insertContentAtCursor(answerBlock);
+                coreAPI.showGlobalStatus("Answer inserted into note.", "success", 3000);
             } else {
-                // Error/null handled within answerQuestion
+                // Error/null handled within answerQuestion, status message shown there
             }
         } catch (e) {
             console.error("Ask Question action failed:", e);
@@ -663,13 +664,15 @@ class UIRenderer {
         try {
             const actions = await llmService.getActions(textForActions);
             if (actions === null) {
-                // Error handled within getActions
+                // Error handled within getActions, status message shown there
             } else if (actions.length > 0) {
-                const actionsString = actions.map((a, i) => `${i + 1}. ${a}`).join('\n');
-                coreAPI.showGlobalStatus(`Suggested Actions:\n${actionsString}`, "info", 15000);
-                // TODO: Display in a panel with buttons to add as tasks?
+                // Insert actions as a list into the editor
+                const actionsList = actions.map(a => `<li>${a}</li>`).join('');
+                const actionsBlock = `\n\n---\n**Suggested Actions:**\n<ul>${actionsList}</ul>\n---`;
+                editorService.insertContentAtCursor(actionsBlock);
+                coreAPI.showGlobalStatus("Suggested actions inserted into note.", "success", 3000);
             } else {
-                coreAPI.showGlobalStatus("No specific actions suggested by AI.", "info", 3000);
+                coreAPI.showGlobalStatus("No specific actions suggested by AI.", "info", 3000); // Keep info message
             }
         } catch (e) {
             console.error("Get Actions action failed:", e);

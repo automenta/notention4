@@ -396,13 +396,26 @@ export const PropertiesPlugin = {
                 if (['true', 'yes', '1', 'on'].includes(lowerVal)) return true;
                 if (['false', 'no', '0', 'off'].includes(lowerVal)) return false;
                 return Boolean(value); // Fallback to standard JS boolean conversion
-            case 'date':
-                // Attempt to parse and potentially reformat, but be cautious
-                // For now, just return the value. More robust parsing needed.
-                // Example: Could try new Date(value) and if valid, return ISO string?
+            case 'date': {
+                // Basic relative date parsing (add more robust library later)
+                const lowerVal = String(value).toLowerCase();
+                const today = new Date(); today.setHours(0,0,0,0);
+                if (lowerVal === 'today') {
+                    return today.toISOString().split('T')[0];
+                } else if (lowerVal === 'tomorrow') {
+                    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+                    return tomorrow.toISOString().split('T')[0];
+                } else if (lowerVal === 'yesterday') {
+                    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+                    return yesterday.toISOString().split('T')[0];
+                }
+                // TODO: Add 'next week', 'last month', etc. using a date library
+                // TODO: Attempt parsing various date formats (e.g., MM/DD/YYYY) -> ISO string?
+                // Fallback: return original value if no specific parsing matches
                 return value;
+            }
             case 'list':
-                // If it's a string, try splitting by comma? Very basic.
+                // If it's a string, try splitting by comma.
                 if (typeof value === 'string') {
                     return value.split(',').map(s => s.trim()).filter(s => s);
                 }
@@ -501,7 +514,25 @@ export const PropertiesPlugin = {
             }
         }
 
-        // TODO: Add more validation types (regex pattern, referenceType check, list itemType check)
+        // Check regex pattern
+        if (rules.pattern && typeof value === 'string') {
+            try {
+                const regex = new RegExp(rules.pattern);
+                if (!regex.test(value)) {
+                    return { isValid: false, message: `Value does not match required pattern: ${rules.patternDescription || rules.pattern}` };
+                }
+            } catch (e) {
+                console.warn(`PropertiesPlugin: Invalid regex pattern in ontology validation rule for key '${key}': ${rules.pattern}`, e);
+                // Don't block saving due to bad rule, but log it.
+            }
+        }
+
+        // TODO: Add referenceType check (requires access to other notes/ontology types)
+        // if (type === 'reference' && rules.referenceType) { ... }
+
+        // TODO: Add list itemType check (e.g., ensure all items in a list are numbers)
+        // if (type === 'list' && rules.itemType && Array.isArray(value)) { ... }
+
 
         return { isValid: true, message: null }; // Passed all checks
     }

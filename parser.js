@@ -215,8 +215,8 @@ export const SemanticParserPlugin = {
         };
     },
 
-    // --- UI Rendering (Now handled via EditorService decorations) ---
-    // registerUISlots() is removed as UI is now integrated with the editor.
+    // --- UI Rendering (Now handled via EditorService decorations in editor.js) ---
+    // registerUISlots() is removed.
 
     // --- Service Provision ---
     providesServices() {
@@ -238,13 +238,29 @@ export const SemanticParserPlugin = {
                     const inferredType = this.ontologyService.inferType(value, nameHint);
                     let structuredValue = value;
 
-                    // TODO: Add more sophisticated parsing based on inferredType and ontology rules
-                    // e.g., convert "tomorrow" to actual date if type is 'date'
-                    // For now, just return the inferred type
+                    // Attempt basic normalization/parsing based on type
                     if (inferredType === 'number' && !isNaN(Number(value))) {
                         structuredValue = Number(value);
                     } else if (inferredType === 'boolean') {
-                        structuredValue = ['true', 'yes', '1'].includes(String(value).toLowerCase());
+                        const lowerVal = String(value).toLowerCase();
+                        if (['true', 'yes', '1', 'on'].includes(lowerVal)) structuredValue = true;
+                        else if (['false', 'no', '0', 'off'].includes(lowerVal)) structuredValue = false;
+                        else structuredValue = Boolean(value); // Fallback
+                    } else if (inferredType === 'date') {
+                        // Basic relative date parsing (add more robust library later)
+                        const lowerVal = String(value).toLowerCase();
+                        const today = new Date(); today.setHours(0,0,0,0);
+                        if (lowerVal === 'today') {
+                            structuredValue = today.toISOString().split('T')[0];
+                        } else if (lowerVal === 'tomorrow') {
+                            const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+                            structuredValue = tomorrow.toISOString().split('T')[0];
+                        } else if (lowerVal === 'yesterday') {
+                            const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+                            structuredValue = yesterday.toISOString().split('T')[0];
+                        }
+                        // TODO: Add 'next week', 'last month', etc. using a date library
+                        // TODO: Attempt parsing various date formats (e.g., MM/DD/YYYY)
                     }
 
                     return {structuredValue, type: inferredType, state: 'is'}; // 'state' seems less relevant here? Defaulting to 'is'.
@@ -296,24 +312,16 @@ export const SemanticParserPlugin = {
             ...s,
             id: s.id || utils.generateUUID(),
             status: s.status || 'pending',
-            // Ensure location exists for decoration
-            location: s.location || null
-        })).filter(s => s.location && typeof s.location.start === 'number' && typeof s.location.end === 'number'); // Filter out suggestions without valid locations
+            // Ensure location is valid for decoration
+            location: s.location && typeof s.location.start === 'number' && typeof s.location.end === 'number' ? s.location : null
+        })).filter(s => s.location); // Filter out suggestions without valid locations
 
-        // Dispatch original action to update state
+        // Dispatch action to update state. The editor plugin will react to this state change.
         this.coreAPI.dispatch({
             type: 'PARSER_SUGGESTIONS_RECEIVED',
             payload: {noteId, suggestions: processedSuggestions}
         });
-
-        // Dispatch action for editor to update decorations
-        // Ensure this happens *after* the state update is likely processed
-        setTimeout(() => {
-            this.coreAPI.dispatch({
-                type: 'PARSER_DECORATIONS_UPDATE_REQUEST',
-                payload: { noteId }
-            });
-        }, 0);
+        // No separate decoration update dispatch needed; SuggestionPlugin subscribes to state.
     },
 
     /**
@@ -353,8 +361,28 @@ export const SemanticParserPlugin = {
 
                     const location = { start: match.index, end: match.index + matchedValue.length };
 
-                    suggestions.push({
-                        id: utils.generateUUID(),
+                    // Ensure location is valid before pushing
+                    if (typeof location.start === 'number' && typeof location.end === 'number') {
+                        suggestions.push({
+                            id: utils.generateUUID(),
+                            source: 'heuristic (rule)',
+                            property: { key: key, value: matchedValue, type: rule.type },
+                            status: 'pending',
+                            location: location,
+                            confidence: 0.6 // Slightly higher confidence for explicit rules
+                        });
+                        // Mark indices covered by this match as processed
+                        for (let i = match.index; i < match.index + matchedValue.length; i++) {
+                            processedIndices.add(i);
+                        }
+                    } else {
+                         console.warn(`Parser: Invalid location generated by heuristic rule`, { rule, match });
+                    }
+                }
+            } catch (e) {
+                console.warn(`Parser: Error applying heuristic rule regex: ${rule.pattern}`, e);
+            }
+        });
                         source: 'heuristic (rule)',
                         property: { key: key, value: matchedValue, type: rule.type },
                         status: 'pending',
@@ -379,8 +407,8 @@ export const SemanticParserPlugin = {
             if (processedIndices.has(wikiMatch.index)) continue; // Skip if already processed
 
             const linkText = wikiMatch.groups.linkText.trim();
-            if (linkText) {
-                const location = { start: wikiMatch.index, end: wikiMatch.index + wikiMatch[0].length };
+            const location = { start: wikiMatch.index, end: wikiMatch.index + wikiMatch[0].length };
+            if (linkText && typeof location.start === 'number' && typeof location.end === 'number') {
                 // Use a default key like 'related' or 'link' for references
                 const key = 'related';
                 suggestions.push({
@@ -440,9 +468,21 @@ export const SemanticParserPlugin = {
                         end: absoluteStartIndex + value.length
                     };
 
-                    suggestions.push({
-                        id: utils.generateUUID(),
-                        source: 'heuristic (kv)',
+                    if (typeof location.start === 'number' && typeof location.end === 'number') {
+                        suggestions.push({
+                            id: utils.generateUUID(),
+                            source: 'heuristic (kv)',
+                            property: { key, value, type: inferredType },
+                            status: 'pending',
+                            location: location,
+                            confidence: 0.4 // Lower confidence for generic key-value
+                        });
+                    } else {
+                         console.warn(`Parser: Invalid location generated by key-value heuristic`, { key, value, line });
+                    }
+                }
+            }
+        });
                         property: { key, value, type: inferredType },
                         status: 'pending',
                         location: location,
@@ -569,7 +609,9 @@ JSON Output:
                         status: 'pending',
                         // Assign confidence: use LLM's if provided, otherwise default (e.g., 0.8)
                         confidence: typeof item.confidence === 'number' ? Math.max(0, Math.min(1, item.confidence)) : 0.8,
-                        // Location info is hard to get accurately from LLM without specific instructions/model support
+                        // TODO: Location info is hard to get accurately from LLM without specific instructions/model support.
+                        // Need to instruct the LLM to *also* return the exact start/end character indices of the *value* in the original text.
+                        location: null // Placeholder - decorations won't work for LLM suggestions yet
                     };
                 });
 

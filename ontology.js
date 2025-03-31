@@ -446,8 +446,64 @@ export const OntologyPlugin = {
                 ${renderSection('Rules', 'rules', ontologyData.rules, renderRuleItem, this._handleAddOntologyItem.bind(this))}
                 ${renderSection('UI Hints', 'uiHints', ontologyData.uiHints, renderHintItem, this._handleAddOntologyItem.bind(this))}
                 ${renderSection('Templates', 'templates', ontologyData.templates, renderTemplateItem, this._handleAddOntologyItem.bind(this))}
-                <!-- Keywords section could be added similarly -->
+                ${this._renderKeywordsSection(ontologyData, noteId, dispatch, html)}
             </div>
+        `;
+    },
+
+    _renderKeywordsSection(ontologyData, noteId, dispatch, html) {
+        const keywords = ontologyData.keywords || { categories: [], tags: [] };
+
+        const handleKeywordChange = (type, index, newValue) => {
+            const updatedOntology = JSON.parse(JSON.stringify(ontologyData)); // Deep copy
+            if (!updatedOntology.keywords) updatedOntology.keywords = { categories: [], tags: [] };
+            if (updatedOntology.keywords[type] && updatedOntology.keywords[type][index] !== undefined) {
+                updatedOntology.keywords[type][index] = newValue.trim();
+                // Filter out empty keywords on save? Or just on change here? Let's filter on save.
+                this._debouncedSaveOntology(updatedOntology, noteId, dispatch);
+            }
+        };
+
+        const handleAddKeyword = (type) => {
+            const updatedOntology = JSON.parse(JSON.stringify(ontologyData)); // Deep copy
+            if (!updatedOntology.keywords) updatedOntology.keywords = { categories: [], tags: [] };
+            if (!updatedOntology.keywords[type]) updatedOntology.keywords[type] = [];
+            updatedOntology.keywords[type].push(""); // Add empty string to edit
+            this._handleSaveOntology(updatedOntology, noteId, dispatch); // Save immediately to show new input
+        };
+
+        const handleDeleteKeyword = (type, index) => {
+            if (!confirm(`Delete keyword "${keywords[type][index]}"?`)) return;
+            const updatedOntology = JSON.parse(JSON.stringify(ontologyData)); // Deep copy
+            if (updatedOntology.keywords?.[type]) {
+                updatedOntology.keywords[type] = updatedOntology.keywords[type].filter((_, i) => i !== index);
+                this._handleSaveOntology(updatedOntology, noteId, dispatch);
+            }
+        };
+
+        const renderKeywordList = (type, list) => html`
+            <div class="keyword-list">
+                <h5>${type.charAt(0).toUpperCase() + type.slice(1)}</h5>
+                ${(list || []).map((keyword, index) => html`
+                    <div class="keyword-item">
+                        <input type="text" .value=${keyword}
+                               @input=${(e) => handleKeywordChange(type, index, e.target.value)}>
+                        <button class="ontology-delete-button" title="Delete Keyword"
+                                @click=${() => handleDeleteKeyword(type, index)}>×</button>
+                    </div>
+                `)}
+                <button class="ontology-add-button small" @click=${() => handleAddKeyword(type)}>+ Add ${type.slice(0,-1)}</button>
+            </div>
+        `;
+
+        return html`
+            <details class="ontology-section">
+                <summary>Keywords (${(keywords.categories?.length || 0) + (keywords.tags?.length || 0)})</summary>
+                <div class="ontology-items keywords-section">
+                    ${renderKeywordList('categories', keywords.categories)}
+                    ${renderKeywordList('tags', keywords.tags)}
+                </div>
+            </details>
         `;
     },
 
@@ -499,17 +555,29 @@ export const OntologyPlugin = {
         let value = input.type === 'checkbox' ? input.checked : input.value;
 
         // Attempt to parse JSON for specific fields
+        // Attempt to parse JSON for specific fields, handle errors gracefully
         if (['validation', 'options'].includes(fieldKey)) {
             try {
-                value = JSON.parse(value);
+                // Allow empty string for empty object/array
+                const trimmedValue = value.trim();
+                if (trimmedValue === '') {
+                    value = fieldKey === 'options' ? [] : {}; // Default empty based on field
+                } else {
+                    value = JSON.parse(trimmedValue);
+                }
+                input.style.borderColor = ''; // Clear error indicator on success
             } catch (e) {
-                console.warn(`Invalid JSON for ${sectionKey}[${itemKey}].${fieldKey}:`, value);
+                console.warn(`Invalid JSON for ${sectionKey}[${itemKey}].${fieldKey}:`, value, e.message);
                 input.style.borderColor = 'red'; // Indicate error
-                return; // Don't save invalid JSON
+                // Do not proceed with saving if JSON is invalid
+                // Clear any pending debounced save for this field to prevent saving bad data
+                if (this._debouncedSaveOntology.cancel) {
+                     this._debouncedSaveOntology.cancel();
+                }
+                return;
             }
-            input.style.borderColor = ''; // Clear error indicator
         }
-        // Convert number fields
+        // Convert number fields, allowing null for empty
         if (input.type === 'number') {
             value = value === '' ? null : Number(value);
         }
@@ -546,6 +614,16 @@ export const OntologyPlugin = {
 
     _handleSaveOntology(updatedOntology, noteId, dispatch) {
         try {
+            // Clean up empty keywords before saving
+            if (updatedOntology.keywords) {
+                if (updatedOntology.keywords.categories) {
+                    updatedOntology.keywords.categories = updatedOntology.keywords.categories.map(c => c.trim()).filter(Boolean);
+                }
+                if (updatedOntology.keywords.tags) {
+                    updatedOntology.keywords.tags = updatedOntology.keywords.tags.map(t => t.trim()).filter(Boolean);
+                }
+            }
+
             const ontologyString = JSON.stringify(updatedOntology, null, 2);
             dispatch({
                 type: 'CORE_UPDATE_NOTE',
@@ -604,6 +682,15 @@ export const OntologyPlugin = {
             }
             .ontology-delete-button:hover { color: var(--vscode-errorForeground); }
             .settings-hint { font-size: 0.9em; color: var(--vscode-descriptionForeground); margin-top: 0.2em; display: block; }
+
+            /* Keyword Editor Styles */
+            .keywords-section { display: flex; gap: 1.5em; flex-wrap: wrap; }
+            .keyword-list { display: flex; flex-direction: column; gap: 0.5em; }
+            .keyword-list h5 { margin: 0 0 0.5em 0; border-bottom: 1px solid var(--vscode-settings-headerBorder); padding-bottom: 0.2em; }
+            .keyword-item { display: flex; align-items: center; gap: 0.3em; }
+            .keyword-item input { flex-grow: 1; }
+            .keyword-item .ontology-delete-button { position: static; font-size: 1em; padding: 2px; }
+            .ontology-add-button.small { font-size: 0.9em; padding: 2px 6px; margin-top: 0.5em; }
         `;
     }
 

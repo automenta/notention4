@@ -5,7 +5,7 @@
 "use strict";
 
 import { Editor } from '@tiptap/core';
-import { Plugin as TiptapPlugin, PluginKey } from '@tiptap/pm/state'; // Use ProseMirror Plugin directly for decorations
+import { Plugin as ProseMirrorPlugin, PluginKey } from '@tiptap/pm/state'; // Use ProseMirror Plugin directly for decorations
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
 import { InlineProperty } from './InlineProperty.js'; // Import the new Node
@@ -134,7 +134,7 @@ class TiptapEditor extends AbstractEditorLibrary {
                         // Add other StarterKit options here if needed
                     }),
                     InlineProperty, // Add our custom node extension
-                    SuggestionPlugin(this._dispatch), // Add the new SuggestionPlugin
+                    SuggestionPlugin(this._dispatch), // Add the new SuggestionPlugin for parser UI
                     // Add more extensions like Placeholder, Link, etc.
                     ...(editorOptions.extensions || [])
                 ],
@@ -353,17 +353,26 @@ class TiptapEditor extends AbstractEditorLibrary {
 }
 
 
-// --- Suggestion Plugin (Tiptap/ProseMirror Plugin) ---
+// --- Suggestion Plugin (Tiptap/ProseMirror Plugin for Parser UI) ---
 const suggestionPluginKey = new PluginKey('suggestionPlugin');
 
+/**
+ * Creates a ProseMirror plugin to display inline suggestions from the SemanticParserPlugin.
+ * Uses Tiptap/ProseMirror Decorations (inline highlights + widgets) and Tippy.js for popovers.
+ * @param {Function} dispatch - The Redux dispatch function.
+ */
 function SuggestionPlugin(dispatch) {
-    let currentNoteId = null;
-    let currentDecorationSet = DecorationSet.empty;
-    let tippyInstances = []; // To manage popovers
+    let currentNoteId = null; // Track the note ID the editor is currently displaying
+    let currentDecorationSet = DecorationSet.empty; // Cache the current decorations
+    let tippyInstances = []; // To manage Tippy popover instances
 
-    // Function to destroy existing Tippy instances
+    // Function to destroy existing Tippy instances cleanly
     const destroyTippyInstances = () => {
-        tippyInstances.forEach(instance => instance.destroy());
+        tippyInstances.forEach(instance => {
+            if (instance && !instance.state.isDestroyed) {
+                instance.destroy();
+            }
+        });
         tippyInstances = [];
     };
 
@@ -419,10 +428,20 @@ function SuggestionPlugin(dispatch) {
     };
 
 
-    return new TiptapPlugin({
-        key: suggestionPluginKey,
+    // Create the ProseMirror Plugin
+    return new ProseMirrorPlugin({
+        key: suggestionPluginKey, // Unique key for this plugin
+        // Plugin state definition
         state: {
-            init() {
+            init(_, state) {
+                // Initialize plugin state with noteId (null initially) and empty decorations
+                // Try to get initial noteId from editor mount point if available
+                const editorMount = state.doc.attrs?.mountElement; // Assuming mount element is passed somehow or accessible
+                const initialNoteId = editorMount?.dataset?.noteId || null;
+                currentNoteId = initialNoteId;
+                return { noteId: initialNoteId, decorationSet: DecorationSet.empty };
+            },
+            apply(tr, pluginState, oldState, newState) {
                 return { noteId: null, decorationSet: DecorationSet.empty };
             },
             apply(tr, pluginState, oldState, newState) {
@@ -881,7 +900,89 @@ export const RichTextEditorPlugin = {
                         }
 
 
-                        /* ... other existing styles for toolbar, tiptap content etc. ... */
+                        /* --- Suggestion Highlight & Popover Styles --- */
+                        .suggestion-highlight {
+                            background-color: var(--suggestion-highlight-bg, rgba(255, 255, 0, 0.3)); /* Yellowish highlight */
+                            border-bottom: 1px dotted var(--suggestion-highlight-border, orange);
+                            /* Avoid changing line height */
+                        }
+                        .suggestion-action-button {
+                            display: inline-block;
+                            width: 16px; height: 16px; line-height: 16px; text-align: center;
+                            font-size: 12px;
+                            border: 1px solid var(--suggestion-button-border, #ccc);
+                            background-color: var(--suggestion-button-bg, #eee);
+                            color: var(--suggestion-button-text, #555);
+                            border-radius: 50%;
+                            margin-left: 2px;
+                            cursor: pointer;
+                            vertical-align: middle; /* Align with text */
+                            padding: 0;
+                            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+                            transition: background-color 0.2s ease;
+                        }
+                        .suggestion-action-button:hover {
+                            background-color: var(--suggestion-button-hover-bg, #ddd);
+                        }
+
+                        /* Tippy Popover Styles (using classes defined in createPopoverContent) */
+                        .tippy-box[data-theme~='light-border'] { /* Style the default Tippy box */
+                           border: 1px solid var(--border-color, #ccc);
+                           box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                           border-radius: 4px;
+                        }
+                        .suggestion-popover {
+                            padding: 8px;
+                            font-size: 0.9em;
+                            line-height: 1.4;
+                            max-width: 300px;
+                        }
+                        .suggestion-text {
+                            margin-bottom: 8px;
+                        }
+                        .suggestion-key {
+                            font-weight: bold;
+                            color: var(--accent-color, blue);
+                        }
+                        .suggestion-value {
+                            font-style: italic;
+                            color: var(--secondary-text-color, #555);
+                            /* Allow wrapping */
+                            word-break: break-word;
+                        }
+                        .suggestion-source {
+                            font-size: 0.85em;
+                            color: var(--secondary-text-color, #777);
+                            margin-left: 5px;
+                            opacity: 0.8;
+                            white-space: nowrap;
+                        }
+                        .suggestion-actions {
+                            display: flex;
+                            justify-content: flex-end;
+                            gap: 5px;
+                            margin-top: 5px;
+                            border-top: 1px solid var(--border-color, #eee);
+                            padding-top: 5px;
+                        }
+                        .suggestion-actions button {
+                            background: none;
+                            border: 1px solid transparent; /* Add border for focus */
+                            cursor: pointer;
+                            font-size: 1.3em; /* Larger icons */
+                            padding: 0 4px;
+                            border-radius: 3px;
+                            line-height: 1;
+                        }
+                        .suggestion-actions button:hover {
+                            background-color: var(--hover-background-color, #f0f0f0);
+                            border-color: var(--border-color, #ccc);
+                        }
+                        .suggestion-confirm { color: var(--success-color, green); }
+                        .suggestion-ignore { color: var(--danger-color, red); }
+
+
+                        /* --- Other existing styles --- */
                         .editor-toolbar {
                             display: flex;
                             flex-wrap: wrap;
