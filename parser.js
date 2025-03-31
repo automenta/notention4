@@ -141,75 +141,71 @@ export const SemanticParserPlugin = {
                 if (!pluginInstance.propertiesAPI || !pluginInstance.coreAPI) {
                     console.error("Parser Middleware: Cannot confirm suggestion, Properties API or Core API unavailable.");
                     pluginInstance.coreAPI?.showGlobalStatus("Cannot confirm suggestion: Core services missing.", "error");
-                    // Let the action proceed to reducer to update status, but don't add/insert.
-                    return next(action);
+                    return next(action); // Let reducer update status, but skip property add/insert
                 }
 
                 const editorService = pluginInstance.coreAPI.getService('EditorService');
-                if (!editorService) {
-                     console.warn("Parser Middleware: EditorService not available, cannot insert inline property node.");
-                     // Proceed with adding property but skip editor insertion
-                }
-
                 const existingProp = pluginInstance._findExistingProperty(storeApi.getState, noteId, propData.key);
-                let propertyIdToUse; // This will hold the ID (new or existing)
+                let propertyIdToUse;
 
-                if (existingProp) {
-                    // --- Update Existing Property ---
-                    propertyIdToUse = existingProp.id;
-                    storeApi.dispatch({
-                        type: 'PROPERTY_UPDATE',
-                        payload: {
-                            noteId: noteId,
-                            propertyId: propertyIdToUse,
-                            // Pass temporaryId as null/undefined since we know the real ID
-                            temporaryId: null,
-                            changes: { value: propData.value, type: propData.type }
-                        }
-                    });
-                    // Insert/replace in editor immediately after dispatching update
-                    if (editorService && location) {
+                // --- Perform Editor Insertion First (if possible) ---
+                let editorInsertionAttempted = false;
+                if (editorService && location) {
+                    if (existingProp) {
+                        propertyIdToUse = existingProp.id; // Use existing ID for update
                         editorService.replaceTextWithInlineProperty(location, {
-                            propId: propertyIdToUse, // Use the existing ID
-                            key: propData.key,
-                            value: propData.value, // Use the suggested value
-                            type: propData.type
-                        });
-                    }
-
-                } else {
-                    // --- Add New Property ---
-                    // Generate a temporary ID to link editor insertion and state update
-                    const temporaryId = pluginInstance.coreAPI.utils.generateUUID();
-                    propertyIdToUse = temporaryId; // Use temp ID for editor insertion
-
-                    // Insert/replace in editor *before* dispatching add, using the temporary ID
-                    if (editorService && location) {
-                        editorService.replaceTextWithInlineProperty(location, {
-                            propId: temporaryId, // Pass the temporary ID
+                            propId: propertyIdToUse,
                             key: propData.key,
                             value: propData.value,
                             type: propData.type
                         });
-                    } else if (location) {
-                         console.warn(`Parser Middleware: Suggestion confirmed but no EditorService or location found. Property added, but text not replaced.`);
+                        editorInsertionAttempted = true;
+                    } else {
+                        propertyIdToUse = pluginInstance.coreAPI.utils.generateUUID(); // Generate ID for new property
+                        editorService.replaceTextWithInlineProperty(location, {
+                            propId: propertyIdToUse, // Use the newly generated ID
+                            key: propData.key,
+                            value: propData.value,
+                            type: propData.type
+                        });
+                        editorInsertionAttempted = true;
                     }
+                } else if (location) {
+                    console.warn(`Parser Middleware: Suggestion confirmed but no EditorService found. Property will be added/updated, but text not replaced.`);
+                    // Ensure propertyIdToUse is set even if editor insertion fails
+                    propertyIdToUse = existingProp ? existingProp.id : pluginInstance.coreAPI.utils.generateUUID();
+                } else {
+                    console.warn(`Parser Middleware: Suggestion confirmed but no location info provided. Property will be added/updated, but cannot replace text.`);
+                    // Ensure propertyIdToUse is set even if editor insertion fails
+                    propertyIdToUse = existingProp ? existingProp.id : pluginInstance.coreAPI.utils.generateUUID();
+                }
 
-                    // Dispatch PROPERTY_ADD with the temporary ID
+                // --- Dispatch State Update (Add or Update Property) ---
+                if (existingProp) {
+                    // Dispatch PROPERTY_UPDATE using the existing ID
+                    storeApi.dispatch({
+                        type: 'PROPERTY_UPDATE',
+                        payload: {
+                            noteId: noteId,
+                            propertyId: existingProp.id, // Use the actual existing ID
+                            changes: { value: propData.value, type: propData.type }
+                        }
+                    });
+                } else {
+                    // Dispatch PROPERTY_ADD using the ID used for editor insertion (or newly generated if editor failed)
                     storeApi.dispatch({
                         type: 'PROPERTY_ADD',
                         payload: {
                             noteId: noteId,
-                            temporaryId: temporaryId, // Pass the temporary ID
+                            temporaryId: propertyIdToUse, // Pass the ID used/generated above
                             propertyData: propData // Contains key, value, type
                         }
                     });
                 }
 
-                // Let the original PARSER_CONFIRM_SUGGESTION action proceed to the reducer
+                // Let the original PARSER_CONFIRM_SUGGESTION action proceed to the parser reducer
                 // to update the suggestion's status to 'confirmed'.
-                // The reducer doesn't need to know about the editor insertion.
-                return next(action); // Pass the original action to the parser reducer
+                return next(action);
             }
 
             return result; // Return result from next(action) for other action types
