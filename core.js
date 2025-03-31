@@ -402,10 +402,26 @@ class UIRenderer {
                     </div>
                 </div>
                 <div id="modal-root">
-                    ${state.uiState.activeModal === 'settings' ? this._renderSettingsModal(state) : ''}
-                    <!-- Other modals rendered here -->
+                    ${this._renderModal(state)}
                 </div>
             </div>
+            <style>
+                .validation-error {
+                    color: var(--danger-color, red);
+                    font-size: 0.85em;
+                    margin-top: 4px;
+                    min-height: 1em; /* Reserve space */
+                }
+                .modal-content input:invalid, .modal-content select:invalid { /* Basic browser validation indication */
+                     border-color: var(--danger-color, red);
+                }
+                /* Style inputs with server-side validation errors */
+                 .modal-content input[aria-invalid="true"],
+                 .modal-content select[aria-invalid="true"] {
+                    border-color: var(--danger-color, red);
+                    outline: 1px solid var(--danger-color, red);
+                 }
+            </style>
         `;
     }
 
@@ -994,10 +1010,13 @@ class UIRenderer {
                 <ul class="modal-list">
                     ${templates.map(template => html`
                         <li class="modal-list-item">
-                            <button @click=${() => handleSelect(template)}>${template.name}</button>
+                            <button @click=${() => handleSelect(template)} title=${template.description || ''}>${template.name}</button>
                         </li>
                     `)}
                 </ul>
+                <style>
+                    .template-selector-modal .modal-list-item button { width: 100%; text-align: left; padding: 8px 12px; }
+                </style>
             </div>
         `;
     }
@@ -1012,10 +1031,56 @@ class UIRenderer {
             const form = event.target;
             const key = form.keySelect.value === '__custom__' ? form.customKey.value.trim() : form.keySelect.value;
             const value = form.value.value;
+            const temporaryId = `temp_${Utils.generateUUID()}`; // Generate temporary ID for potential error association
 
             if (key) {
-                this._stateManager.dispatch({type: onAddActionType, payload: {noteId, key, value}});
-                this._handleCloseModal();
+                // Dispatch the action, the reducer will handle validation
+                this._stateManager.dispatch({
+                    type: onAddActionType,
+                    payload: { noteId, key, value, temporaryId } // Pass temporaryId
+                });
+                // Don't close modal immediately, wait for state update to see if validation passed
+                // If validation passes, the error state for this tempId won't be set.
+                // If it fails, the error state *will* be set, and the modal should stay open showing the error.
+                // We need a way to check if the add was successful *after* dispatch. This is tricky.
+                // Option A: Close optimistically, rely on global status for error. (Simpler)
+                // Option B: Keep modal open, check error state on next render. (Better UX)
+
+                // Let's try Option B: Keep modal open, check error state in render.
+                // The modal will re-render with the error message if validation fails.
+                // If validation succeeds, the property will be added, and the modal *should* close.
+                // How to trigger close on success? Maybe the reducer clears the error *and* closes the modal? No, reducers shouldn't cause side effects.
+                // Maybe the component checks: if no error exists for tempId after dispatch, *then* close?
+
+                // Let's stick to the original plan: Dispatch, let reducer handle validation failure state.
+                // The modal render logic will show the error if it exists in the state.
+                // We need to manually close only if the dispatch *didn't* result in an error state for this tempId.
+                // This requires checking state *after* dispatch, which is awkward here.
+
+                // --- Revised Approach ---
+                // Dispatch the add action.
+                // The reducer will either add the property OR set a validation error in uiState.
+                // The modal's render function will check for the validation error associated with `temporaryId`.
+                // If an error is displayed, the user can correct and resubmit.
+                // If the property *is* successfully added (no error state set), how does the modal close?
+                // We can check in the render function: if the property now exists and there's no error, close? Seems complex.
+
+                // --- Simplest Approach (Compromise) ---
+                // Dispatch the add action. If validation fails *synchronously* within the reducer (which it does now),
+                // the error state will be set *before* this function continues. We can check it immediately after dispatch.
+                // This relies on synchronous reducer execution.
+                this._stateManager.dispatch({
+                    type: onAddActionType,
+                    payload: { noteId, key, value, temporaryId }
+                });
+
+                // Check state *immediately* after dispatch (assuming sync reducer)
+                const potentialError = this._stateManager.getState().uiState.propertyValidationErrors?.[noteId]?.[temporaryId];
+                if (!potentialError) {
+                    this._handleCloseModal(); // Close only if validation likely passed (no error set)
+                }
+                // If potentialError exists, the modal stays open, and the error will be rendered.
+
             } else {
                 coreAPI?.showGlobalStatus("Property key cannot be empty.", "warning");
             }
@@ -1049,7 +1114,10 @@ class UIRenderer {
                     </div>
                     <div class="form-field">
                         <label for="prop-value-input">Value:</label>
-                        <input type="text" id="prop-value-input" name="value" required>
+                        <input type="text" id="prop-value-input" name="value" required aria-describedby="prop-add-error">
+                        <div id="prop-add-error" class="validation-error">
+                            ${state.uiState.propertyValidationErrors?.[noteId]?.[`temp_${props.temporaryId}`] || ''}
+                        </div>
                     </div>
                     <div class="modal-actions">
                         <button type="button" @click=${this._handleCloseModal}>Cancel</button>
@@ -1100,7 +1168,7 @@ class UIRenderer {
             event.preventDefault();
             const form = event.target;
             const newKey = form.key.value.trim();
-            const newValueRaw = inputType === 'checkbox' ? form.value.checked : form.value;
+            const newValueRaw = inputType === 'checkbox' ? form.value.checked : form.value.value; // Get value from checkbox or other input
             // Normalize value based on original type before dispatching
             const newValueNormalized = coreAPI.getPluginAPI('properties')?._normalizeValue(newValueRaw, property.type) ?? newValueRaw;
 
@@ -1111,12 +1179,21 @@ class UIRenderer {
                 // TODO: Add type change possibility?
 
                 if (Object.keys(changes).length > 0) {
+                     // Dispatch update action
                     this._stateManager.dispatch({
                         type: onUpdateActionType,
                         payload: {noteId, propertyId: property.id, changes}
                     });
+
+                    // Check state *immediately* after dispatch for validation errors
+                    const potentialError = this._stateManager.getState().uiState.propertyValidationErrors?.[noteId]?.[property.id];
+                    if (!potentialError) {
+                        this._handleCloseModal(); // Close only if validation likely passed
+                    }
+                    // If potentialError exists, modal stays open, error is rendered.
+                } else {
+                    this._handleCloseModal(); // No changes, just close
                 }
-                this._handleCloseModal();
             } else {
                 coreAPI?.showGlobalStatus("Property key cannot be empty.", "warning");
             }
@@ -1142,6 +1219,9 @@ class UIRenderer {
                     <div class="form-field">
                         <label for="prop-edit-value">Value (Type: ${property.type}):</label>
                         ${renderInput()}
+                         <div id="prop-edit-error-${property.id}" class="validation-error">
+                            ${state.uiState.propertyValidationErrors?.[noteId]?.[property.id] || ''}
+                        </div>
                     </div>
                     <!-- TODO: Add Type selector? -->
                     <div class="modal-actions">
@@ -1418,19 +1498,25 @@ class CoreAPI {
     // --- UI ---
     // Plugins register slots via definition, not API.
     // Ephemeral components might be better handled via dedicated state/actions.
-    showGlobalStatus = (message, type = 'info', duration = 5000) => {
+    showGlobalStatus = (message, type = 'info', duration = 5000, id = null) => {
         // Dispatch action to update state
-        this.dispatch({type: 'CORE_SET_GLOBAL_STATUS', payload: {message, type, duration}});
+        this.dispatch({type: 'CORE_SET_GLOBAL_STATUS', payload: {message, type, duration, id}});
         // Schedule clearing via timeout -> dispatching another action
         // This avoids side effects directly in the API method or reducer.
         if (duration > 0 && duration !== Infinity) {
             setTimeout(() => {
                 // Check if the message is still the same before clearing
                 const currentState = this.getState();
-                if (currentState.uiState.globalStatus?.message === message && currentState.uiState.globalStatus?.type === type)
-                    this.dispatch({type: 'CORE_CLEAR_GLOBAL_STATUS'});
+                const currentStatus = id ? currentState.uiState.globalStatusMessages?.[id] : currentState.uiState.globalStatus; // Check specific or general
+                if (currentStatus?.message === message && currentStatus?.type === type) {
+                    this.dispatch({type: 'CORE_CLEAR_GLOBAL_STATUS', payload: {id}}); // Pass ID to clear specific message
+                }
             }, duration);
         }
+    };
+
+    clearGlobalStatus = (id = null) => {
+        this.dispatch({type: 'CORE_CLEAR_GLOBAL_STATUS', payload: {id}});
     };
 
     // --- Services & Plugins ---
@@ -1452,13 +1538,15 @@ const initialAppState = {
         searchTerm: '',
         noteListSortMode: 'time',
         activeModal: null, // Keep for compatibility? No, remove.
-        modalType: null,
-        modalProps: null,
-        globalStatus: null,
+        modalType: null, // e.g., 'settings', 'propertyEdit'
+        modalProps: null, // Props for the current modal
+        globalStatus: null, // { message, type, duration, id? } - For single status message
+        globalStatusMessages: {}, // { [id]: { message, type, duration } } - For multiple persistent messages
+        propertyValidationErrors: {}, // { [noteId]: { [propertyId]: errorMessage } } - Transient validation errors
         // noteListSortMode: 'time', // Default sort mode <-- Removed duplicate
     },
-    pluginRuntimeState: {},
-    runtimeCache: {},
+    pluginRuntimeState: {}, // State managed *by* plugins, persisted if needed by plugin reducer
+    runtimeCache: {}, // Non-persistent cache for runtime data
 };
 
 const coreReducer = (draft, action) => {
@@ -1605,7 +1693,10 @@ const coreReducer = (draft, action) => {
             break;
         }
         case 'CORE_CLOSE_MODAL': {
-            draft.uiState.activeModal = null;
+            draft.uiState.modalType = null;
+            draft.uiState.modalProps = null;
+            // Clear validation errors when any modal closes
+            draft.uiState.propertyValidationErrors = {};
             break;
         }
 
@@ -1622,12 +1713,26 @@ const coreReducer = (draft, action) => {
         // CORE_SET_PLUGIN_SETTING is REMOVED by Enhancement #0
 
         case 'CORE_SET_GLOBAL_STATUS': {
-            const {message, type = 'info', duration = 5000} = action.payload;
-            draft.uiState.globalStatus = {message, type, duration};
+            const {message, type = 'info', duration = 5000, id = null} = action.payload;
+            const statusPayload = {message, type, duration};
+            if (id) {
+                if (!draft.uiState.globalStatusMessages) draft.uiState.globalStatusMessages = {};
+                draft.uiState.globalStatusMessages[id] = statusPayload;
+                // Optionally clear the main status if setting a specific one? Or let them coexist? Let them coexist for now.
+            } else {
+                draft.uiState.globalStatus = statusPayload;
+            }
             break;
         }
         case 'CORE_CLEAR_GLOBAL_STATUS': {
-            draft.uiState.globalStatus = null;
+            const {id = null} = action.payload || {}; // Handle payload possibly being undefined
+            if (id) {
+                if (draft.uiState.globalStatusMessages) {
+                    delete draft.uiState.globalStatusMessages[id];
+                }
+            } else {
+                draft.uiState.globalStatus = null;
+            }
             break;
         }
 
@@ -1650,6 +1755,25 @@ const coreReducer = (draft, action) => {
                 type: 'warning',
                 duration: 0
             };
+            // Clear validation error for the specific property on successful update
+            if (draft.uiState.propertyValidationErrors?.[noteId]?.[propertyId]) {
+                delete draft.uiState.propertyValidationErrors[noteId][propertyId];
+                if (Object.keys(draft.uiState.propertyValidationErrors[noteId]).length === 0) {
+                    delete draft.uiState.propertyValidationErrors[noteId];
+                }
+            }
+            break;
+        }
+
+        // --- Property Validation Failure ---
+        case 'PROPERTY_VALIDATION_FAILURE': {
+            const { noteId, propertyId, temporaryId, errorMessage } = action.payload;
+            const idToUse = propertyId || temporaryId; // Use real ID if available, else temporary
+            if (!idToUse) break; // Need an ID to associate the error
+
+            if (!draft.uiState.propertyValidationErrors) draft.uiState.propertyValidationErrors = {};
+            if (!draft.uiState.propertyValidationErrors[noteId]) draft.uiState.propertyValidationErrors[noteId] = {};
+            draft.uiState.propertyValidationErrors[noteId][idToUse] = errorMessage;
             break;
         }
 

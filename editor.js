@@ -808,9 +808,12 @@ export const RichTextEditorPlugin = {
                                 editorOptions: {},
                                 // Pass services needed by NodeViews
                                 dispatch: dispatch,
-                                ontologyService: this.coreAPI.getService('OntologyService')
+                                ontologyService: this.coreAPI.getService('OntologyService'),
+                                coreAPI: this.coreAPI // Pass the core API instance itself
                             });
                             this._currentNoteId = noteId;
+                            // Set data-note-id on the mount point for NodeViews to find
+                            mountPoint.dataset.noteId = noteId;
                             this._updateToolbarUI();
                         } catch (error) {
                             console.error(`${this.name}: Failed to initialize Tiptap editor:`, error);
@@ -825,8 +828,13 @@ export const RichTextEditorPlugin = {
                         if (noteChanged) {
                             this._editorInstance.setContent(note.content || '');
                             this._currentNoteId = noteId;
+                            mountPoint.dataset.noteId = noteId; // Update data-note-id
                             this._updateToolbarUI();
                         } else if (note) {
+                            // Ensure data-note-id is set even if note didn't change (e.g., on initial load)
+                            if (mountPoint.dataset.noteId !== noteId) {
+                                mountPoint.dataset.noteId = noteId;
+                            }
                             const externalContentChanged = note.content !== this._editorInstance.getContent();
                             if (externalContentChanged && !editorHasFocus) {
                                 this._editorInstance.setContent(note.content || '');
@@ -837,12 +845,14 @@ export const RichTextEditorPlugin = {
                             this._destroyEditor();
                             this._currentNoteId = null;
                             mountPoint.innerHTML = ''; // Clear mount point
+                            delete mountPoint.dataset.noteId; // Clear data-note-id
                         }
                     } else if (!note && !this._editorInstance) {
                         // Clear mount point if no note and no editor instance
                         if (!mountPoint.hasChildNodes() || mountPoint.textContent?.trim()) {
                             mountPoint.innerHTML = ''; // Clear previous content like "Select note"
                         }
+                         delete mountPoint.dataset.noteId; // Clear data-note-id
                         this._updateToolbarUI(); // Ensure toolbar is cleared/updated
                     }
                 }); // End of requestAnimationFrame

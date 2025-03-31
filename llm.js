@@ -140,7 +140,7 @@ export const LLMPlugin = {
             );
         } else {
             // Clear the specific warning if the model name is now configured
-            this._coreAPI.clearGlobalStatus(`${this.id}-config-modelName`);
+            this._coreAPI.clearGlobalStatus(`${this.id}-config-modelName`); // Use the new method
         }
 
         // Check for API Key if using a non-local endpoint

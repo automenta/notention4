@@ -84,10 +84,26 @@ export const PropertiesPlugin = {
                     const validationResult = this._validateValue(key, normalizedValue, type);
                     if (!validationResult.isValid) {
                         console.warn(`PropertiesPlugin: PROPERTY_ADD - Validation failed for key '${key}' with value '${normalizedValue}': ${validationResult.message}`);
-                        coreAPI.showGlobalStatus(`Invalid value for '${key}': ${validationResult.message}`, "warning", 5000);
-                        break; // Stop processing this action
+                        // Dispatch validation failure action instead of stopping
+                        dispatch({
+                            type: 'PROPERTY_VALIDATION_FAILURE',
+                            payload: {
+                                noteId: noteId,
+                                temporaryId: action.payload.temporaryId, // Pass temporary ID
+                                errorMessage: validationResult.message
+                            }
+                        });
+                        break; // Stop processing *this* action, let validation failure action handle UI
                     }
                     // --- End Validation ---
+
+                    // Clear any previous validation error for this temporary ID if validation now passes
+                    if (draft.uiState.propertyValidationErrors?.[noteId]?.[action.payload.temporaryId]) {
+                         delete draft.uiState.propertyValidationErrors[noteId][action.payload.temporaryId];
+                         if (Object.keys(draft.uiState.propertyValidationErrors[noteId]).length === 0) {
+                             delete draft.uiState.propertyValidationErrors[noteId];
+                         }
+                    }
 
                     // Use temporaryId from payload if provided (by parser confirmation), otherwise generate new
                     // Ensure temporaryId is treated as the definitive ID if passed.
@@ -150,27 +166,46 @@ export const PropertiesPlugin = {
                     if (hasChanged) { // Only validate if key, value, or type was part of the change request
                         // Use the potentially new value for validation
                         validatedValue = changes.hasOwnProperty('value') ? valueToValidate : updatedProp.value;
+                        // Use the potentially new value for validation
+                        validatedValue = changes.hasOwnProperty('value') ? valueToValidate : updatedProp.value;
                         const validationResult = this._validateValue(updatedProp.key, validatedValue, finalType);
 
                         if (!validationResult.isValid) {
                             console.warn(`PropertiesPlugin: PROPERTY_UPDATE - Validation failed for key '${updatedProp.key}' with value '${validatedValue}': ${validationResult.message}`);
-                            coreAPI.showGlobalStatus(`Invalid value for '${updatedProp.key}': ${validationResult.message}`, "warning", 5000);
+                            // Dispatch validation failure action
+                            dispatch({
+                                type: 'PROPERTY_VALIDATION_FAILURE',
+                                payload: {
+                                    noteId: noteId,
+                                    propertyId: propertyId,
+                                    errorMessage: validationResult.message
+                                }
+                            });
                             // Do NOT proceed with the update
                             break; // Stop processing this action
                         }
-                        // Validation passed. If the value was the field being changed, ensure we use the validated (normalized) version.
+                        // --- End Validation ---
+
+                        // Validation passed. Clear any existing validation error for this property.
+                        if (draft.uiState.propertyValidationErrors?.[noteId]?.[propertyId]) {
+                            delete draft.uiState.propertyValidationErrors[noteId][propertyId];
+                            if (Object.keys(draft.uiState.propertyValidationErrors[noteId]).length === 0) {
+                                delete draft.uiState.propertyValidationErrors[noteId];
+                            }
+                        }
+
+                        // If the value was the field being changed, ensure we use the validated (normalized) version.
                         if (changes.hasOwnProperty('value')) {
-                             updatedProp.value = validatedValue; // Assign the validated, normalized value
+                            updatedProp.value = validatedValue; // Assign the validated, normalized value
                         } else {
-                             // If only key or type changed, value remains the same (but was validated against new key/type)
-                             updatedProp.value = validatedValue;
+                            // If only key or type changed, value remains the same (but was validated against new key/type)
+                            // No need to reassign updatedProp.value if it wasn't in changes
                         }
 
                         // Apply other changes (key, type) if they were part of the request
                         if (changes.hasOwnProperty('key')) updatedProp.key = changes.key.trim();
                         if (changes.hasOwnProperty('type')) updatedProp.type = finalType;
 
-                        // --- End Validation ---
 
                         // Update timestamp and replace object in array
                         updatedProp.updatedAt = Date.now();
