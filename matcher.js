@@ -815,7 +815,7 @@ export const MatcherPlugin = {
             this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_FAILURE', payload: { noteId: note.id } });
             return null;
         }
-    },
+    }, // Added comma
 
     /**
      * Calculates the cosine similarity between two vectors.
@@ -849,7 +849,7 @@ export const MatcherPlugin = {
 
         const similarity = dotProduct / (magA * magB);
         return isNaN(similarity) ? 0 : similarity; // Handle potential NaN if magnitudes somehow become invalid
-    },
+    }, // Added comma
 
     /**
      * Compares two date strings and returns a score based on proximity.
@@ -875,7 +875,7 @@ export const MatcherPlugin = {
             console.warn("MatcherPlugin: Error comparing dates", dateStrA, dateStrB, e);
             return 0; // Error during parsing/comparison
         }
-    },
+    }, // Added comma
 
     /**
      * Compares two lists (arrays or comma-separated strings) using Jaccard index.
@@ -889,7 +889,7 @@ export const MatcherPlugin = {
         const setB = new Set(Array.isArray(listB) ? listB : String(listB).split(',').map(s => s.trim()).filter(s => s));
 
         return this._jaccardIndex(setA, setB);
-    },
+    }, // Added comma
 
     /**
      * Calculates the Jaccard index (intersection over union) for two sets.
