@@ -31,6 +31,7 @@ export const SemanticParserPlugin = {
     propertiesAPI: null, // API provided by PropertiesPlugin
     llmService: null, // Optional
     editorService: null, // Optional
+    _ontologyUpdateSubscription: null, // Store subscription handle
 
     // --- Plugin Lifecycle Methods ---
 
@@ -60,11 +61,35 @@ export const SemanticParserPlugin = {
         console.log(`ParserPlugin: Initialized. LLM support: ${this.llmService ? 'Enabled' : 'Disabled'}, Editor Integration: ${this.editorService ? 'Enabled' : 'Disabled'}`);
 
         // Subscribe to ontology changes to potentially re-parse
-        this.coreAPI.subscribeToEvent('ONTOLOGY_LOADED', this._handleOntologyUpdate.bind(this));
-        this.coreAPI.subscribeToEvent('ONTOLOGY_UNLOADED', this._handleOntologyUpdate.bind(this));
+        // Store the unsubscribe function returned by subscribeToEvent
+        const handler = this._handleOntologyUpdate.bind(this);
+        const unsubscribeLoad = this.coreAPI.subscribeToEvent('ONTOLOGY_LOADED', handler);
+        const unsubscribeUnload = this.coreAPI.subscribeToEvent('ONTOLOGY_UNLOADED', handler);
+        // Combine unsubscribe functions
+        this._ontologyUpdateSubscription = () => {
+            unsubscribeLoad();
+            unsubscribeUnload();
+        };
     },
 
     // No onActivate needed for this structure, init handles dependencies.
+
+    onDeactivate() {
+        console.log("SemanticParserPlugin: Deactivating.");
+        // Cancel any pending debounced parse operations
+        this._debouncedParse?.cancel();
+        // Unsubscribe from ontology events
+        if (this._ontologyUpdateSubscription) {
+            this._ontologyUpdateSubscription();
+            this._ontologyUpdateSubscription = null;
+        }
+        // Release references
+        this.coreAPI = null;
+        this.ontologyService = null;
+        this.propertiesAPI = null;
+        this.llmService = null;
+        this.editorService = null;
+    },
 
     // --- Middleware for Triggering Parsing ---
 
@@ -111,13 +136,30 @@ export const SemanticParserPlugin = {
             // This allows adding the property *and* updating suggestion state atomically
             if (action.type === 'PARSER_CONFIRM_SUGGESTION') {
                 const {noteId, suggestion} = action.payload;
-                const existingProp = pluginInstance._findExistingProperty(storeApi.getState, noteId, suggestion.property.key);
+                // Ensure propertiesAPI is available before trying to find existing property
+                if (!pluginInstance.propertiesAPI) {
+                     console.error("Parser Middleware: Cannot confirm suggestion, Properties Plugin API unavailable.");
+                     pluginInstance.coreAPI?.showGlobalStatus("Cannot confirm suggestion: Properties API missing.", "error");
+                     // Optionally prevent the action from proceeding further?
+                     // For now, let it go to the reducer which might handle the status update anyway.
+                } else {
+                    const existingProp = pluginInstance._findExistingProperty(storeApi.getState, noteId, suggestion.property.key);
 
-                if (existingProp) {
-                    // Dispatch PROPERTY_UPDATE if key already exists
-                    storeApi.dispatch({
-                        type: 'PROPERTY_UPDATE',
-                        payload: {
+                    if (existingProp) {
+                        // Dispatch PROPERTY_UPDATE if key already exists
+                        storeApi.dispatch({
+                            type: 'PROPERTY_UPDATE',
+                            payload: {
+                                noteId: noteId,
+                                propertyId: existingProp.id,
+                                changes: {value: suggestion.property.value, type: suggestion.property.type} // Update value and type
+                            }
+                        });
+                    } else {
+                        // Dispatch PROPERTY_ADD if key is new
+                        storeApi.dispatch({
+                            type: 'PROPERTY_ADD',
+                            payload: {
                             noteId: noteId,
                             propertyId: existingProp.id,
                             changes: {value: suggestion.property.value, type: suggestion.property.type} // Update value and type
@@ -131,12 +173,14 @@ export const SemanticParserPlugin = {
                             noteId: noteId,
                             propertyData: suggestion.property // Contains key, value, type
                         }
-                    });
+                                propertyData: suggestion.property // Contains key, value, type
+                            }
+                        });
+                    }
+                    // Update the suggestion status *in the reducer* via the original action.
+                    // The reducer for PARSER_CONFIRM_SUGGESTION will handle this part.
                 }
-                // Update the suggestion status *in the reducer* via the original action.
-                // The reducer for PARSER_CONFIRM_SUGGESTION will handle this.
             }
-
 
             return result; // Return result from next(action)
         };
@@ -283,21 +327,30 @@ export const SemanticParserPlugin = {
     /**
      * Immediately triggers the parsing process.
      */
-    _triggerParse(noteId, content) {
-        if (!this.ontologyService) return; // Don't parse if ontology isn't ready
+    async _triggerParse(noteId, content) {
+        // Ensure core services needed for *any* parsing are available
+        if (!this.coreAPI || !this.ontologyService) {
+            console.warn("Parser: Cannot trigger parse, CoreAPI or OntologyService unavailable.");
+            return;
+        }
 
-        // console.log(`Parser: Triggering parse for note ${noteId}`);
-        // Choose parsing strategy: LLM if available and enabled, otherwise heuristic
-        const parseFn = this.llmService ? this._parseWithLLM.bind(this) : this._parseWithHeuristics.bind(this);
+        // Determine parsing strategy
+        const useLLM = !!this.llmService; // Check if LLM service is available
+        const parseFn = useLLM ? this._parseWithLLM.bind(this) : this._parseWithHeuristics.bind(this);
+        const source = useLLM ? 'LLM' : 'Heuristic';
 
-        parseFn(content, noteId)
-            .then(suggestions => this._processSuggestions(noteId, suggestions))
-            .catch(err => {
-                console.error("Parser: Error during parsing", {noteId, error: err});
-                this.coreAPI.showGlobalStatus("Error parsing note content.", "error");
-                // Clear suggestions on error?
-                this.coreAPI.dispatch({type: 'PARSER_CLEAR_SUGGESTIONS', payload: {noteId}});
-            });
+        console.log(`Parser: Triggering ${source} parse for note ${noteId}`);
+
+        try {
+            const suggestions = await parseFn(content, noteId);
+            this._processSuggestions(noteId, suggestions);
+        } catch (err) {
+            // Catch errors from either parse function or _processSuggestions
+            console.error(`Parser: Error during ${source} parsing or processing for note ${noteId}`, err);
+            this.coreAPI.showGlobalStatus(`Error parsing note content (${source}): ${err.message}`, "error", 8000);
+            // Clear suggestions on error to avoid showing stale/incorrect data
+            this.coreAPI.dispatch({type: 'PARSER_CLEAR_SUGGESTIONS', payload: {noteId}});
+        }
     },
 
     /**
@@ -333,7 +386,11 @@ export const SemanticParserPlugin = {
      */
     async _parseWithHeuristics(content, noteId) {
         // console.log(`Parser: Running heuristic parsing for note ${noteId}`);
-        if (!content || !this.ontologyService) return [];
+        // Check required services again within the function
+        if (!content || !this.ontologyService || !this.coreAPI) {
+             console.warn("Parser: Heuristic parsing skipped, content or OntologyService/CoreAPI missing.");
+             return [];
+        }
 
         const suggestions = [];
         const lines = content.split('\n');
@@ -480,11 +537,16 @@ export const SemanticParserPlugin = {
      * @private
      */
     async _parseWithLLM(content, noteId) {
-        console.log(`Parser: Running LLM parsing for note ${noteId}`);
-        if (!content || !this.llmService || !this.ontologyService) return [];
+        // console.log(`Parser: Running LLM parsing for note ${noteId}`);
+        // Check required services again within the function
+        if (!content || !this.llMService || !this.ontologyService || !this.coreAPI) {
+             console.warn("Parser: LLM parsing skipped, content or LLMService/OntologyService/CoreAPI missing.");
+             this.coreAPI?.showGlobalStatus("Cannot parse with AI: Services missing.", "warning");
+             return [];
+        }
 
         // --- Construct Prompt ---
-        const ontologyData = this.ontologyService.getRawData();
+        const ontologyData = this.ontologyService.getRawData(); // Assuming this doesn't throw
         let ontologyContext = "Ontology Context:\n";
         ontologyContext += "Defined Properties (Key: Type - Description):\n";
         if (ontologyData?.properties) {
@@ -536,13 +598,19 @@ JSON Output:
 
         try {
             this.coreAPI.showGlobalStatus("Parsing with AI...", "info", 3000); // Show temp status
-            let response = await this.llmService.prompt(prompt);
-            this.coreAPI.showGlobalStatus("AI Parsing complete.", "success", 1500);
+
+            // Call LLM Service - this might throw errors (e.g., config, network)
+            let responsePayload = await this.llMService.prompt(prompt); // Use correct service name
 
             // --- Parse LLM Response ---
-            if (!response) throw new Error("LLM response was empty.");
+            if (!responsePayload?.choices?.[0]?.message?.content) {
+                 // Handle cases where the response structure is unexpected or content is missing
+                 console.warn("Parser: LLM response structure invalid or content missing.", responsePayload);
+                 throw new Error("LLM response was empty or malformed.");
+            }
+            this.coreAPI.showGlobalStatus("AI Parsing complete.", "success", 1500); // Update status only on success
 
-            response = response.choices[0].message.content;
+            let response = responsePayload.choices[0].message.content;
 
             // Attempt to extract JSON from the response (might be wrapped in markdown etc.)
             const jsonMatch = response.match(/```(?:json)?\s*([\s\S]*?)\s*```|(\[.*\]|\{.*\})/);
@@ -552,17 +620,23 @@ JSON Output:
                 try {
                     parsedJson = JSON.parse(jsonString);
                 } catch (jsonError) {
-                    console.error("Parser: Failed to parse JSON extracted from LLM response.", {jsonString, jsonError});
-                    throw new Error("LLM response contained invalid JSON.");
+                    console.error("Parser: Failed to parse JSON extracted from LLM response.", { jsonString, jsonError });
+                    throw new Error(`LLM response contained invalid JSON: ${jsonError.message}`);
                 }
             } else {
-                // Try parsing the whole response as JSON as a fallback
-                try {
-                    parsedJson = JSON.parse(response);
-                } catch (jsonError) {
-                    console.error("Parser: Failed to parse entire LLM response as JSON.", {response, jsonError});
-                    throw new Error("LLM response was not valid JSON or wrapped JSON.");
-                }
+                 // Try parsing the whole response as JSON as a fallback ONLY if it looks like JSON
+                 const trimmedResponse = response.trim();
+                 if (trimmedResponse.startsWith('[') && trimmedResponse.endsWith(']') || trimmedResponse.startsWith('{') && trimmedResponse.endsWith('}')) {
+                    try {
+                        parsedJson = JSON.parse(trimmedResponse);
+                    } catch (jsonError) {
+                        console.error("Parser: Failed to parse entire LLM response as JSON, even though it looked like JSON.", {response: trimmedResponse, jsonError});
+                        throw new Error(`LLM response was not valid JSON: ${jsonError.message}`);
+                    }
+                 } else {
+                    console.error("Parser: LLM response did not contain a recognizable JSON block or structure.", {response: trimmedResponse});
+                    throw new Error("LLM response did not contain valid JSON output.");
+                 }
             }
 
 
@@ -592,13 +666,18 @@ JSON Output:
                 });
 
             console.log(`Parser: LLM found ${suggestions.length} potential suggestions.`);
-            return suggestions;
+            // Filter out suggestions without location before returning
+            const locatedSuggestions = suggestions.filter(s => s.location);
+            console.log(`Parser: LLM found ${locatedSuggestions.length} potential suggestions with location info (required).`);
+            return locatedSuggestions;
 
         } catch (error) {
+            // Catch errors from LLM call or JSON parsing
             console.error("Parser: Error during LLM parsing or processing.", error);
-            this.coreAPI.showGlobalStatus(`AI Parsing Error: ${error.message}`, "error", 5000);
-            // Fallback or return empty? Returning empty for now.
-            return [];
+            // Show specific error message from the caught error
+            this.coreAPI.showGlobalStatus(`AI Parsing Error: ${error.message}`, "error", 8000);
+            // Re-throw the error so _triggerParse can catch it and clear suggestions
+            throw error;
         }
     },
 
@@ -610,12 +689,17 @@ JSON Output:
      * @private
      */
     _handleOntologyUpdate() {
+        if (!this.coreAPI) return; // Check if coreAPI is still available
         console.log("ParserPlugin: Ontology updated, re-parsing selected note.");
         const selectedNote = this.coreAPI.getSelectedNote();
         if (selectedNote) {
             // Clear existing suggestions for the note before re-parsing
             this.coreAPI.dispatch({type: 'PARSER_CLEAR_SUGGESTIONS', payload: {noteId: selectedNote.id}});
-            this._triggerParse(selectedNote.id, selectedNote.content);
+            // Use the async triggerParse
+            this._triggerParse(selectedNote.id, selectedNote.content).catch(err => {
+                 console.error("ParserPlugin: Error during re-parse after ontology update.", err);
+                 // Status message shown by _triggerParse's catch block
+            });
         }
     },
 
@@ -628,13 +712,23 @@ JSON Output:
      * @private
      */
     _findExistingProperty(getState, noteId, key) {
-        if (!this.propertiesAPI) return null;
+        // Check service availability again, although middleware should have checked too
+        if (!this.propertiesAPI) {
+             console.warn("ParserPlugin._findExistingProperty: Properties API unavailable.");
+             return null;
+        }
         try {
             // We need the *current* properties, get them via the API which reads from state
             const currentProperties = this.propertiesAPI.getPropertiesForNote(noteId);
-            return currentProperties.find(prop => prop.key.toLowerCase() === key.toLowerCase()) || null;
+            // Ensure currentProperties is an array before calling find
+            if (!Array.isArray(currentProperties)) {
+                 console.warn(`ParserPlugin._findExistingProperty: propertiesAPI.getPropertiesForNote did not return an array for note ${noteId}.`);
+                 return null;
+            }
+            return currentProperties.find(prop => prop && prop.key && prop.key.toLowerCase() === key.toLowerCase()) || null;
         } catch (e) {
-            console.error("ParserPlugin: Error accessing properties API", e);
+            console.error("ParserPlugin: Error calling propertiesAPI.getPropertiesForNote", { noteId, key, error: e });
+            this.coreAPI?.showGlobalStatus("Error checking existing properties.", "error");
             return null;
         }
     }

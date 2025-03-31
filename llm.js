@@ -30,7 +30,8 @@ export const LLMPlugin = {
     _langchain: null,
     _uiSaveStatus: 'idle',
     _saveStatusTimeout: null,
-    _debouncedSaveFunctions: {},
+    _debouncedSaveFunctions: {}, // Cache for debounced save functions per key
+    _statusMessageTimeout: null, // Timeout ID for clearing status messages
 
     init(coreAPI) {
         this._coreAPI = coreAPI;
@@ -200,13 +201,14 @@ export const LLMPlugin = {
         } catch (error) {
             console.error("LLMPlugin: Error instantiating LangChain Chat Model:", error);
             this._coreAPI.showGlobalStatus(`LLM Init Error: ${error.message}`, "error", 5000);
-            throw new Error(`Failed to initialize LLM: ${error.message}`);
+            throw new Error(`Failed to initialize LLM Chat Model: ${error.message}`);
         }
     },
 
     _getEmbeddingsInstance(callOptions = {}) {
-        const modelName = callOptions.model || this._config.embeddingModelName || "text-embedding-ada-002";
-        const apiKey = this._config.apiKey;
+        // Use specific embedding config keys if they exist, otherwise fallback to main LLM config
+        const modelName = callOptions.model || this._config.embeddingModelName || "text-embedding-ada-002"; // Default to OpenAI's ada-002 if not specified
+        const apiKey = this._config.embeddingApiKey || this._config.apiKey;
         const baseURL = this._config.embeddingEndpointUrl || this._config.endpointUrl;
 
         const embeddingsConfig = {
@@ -226,14 +228,35 @@ export const LLMPlugin = {
         } catch (error) {
             console.error("LLMPlugin: Error instantiating LangChain Embeddings Model:", error);
             this._coreAPI.showGlobalStatus(`Embeddings Init Error: ${error.message}`, "error", 5000);
-            throw new Error(`Failed to initialize Embeddings: ${error.message}`);
+            throw new Error(`Failed to initialize Embeddings Model: ${error.message}`);
         }
     },
 
+    // --- Lifecycle Hooks ---
+    onDeactivate() {
+        console.log("LLMPlugin: Deactivating.");
+        if (this._unsubscribe) {
+            this._unsubscribe();
+            this._unsubscribe = null;
+        }
+        // Clear any pending timeouts
+        clearTimeout(this._saveStatusTimeout);
+        clearTimeout(this._statusMessageTimeout); // Clear status message timeouts too
+        // Clear debounced functions to avoid memory leaks
+        for (const key in this._debouncedSaveFunctions) {
+            if (this._debouncedSaveFunctions[key]?.cancel) { // Check if debounce lib provides cancel
+                this._debouncedSaveFunctions[key].cancel();
+            }
+        }
+        this._debouncedSaveFunctions = {};
+        this._coreAPI = null; // Release reference to core API
+        this._langchain = null; // Release langchain instance if stored
+    },
 
     // --- Services Provided ---
     providesServices() {
-        // (Keep existing implementation including getCurrentConfig)
+        // Ensure 'this' context is correct within service methods
+        const pluginInstance = this;
         return {
             'LLMService': {
                 getCurrentConfig: () => {
@@ -241,29 +264,35 @@ export const LLMPlugin = {
                 },
 
                 /** wrapper for callLLM */
+                /** wrapper for callLLM */
                 prompt: async (prompt, options = {}) => {
+                    if (!pluginInstance._coreAPI) throw new Error("LLMPlugin CoreAPI not available.");
                     const messages = [{role: 'user', content: prompt}];
-                    return this._coreAPI.getService("LLMService").callLLM(messages, options);
+                    // Use pluginInstance to access callLLM correctly
+                    return pluginInstance.providesServices().LLMService.callLLM(messages, options);
                 },
 
                 callLLM: async (messages, options = {}) => {
-                    const stream = options.stream || false;
-                    const modelName = options.model || this._config.modelName;
+                    if (!pluginInstance._coreAPI) throw new Error("LLMPlugin CoreAPI not available.");
 
-                    // THIS IS THE CRITICAL CHECK THAT parser.js is hitting
+                    const stream = options.stream || false;
+                    const modelName = options.model || pluginInstance._config.modelName;
+
+                    // Critical check: Ensure model name is configured *before* trying to get instance
                     if (!modelName) {
-                        // Keep the error throwing, but parser.js should ideally check first
-                        this._coreAPI.showGlobalStatus("LLM Error: Model not configured", "error", 4000);
-                        console.error("LLMPlugin: callLLM attempted without a configured model name.");
-                        throw new Error("LLM model name is not configured.");
+                        const errorMsg = "LLM Error: Model Name is not configured. Please set it in the LLM Plugin settings.";
+                        pluginInstance._coreAPI.showGlobalStatus(errorMsg, "error", 10000);
+                        console.error("LLMPlugin: callLLM failed - " + errorMsg);
+                        throw new Error(errorMsg); // Throw to stop execution
                     }
 
                     console.log(`LLMPlugin: Calling LLM. Model: ${modelName}, Stream: ${stream}`);
-                    this._coreAPI.showGlobalStatus(`LLM: Calling ${modelName}...`, "info", 3000);
+                    pluginInstance._coreAPI.showGlobalStatus(`LLM: Calling ${modelName}...`, "info", 3000); // Short status update
 
-                    // ... (rest of callLLM implementation is likely fine) ...
                     try {
-                        const chatModel = this._getChatModelInstance({...options, stream}); // Pass options down
+                        // Get model instance *after* checking config
+                        const chatModel = pluginInstance._getChatModelInstance({...options, stream}); // Pass options down
+
                         const langchainMessages = messages.map(msg => {
                             switch (msg.role?.toLowerCase()) {
                                 case 'user':
@@ -290,22 +319,25 @@ export const LLMPlugin = {
                                         yield chunk;
                                     }
                                     console.log("LLMPlugin: Stream finished successfully.");
-                                    self._coreAPI.showGlobalStatus(`LLM: ${modelName} stream complete.`, "success", 2000);
+                                    // Use pluginInstance here
+                                    pluginInstance._coreAPI.showGlobalStatus(`LLM: ${modelName} stream complete.`, "success", 2000);
                                 } catch (error) {
                                     console.error("LLMPlugin: Error during LangChain stream.", error);
-                                    self._coreAPI.showGlobalStatus(`LLM Stream Error: ${error.message}`, "error", 8000);
-                                    throw error;
+                                    // Use pluginInstance here
+                                    pluginInstance._coreAPI.showGlobalStatus(`LLM Stream Error: ${error.message}`, "error", 8000);
+                                    throw error; // Re-throw to signal failure
                                 }
                             }
 
                             return feedbackStreamWrapper();
                         } else {
                             const responseMessage = await chatModel.invoke(langchainMessages);
-                            console.log("LLMPlugin: Received LangChain response.", responseMessage);
-                            this._coreAPI.showGlobalStatus(`LLM: ${modelName} call complete.`, "success", 2000);
+                            console.log("LLMPlugin: Received LangChain response."); // Avoid logging potentially large response content by default
+                            // Use pluginInstance here
+                            pluginInstance._coreAPI.showGlobalStatus(`LLM: ${modelName} call complete.`, "success", 2000);
                             return {
                                 choices: [{
-                                    message: {role: 'assistant', content: responseMessage?.content ?? ''},
+                                    message: { role: 'assistant', content: responseMessage?.content ?? '' },
                                     finish_reason: responseMessage?.response_metadata?.finishReason || responseMessage?.finishReason || 'stop',
                                 }],
                                 usage: responseMessage?.usageMetadata || undefined,
@@ -313,98 +345,105 @@ export const LLMPlugin = {
                         }
                     } catch (error) {
                         console.error("LLMPlugin: Error during LangChain call.", error);
-                        // Avoid duplicating the "model name not configured" message if caught here again
-                        if (error.message !== "LLM model name is not configured.") {
-                            this._coreAPI.showGlobalStatus(`LLM Call Error: ${error.message}`, "error", 8000);
-                        }
-                        throw error;
+                        // Use pluginInstance here. Avoid duplicating the "model name not configured" message.
+                        const errorMsg = error.message === "LLM model name is not configured."
+                            ? error.message // Use the specific config error message
+                            : `LLM Call Error: ${error.message}`; // Generic error
+                        pluginInstance._coreAPI.showGlobalStatus(errorMsg, "error", 8000);
+                        throw error; // Re-throw the original error
                     }
                 },
 
                 summarizeText: async (text, options = {}) => {
-                    if (!text || typeof text !== 'string' || text.trim().length < 20) { // Reduced minimum length
-                        console.log("LLMPlugin: Text too short or invalid for summarization.");
-                        this._coreAPI.showGlobalStatus("Text too short to summarize.", "warning", 3000);
-                        return null; // Return null to indicate failure
+                    if (!pluginInstance._coreAPI) return null; // Check core API
+                    if (!text || typeof text !== 'string' || text.trim().length < 20) {
+                        console.warn("LLMPlugin: Text too short or invalid for summarization.");
+                        pluginInstance._coreAPI.showGlobalStatus("Text too short to summarize.", "warning", 3000);
+                        return null;
                     }
                     const prompt = `Please summarize the following text concisely:\n\n---\n${text}\n---\n\nConcise Summary:`;
-                    const summaryOptions = {...options, stream: false};
+                    const summaryOptions = {...options, stream: false}; // Force non-stream
 
                     try {
-                        const response = await this.prompt(prompt, summaryOptions);
+                        // Use pluginInstance.providesServices().LLMService.prompt
+                        const response = await pluginInstance.providesServices().LLMService.prompt(prompt, summaryOptions);
                         const summary = response?.choices?.[0]?.message?.content?.trim();
                         if (!summary) {
-                            console.error("LLMPlugin: Could not extract summary from LLM response.", response);
-                            throw new Error("Failed to extract summary from LLM response.");
+                            console.error("LLMPlugin: Could not extract summary from LLM response.");
+                            throw new Error("LLM did not return a valid summary.");
                         }
                         return summary;
                     } catch (error) {
                         console.error("LLMPlugin: Summarization failed.", error);
-                        if (error.message !== "LLM model name is not configured.") {
-                            this._coreAPI.showGlobalStatus("Summarization Error", "error", 5000);
-                        }
-                        // Don't re-throw if model not configured, already handled
-                        if (error.message !== "LLM model name is not configured.") {
-                             throw error; // Re-throw other errors
+                        // Status message already shown by callLLM/prompt if it's a config/call error
+                        // Only show a generic one if the error is specific to summarization logic itself
+                        if (!error.message.includes("LLM Error") && !error.message.includes("LLM Call Error")) {
+                             pluginInstance._coreAPI.showGlobalStatus("Summarization processing failed.", "error", 5000);
                         }
                         return null; // Return null on failure
                     }
                 },
 
                 getActions: async (text, options = {}) => {
+                     if (!pluginInstance._coreAPI) return null;
                     if (!text || typeof text !== 'string' || text.trim().length < 10) {
-                        console.log("LLMPlugin: Text too short for action generation.");
-                        this._coreAPI.showGlobalStatus("Text too short to suggest actions.", "warning", 3000);
+                        console.warn("LLMPlugin: Text too short for action generation.");
+                        pluginInstance._coreAPI.showGlobalStatus("Text too short to suggest actions.", "warning", 3000);
                         return null;
                     }
                     const prompt = `Based on the following text, suggest a short list of actionable next steps or tasks (e.g., "Schedule meeting", "Draft email to X", "Research Y"). Output ONLY a numbered list. If no actions are clear, output "None".\n\n---\n${text}\n---\n\nNumbered List of Actions:`;
-                    const actionOptions = { ...options, stream: false }; // Force non-stream for simple list
+                    const actionOptions = { ...options, stream: false };
 
                     try {
-                        const response = await this.prompt(prompt, actionOptions);
+                         // Use pluginInstance.providesServices().LLMService.prompt
+                        const response = await pluginInstance.providesServices().LLMService.prompt(prompt, actionOptions);
                         const actionsText = response?.choices?.[0]?.message?.content?.trim();
-                        if (!actionsText || actionsText.toLowerCase() === 'none') {
-                            return []; // Return empty array if no actions or "None"
+                        if (!actionsText || actionsText.toLowerCase() === 'none' || actionsText.toLowerCase().startsWith("the answer is not found")) {
+                             pluginInstance._coreAPI.showGlobalStatus("No specific actions suggested by AI.", "info", 3000);
+                            return [];
                         }
                         // Basic parsing of numbered list
                         return actionsText.split('\n')
                             .map(line => line.replace(/^\d+\.\s*/, '').trim()) // Remove numbering
+                            .map(line => line.replace(/^\d+[.)]?\s*/, '').trim()) // Remove numbering (more robust)
                             .filter(action => action.length > 0);
                     } catch (error) {
                         console.error("LLMPlugin: Action generation failed.", error);
-                        if (error.message !== "LLM model name is not configured.") {
-                            this._coreAPI.showGlobalStatus("Action Suggestion Error", "error", 5000);
-                        }
-                        return null; // Return null on failure
+                         if (!error.message.includes("LLM Error") && !error.message.includes("LLM Call Error")) {
+                             pluginInstance._coreAPI.showGlobalStatus("Action suggestion processing failed.", "error", 5000);
+                         }
+                        return null;
                     }
                 },
 
                 answerQuestion: async (contextText, question, options = {}) => {
+                     if (!pluginInstance._coreAPI) return null;
                      if (!contextText || typeof contextText !== 'string' || contextText.trim().length < 10) {
-                        this._coreAPI.showGlobalStatus("Context text too short to answer question.", "warning", 3000);
+                        pluginInstance._coreAPI.showGlobalStatus("Context text too short to answer question.", "warning", 3000);
                         return null;
                     }
                      if (!question || typeof question !== 'string' || question.trim().length < 3) {
-                        this._coreAPI.showGlobalStatus("Please provide a valid question.", "warning", 3000);
+                        pluginInstance._coreAPI.showGlobalStatus("Please provide a valid question.", "warning", 3000);
                         return null;
                     }
 
                     const prompt = `Based *only* on the following text, answer the question concisely. If the answer is not found in the text, say "The answer is not found in the provided text."\n\nContext Text:\n---\n${contextText}\n---\n\nQuestion: ${question}\n\nAnswer:`;
-                    const answerOptions = { ...options, stream: false }; // Force non-stream
+                    const answerOptions = { ...options, stream: false };
 
                     try {
-                        const response = await this.prompt(prompt, answerOptions);
+                         // Use pluginInstance.providesServices().LLMService.prompt
+                        const response = await pluginInstance.providesServices().LLMService.prompt(prompt, answerOptions);
                         const answer = response?.choices?.[0]?.message?.content?.trim();
                         if (!answer) {
-                            throw new Error("Failed to extract answer from LLM response.");
+                            throw new Error("LLM did not return a valid answer.");
                         }
                         return answer;
                     } catch (error) {
                         console.error("LLMPlugin: Answering question failed.", error);
-                         if (error.message !== "LLM model name is not configured.") {
-                            this._coreAPI.showGlobalStatus("Error Answering Question", "error", 5000);
-                        }
-                        return null; // Return null on failure
+                         if (!error.message.includes("LLM Error") && !error.message.includes("LLM Call Error")) {
+                             pluginInstance._coreAPI.showGlobalStatus("Error processing question answer.", "error", 5000);
+                         }
+                        return null;
                     }
                 },
 
@@ -416,9 +455,10 @@ export const LLMPlugin = {
                  * @returns {Promise<string|null>} The generated content string, or null on failure.
                  */
                 generateContent: async (templateName, properties = [], options = {}) => {
-                    const ontologyService = this._coreAPI.getService('OntologyService');
+                     if (!pluginInstance._coreAPI) return null;
+                    const ontologyService = pluginInstance._coreAPI.getService('OntologyService');
                     if (!ontologyService) {
-                        this._coreAPI.showGlobalStatus("LLM Error: Ontology service unavailable.", "error", 5000);
+                        pluginInstance._coreAPI.showGlobalStatus("LLM Error: Ontology service unavailable.", "error", 5000);
                         console.error("LLMPlugin.generateContent: OntologyService not available.");
                         return null;
                     }
@@ -427,7 +467,7 @@ export const LLMPlugin = {
                     const template = templates.find(t => t.name === templateName);
 
                     if (!template) {
-                        this._coreAPI.showGlobalStatus(`LLM Error: Template "${templateName}" not found.`, "error", 5000);
+                        pluginInstance._coreAPI.showGlobalStatus(`LLM Error: Template "${templateName}" not found.`, "error", 5000);
                         console.error(`LLMPlugin.generateContent: Template not found: ${templateName}`);
                         return null;
                     }
@@ -457,46 +497,54 @@ ${propertiesString}
 
 Generated Note Content:
 `;
-                    const generateOptions = { ...options, stream: false }; // Force non-stream for generation
+                    const generateOptions = { ...options, stream: false };
 
                     try {
-                        const response = await this.prompt(prompt, generateOptions); // Use existing prompt method
+                         // Use pluginInstance.providesServices().LLMService.prompt
+                        const response = await pluginInstance.providesServices().LLMService.prompt(prompt, generateOptions);
                         const generatedContent = response?.choices?.[0]?.message?.content?.trim();
                         if (!generatedContent) {
-                            throw new Error("LLM did not return valid content.");
+                            throw new Error("LLM did not return valid content for generation.");
                         }
                         return generatedContent;
                     } catch (error) {
                         console.error("LLMPlugin: Content generation failed.", error);
-                        if (error.message !== "LLM model name is not configured.") { // Avoid duplicate error
-                            this._coreAPI.showGlobalStatus("AI Content Generation Error", "error", 5000);
-                        }
-                        return null; // Return null on failure
+                         if (!error.message.includes("LLM Error") && !error.message.includes("LLM Call Error")) {
+                             pluginInstance._coreAPI.showGlobalStatus("AI Content Generation processing failed.", "error", 5000);
+                         }
+                        return null;
                     }
                 },
 
                 generateEmbeddings: async (text, options = {}) => {
+                     if (!pluginInstance._coreAPI) throw new Error("LLMPlugin CoreAPI not available.");
                     if (!text || typeof text !== 'string') {
-                        this._coreAPI.showGlobalStatus("Embeddings Error: Input must be text.", "error", 4000);
-                        throw new Error("generateEmbeddings requires a non-empty string input.");
+                        const errorMsg = "Embeddings Error: Input must be non-empty text.";
+                        pluginInstance._coreAPI.showGlobalStatus(errorMsg, "error", 4000);
+                        throw new Error(errorMsg);
                     }
 
                     console.log("LLMPlugin: Generating embeddings via LangChain.");
-                    this._coreAPI.showGlobalStatus("LLM: Generating embeddings...", "info", 3000);
+                    pluginInstance._coreAPI.showGlobalStatus("LLM: Generating embeddings...", "info", 3000);
 
                     try {
-                        const embeddingsModel = this._getEmbeddingsInstance(options);
+                        const embeddingsModel = pluginInstance._getEmbeddingsInstance(options);
                         const embeddingVector = await embeddingsModel.embedQuery(text);
+
                         if (!Array.isArray(embeddingVector) || embeddingVector.length === 0) {
+                             console.error("LLMPlugin: Embeddings model returned invalid result (not an array or empty).", embeddingVector);
                             throw new Error("Embeddings model returned invalid result.");
                         }
+
                         console.log(`LLMPlugin: Embeddings generated (vector length: ${embeddingVector.length}).`);
-                        this._coreAPI.showGlobalStatus("Embeddings generated.", "success", 2000);
+                        pluginInstance._coreAPI.showGlobalStatus("Embeddings generated.", "success", 2000);
                         return embeddingVector;
+
                     } catch (error) {
                         console.error("LLMPlugin: Error generating embeddings.", error);
-                        this._coreAPI.showGlobalStatus(`Embeddings Error: ${error.message}`, "error", 8000);
-                        throw error;
+                        const errorMsg = `Embeddings Error: ${error.message}`;
+                        pluginInstance._coreAPI.showGlobalStatus(errorMsg, "error", 8000);
+                        throw error; // Re-throw the original error
                     }
                 },
             }
