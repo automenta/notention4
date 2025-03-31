@@ -16,7 +16,7 @@ export const LLMPlugin = {
     id: 'llm',
     name: 'Language Model Interface (LangChain)',
     version: '1.2.1', // Incremented version
-    dependencies: [],
+    dependencies: ['properties'],
 
     _config: { // Default/initial config structure
         apiKey: ' ',
