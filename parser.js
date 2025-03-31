@@ -132,45 +132,87 @@ export const SemanticParserPlugin = {
                 }
             }
 
-            // 3. Intercept confirmation action if UI layer dispatches it
-            // This allows adding the property *and* updating suggestion state atomically
+            // 3. Intercept confirmation action to add property AND insert inline node
             if (action.type === 'PARSER_CONFIRM_SUGGESTION') {
-                const {noteId, suggestion} = action.payload;
-                // Ensure propertiesAPI is available before trying to find existing property
-                if (!pluginInstance.propertiesAPI) {
-                     console.error("Parser Middleware: Cannot confirm suggestion, Properties Plugin API unavailable.");
-                     pluginInstance.coreAPI?.showGlobalStatus("Cannot confirm suggestion: Properties API missing.", "error");
-                     // Optionally prevent the action from proceeding further?
-                     // For now, let it go to the reducer which might handle the status update anyway.
-                } else {
-                    const existingProp = pluginInstance._findExistingProperty(storeApi.getState, noteId, suggestion.property.key);
+                const { noteId, suggestion } = action.payload;
+                const { property: propData, location } = suggestion;
 
-                    if (existingProp) {
-                        // Dispatch PROPERTY_UPDATE if key already exists
-                        storeApi.dispatch({
-                            type: 'PROPERTY_UPDATE',
-                            payload: {
-                                noteId: noteId,
-                                propertyId: existingProp.id,
-                                changes: {value: suggestion.property.value, type: suggestion.property.type} // Update value and type
-                            }
-                        });
-                    } else {
-                        // Dispatch PROPERTY_ADD if key is new
-                        storeApi.dispatch({
-                            type: 'PROPERTY_ADD',
-                            payload: {
-                                noteId: noteId,
-                                propertyData: suggestion.property // Contains key, value, type
-                            }
+                // Ensure required services are available
+                if (!pluginInstance.propertiesAPI || !pluginInstance.coreAPI) {
+                    console.error("Parser Middleware: Cannot confirm suggestion, Properties API or Core API unavailable.");
+                    pluginInstance.coreAPI?.showGlobalStatus("Cannot confirm suggestion: Core services missing.", "error");
+                    // Let the action proceed to reducer to update status, but don't add/insert.
+                    return next(action);
+                }
+
+                const editorService = pluginInstance.coreAPI.getService('EditorService');
+                if (!editorService) {
+                     console.warn("Parser Middleware: EditorService not available, cannot insert inline property node.");
+                     // Proceed with adding property but skip editor insertion
+                }
+
+                const existingProp = pluginInstance._findExistingProperty(storeApi.getState, noteId, propData.key);
+                let propertyIdToUse; // This will hold the ID (new or existing)
+
+                if (existingProp) {
+                    // --- Update Existing Property ---
+                    propertyIdToUse = existingProp.id;
+                    storeApi.dispatch({
+                        type: 'PROPERTY_UPDATE',
+                        payload: {
+                            noteId: noteId,
+                            propertyId: propertyIdToUse,
+                            // Pass temporaryId as null/undefined since we know the real ID
+                            temporaryId: null,
+                            changes: { value: propData.value, type: propData.type }
+                        }
+                    });
+                    // Insert/replace in editor immediately after dispatching update
+                    if (editorService && location) {
+                        editorService.replaceTextWithInlineProperty(location, {
+                            propId: propertyIdToUse, // Use the existing ID
+                            key: propData.key,
+                            value: propData.value, // Use the suggested value
+                            type: propData.type
                         });
                     }
-                    // Update the suggestion status *in the reducer* via the original action.
-                    // The reducer for PARSER_CONFIRM_SUGGESTION will handle this part.
+
+                } else {
+                    // --- Add New Property ---
+                    // Generate a temporary ID to link editor insertion and state update
+                    const temporaryId = pluginInstance.coreAPI.utils.generateUUID();
+                    propertyIdToUse = temporaryId; // Use temp ID for editor insertion
+
+                    // Insert/replace in editor *before* dispatching add, using the temporary ID
+                    if (editorService && location) {
+                        editorService.replaceTextWithInlineProperty(location, {
+                            propId: temporaryId, // Pass the temporary ID
+                            key: propData.key,
+                            value: propData.value,
+                            type: propData.type
+                        });
+                    } else if (location) {
+                         console.warn(`Parser Middleware: Suggestion confirmed but no EditorService or location found. Property added, but text not replaced.`);
+                    }
+
+                    // Dispatch PROPERTY_ADD with the temporary ID
+                    storeApi.dispatch({
+                        type: 'PROPERTY_ADD',
+                        payload: {
+                            noteId: noteId,
+                            temporaryId: temporaryId, // Pass the temporary ID
+                            propertyData: propData // Contains key, value, type
+                        }
+                    });
                 }
+
+                // Let the original PARSER_CONFIRM_SUGGESTION action proceed to the reducer
+                // to update the suggestion's status to 'confirmed'.
+                // The reducer doesn't need to know about the editor insertion.
+                return next(action); // Pass the original action to the parser reducer
             }
 
-            return result; // Return result from next(action)
+            return result; // Return result from next(action) for other action types
         };
     },
 

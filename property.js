@@ -89,10 +89,13 @@ export const PropertiesPlugin = {
                     }
                     // --- End Validation ---
 
+                    // Use temporaryId from payload if provided (by parser confirmation), otherwise generate new
+                    const propertyId = action.payload.temporaryId || coreAPI.utils.generateUUID();
+
                     const newProp = {
-                        id: coreAPI.utils.generateUUID(),
+                        id: propertyId,
                         key: key,
-                        value: value,
+                        value: value, // Already normalized and validated
                         type: type,
                         createdAt: Date.now(),
                         updatedAt: Date.now(),

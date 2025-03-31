@@ -1168,10 +1168,45 @@ export const RichTextEditorPlugin = {
                         return '';
                     }
                 },
-                insertContentAtCursor: (content) => { // Ensure this is exposed
+                insertContentAtCursor: (content) => {
                     if (this._editorInstance && !this._editorInstance.inactive()) {
-                        console.log("EditorService: Inserting content at cursor:", content.substring(0, 50) + "...");
-                        this._editorInstance._tiptapInstance?.commands.insertContent(content);
+                        // console.log("EditorService: Inserting content at cursor:", content.substring(0, 50) + "...");
+                        this._editorInstance._tiptapInstance?.chain().focus().insertContent(content).run();
+                    }
+                },
+                replaceTextWithInlineProperty: (location, propData) => {
+                    if (!this._editorInstance || this._editorInstance.inactive() || !location || !propData) {
+                        console.warn("EditorService: Cannot replace text with inline property. Invalid args.", { location, propData });
+                        return;
+                    }
+                    const { start, end } = location;
+                    const { propId, key, value, type } = propData; // propId might be temporary
+
+                    if (typeof start !== 'number' || typeof end !== 'number' || start >= end) {
+                         console.warn("EditorService: Invalid location for inline property replacement.", location);
+                         return;
+                    }
+
+                    console.log(`EditorService: Replacing text from ${start} to ${end} with inline property:`, propData);
+
+                    try {
+                        this._editorInstance._tiptapInstance?.chain()
+                            .focus() // Ensure editor has focus
+                            .setTextSelection({ from: start, to: end }) // Select the text range
+                            .insertContent({ // Insert the node
+                                type: 'inlineProperty', // Node type name
+                                attrs: {
+                                    propId: propId, // Use the provided ID (might be temporary)
+                                    key: key,
+                                    value: value, // Use the normalized value
+                                    type: type
+                                }
+                            })
+                            // Optional: Move cursor after the inserted node
+                            // .setTextSelection(end + 1) // Adjust based on how Tiptap handles insertion position
+                            .run();
+                    } catch (error) {
+                        console.error("EditorService: Error replacing text with inline property node:", error);
                     }
                 },
                 // Avoid exposing the raw Tiptap instance directly if possible
