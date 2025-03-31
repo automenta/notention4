@@ -184,21 +184,20 @@ export const NostrPlugin = {
         const settingsNote = this.coreAPI.getSystemNoteByType(`config/settings/${this.id}`);
         const propsApi = this.coreAPI.getPluginAPI('properties');
         const currentSettings = settingsNote ? (this._mapPropsToObject(propsApi?.getPropertiesForNote(settingsNote.id) || [])) : {};
-        const defaultSettings = this._getDefaultSettings(); // Get defaults from getSettingsOntology
+        const defaultSettings = this._getDefaultSettings();
 
-        const relayNote = this.coreAPI.getSystemNoteByType('config/nostr/relays');
-        // Relay loading logic remains the same, using the legacy note for now
-        // TODO: Migrate relays to be properties on the settings note as well?
-        let relays = relayNote?.content?.relays || defaultSettings.defaultRelays || this._config.defaultRelays;
-        this._config.relays = [...new Set(relays.filter(url => typeof url === 'string' && url.startsWith('ws')))]; // Keep relay loading separate for now
-
-        // Load other settings using the new pattern
+        // Load settings using the new pattern, including relays
         this._config.autoLockMinutes = currentSettings.autoLockMinutes ?? defaultSettings.autoLockMinutes ?? this._config.autoLockMinutes;
         this._config.eoseTimeout = currentSettings.eoseTimeout ?? defaultSettings.eoseTimeout ?? this._config.eoseTimeout;
 
+        // Load relays from settings property, fallback to default
+        const relaysString = currentSettings.relays ?? defaultSettings.relays ?? '';
+        const relaysList = relaysString.split('\n').map(r => r.trim()).filter(r => r.startsWith('ws'));
+        this._config.relays = [...new Set(relaysList)]; // Ensure unique and valid format
+
         this.coreAPI.dispatch({
             type: 'NOSTR_CONFIG_LOADED',
-            payload: {relays: this._config.relays, autoLockMinutes: this._config.autoLockMinutes}
+            payload: { relays: this._config.relays, autoLockMinutes: this._config.autoLockMinutes }
         });
 
         const identityNote = this.coreAPI.getSystemNoteByType('config/nostr/identity');
@@ -650,6 +649,11 @@ export const NostrPlugin = {
                 type: 'number', label: 'Relay EOSE Timeout (ms)', order: 2,
                 min: 1000, step: 500, default: 8000,
                 description: 'Time to wait for End Of Stored Events marker from relays during subscription.'
+            },
+            'relays': {
+                type: 'textarea', label: 'Relay URLs', order: 3, rows: 5,
+                default: ["wss://relay.damus.io", "wss://relay.primal.net", "wss://relay.snort.social"].join('\n'),
+                description: 'One wss:// URL per line. These relays will be used for connecting and publishing.'
             }
         };
     },
@@ -970,45 +974,55 @@ export const NostrPlugin = {
                     });
                 }
             }
-            // Handle Relay Config Updates (Unchanged from previous version)
-            else if (action.type === 'CORE_SYSTEM_NOTE_UPDATED') { /* ... (Relay update logic unchanged) ... */
-                const {type, content} = action.payload;
-                if (type === 'config/nostr/relays') {
-                    const oldRelays = new Set(nextState.pluginRuntimeState[pluginId].config.relays); // Check against state
-                    const newRelaysList = Array.isArray(content?.relays) ? [...new Set(content.relays.filter(url => typeof url === 'string' && url.startsWith('ws')))] : plugin._config.defaultRelays;
-                    plugin._config.relays = newRelaysList; // Update internal config cache too
-                    const newRelaysSet = new Set(newRelaysList);
-                    store.dispatch({
-                        type: 'NOSTR_CONFIG_LOADED',
-                        payload: {relays: newRelaysList, autoLockMinutes: plugin._config.autoLockMinutes}
-                    }); // Update config state
-                    if (plugin._connectionStatus === 'connected' && plugin._relayPool) {
-                        const changed = newRelaysList.length !== oldRelays.size || newRelaysList.some(r => !oldRelays.has(r));
-                        if (changed) {
-                            console.log("Nostr Middleware: Relay config changed, reconnecting...");
+            // Handle Relay Config Updates from Settings Note
+            else if (action.type === 'CORE_SYSTEM_NOTE_UPDATED' || action.type === 'PROPERTY_UPDATE') {
+                const state = store.getState(); // Get current state
+                const settingsNote = coreAPI.getSystemNoteByType(`config/settings/${pluginId}`);
+                let noteIdToCheck = null;
+
+                if (action.type === 'CORE_SYSTEM_NOTE_UPDATED' && action.payload.type === `config/settings/${pluginId}`) {
+                    noteIdToCheck = action.payload.noteId;
+                } else if (action.type === 'PROPERTY_UPDATE' && action.payload.noteId === settingsNote?.id && action.payload.changes.key === 'relays') {
+                    noteIdToCheck = action.payload.noteId;
+                }
+
+                if (noteIdToCheck && noteIdToCheck === settingsNote?.id) {
+                    const propsApi = coreAPI.getPluginAPI('properties');
+                    const currentProperties = propsApi?.getPropertiesForNote(settingsNote.id) || [];
+                    const currentSettings = plugin._mapPropsToObject(currentProperties);
+                    const defaultSettings = plugin._getDefaultSettings();
+                    const relaysString = currentSettings.relays ?? defaultSettings.relays ?? '';
+                    const newRelaysList = [...new Set(relaysString.split('\n').map(r => r.trim()).filter(r => r.startsWith('ws')))];
+
+                    const oldRelays = new Set(plugin._config.relays); // Compare with internal config cache
+                    const changed = newRelaysList.length !== oldRelays.size || newRelaysList.some(r => !oldRelays.has(r));
+
+                    if (changed) {
+                        console.log("Nostr Middleware: Relay config changed, updating and reconnecting...");
+                        plugin._config.relays = newRelaysList; // Update internal cache
+                        store.dispatch({
+                            type: 'NOSTR_CONFIG_LOADED',
+                            payload: { relays: newRelaysList, autoLockMinutes: plugin._config.autoLockMinutes }
+                        }); // Update state
+
+                        if (plugin._connectionStatus === 'connected' && plugin._relayPool) {
                             coreAPI.showToast("Relay config updated. Reconnecting...", "info");
                             plugin.getNostrService()?.disconnect();
                             setTimeout(() => plugin.getNostrService()?.connect(), 500);
+                        } else {
+                            coreAPI.showToast("Nostr relay configuration updated.", "info");
                         }
-                    } else {
-                        coreAPI.showToast("Nostr relay configuration updated.", "info");
                     }
                 }
             }
             // Handle Deletion Event Publishing (Kind 5) when local note is deleted
             else if (action.type === 'CORE_DELETE_NOTE') {
-                const {noteId} = action.payload;
-                // Need state *before* deletion to get eventId
-                const stateBeforeDelete = store.getState(); // NOTE: This gets state *after* deletion in typical redux middleware. Needs adjustment.
-                // *** Limitation: Standard middleware pattern makes getting pre-action state hard. ***
-                // *** Workaround: Assume eventId was stored somewhere accessible or passed in action ***
-                // *** Let's assume for now the reducer *doesn't* remove the note immediately, or required data is cached ***
-                // A better pattern might involve a pre-action listener or passing necessary data in the action payload.
-                // Let's pretend we have the data needed for this example:
-                const nostrDataBeforeDelete = nextState.notes[noteId]?.pluginData?.[pluginId] ?? action.payload.pluginDataSnapshot?.[pluginId]; // Check if snapshot was passed
+                const { noteId, pluginDataSnapshot } = action.payload; // Expect snapshot in payload
+                const nostrDataBeforeDelete = pluginDataSnapshot?.[pluginId]; // Use snapshot
                 const nostrService = plugin.getNostrService();
+                const nostrState = nextState.pluginRuntimeState[pluginId]; // Use nextState for current status
 
-                if (nostrDataBeforeDelete?.isShared && nostrDataBeforeDelete.eventId && nostrService?.isUnlocked() && nextState.pluginRuntimeState[pluginId]?.connectionStatus === 'connected') {
+                if (nostrDataBeforeDelete?.isShared && nostrDataBeforeDelete.eventId && nostrService?.isUnlocked() && nostrState?.connectionStatus === 'connected') {
                     console.log(`Nostr Middleware: Publishing deletion (Kind 5) for event ${nostrDataBeforeDelete.eventId} (Note ${noteId} deleted)`);
                     const deletionEventTemplate = {
                         kind: 5,
@@ -1203,7 +1217,12 @@ export const NostrPlugin = {
                                                            ?required=${isRequired} min=${schema.min ?? ''}
                                                            max=${schema.max ?? ''} step=${schema.step ?? ''}
                                                            @input=${(e) => saveSetting(parseInt(e.target.value, 10) || (schema.default ?? 0))}>`;
-                            } else { // Default text (add more types like textarea later)
+                            } else if (schema.type === 'textarea') {
+                                inputElement = html`<textarea id=${inputId} .value=${currentValue}
+                                                              ?required=${isRequired} rows=${schema.rows || 3}
+                                                              placeholder=${schema.placeholder || ''}
+                                                              @input=${(e) => saveSetting(e.target.value)}></textarea>`;
+                            } else { // Default text
                                 inputElement = html`<input type="text" id=${inputId} .value=${currentValue}
                                                            ?required=${isRequired}
                                                            placeholder=${schema.placeholder || ''}
