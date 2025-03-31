@@ -340,13 +340,13 @@ export const NostrPlugin = {
             const confirmMsg = strength.score === 0
                 ? "Saving without a passphrase is INSECURE. Anyone accessing browser data could use your key. Proceed?"
                 : `Passphrase is VERY WEAK (${strength.message}). Strongly recommend a better one. Continue anyway?`;
-            const confirmedInsecure = await this.coreAPI.showConfirmationDialog({
+            const confirmedInsecure = await this.coreAPI.showConfirmationDialog({ // Use coreAPI directly
                 title: "Security Warning", message: confirmMsg,
                 confirmText: "Yes, Continue (Insecure)", cancelText: "Cancel"
             });
             if (!confirmedInsecure) return false;
         } else if (strength.score < 4) { // Weak
-            this.coreAPI.showToast(`Passphrase strength: ${strength.message}. Consider using a stronger one.`, "warning", 8000);
+            this.coreAPI.showToast(`Passphrase strength: ${strength.message}. Consider using a stronger one.`, "warning", 8000); // Use coreAPI directly
         }
 
         let hexPrivKey = null;
@@ -382,7 +382,7 @@ export const NostrPlugin = {
             this._identityStatus = 'unlocked';
             this._identityError = null;
             this._updateIdentityStatus('unlocked', {pubkey: pubkey});
-            this.coreAPI.showToast("Nostr identity saved and unlocked.", "success");
+            this.coreAPI.showToast("Nostr identity saved and unlocked.", "success"); // Use coreAPI directly
 
             this._startAutoLockTimer(); // Start auto-lock timer after setup
             this.getNostrService()?.connect();
@@ -395,7 +395,7 @@ export const NostrPlugin = {
             this._decryptedNsec = null;
             this._decryptedHexPrivKey = null;
             this._updateIdentityStatus('error', {error: this._identityError});
-            this.coreAPI.showToast("Error: Failed to save identity.", "error");
+            this.coreAPI.showToast("Error: Failed to save identity.", "error"); // Use coreAPI directly
             return false;
         } finally {
             passphrase = null;
@@ -414,14 +414,14 @@ export const NostrPlugin = {
         if (clearStorage) {
             try {
                 // ... (Confirmation logic remains the same) ...
-                const confirmed = await this.coreAPI.showConfirmationDialog({
+                const confirmed = await this.coreAPI.showConfirmationDialog({ // Use coreAPI directly
                     title: "Confirm Clear Identity",
                     message: "Permanently remove your Nostr identity?",
                     confirmText: "Yes, Clear",
                     cancelText: "Cancel"
                 });
                 if (!confirmed) { /* ... (Revert state logic unchanged) ... */
-                    const noteCheck = this.coreAPI.getSystemNoteByType('config/nostr/identity');
+                    const noteCheck = this.coreAPI.getSystemNoteByType('config/nostr/identity'); // Use coreAPI directly
                     if (noteCheck?.content?.encryptedNsec) {
                         this._identityStatus = 'locked';
                         this._updateIdentityStatus('locked', {pubkey: noteCheck.content.pubkey});
@@ -432,25 +432,25 @@ export const NostrPlugin = {
                     return;
                 }
 
-                await this.coreAPI.saveSystemNote('config/nostr/identity', null);
+                await this.coreAPI.saveSystemNote('config/nostr/identity', null); // Use coreAPI directly
                 this._identityStatus = 'no_identity';
                 this._identityError = null;
                 this._updateIdentityStatus('no_identity');
-                this.coreAPI.showToast("Nostr identity cleared from storage.", "info");
+                this.coreAPI.showToast("Nostr identity cleared from storage.", "info"); // Use coreAPI directly
             } catch (error) {
                 console.error("NostrPlugin: Failed to clear identity:", error);
-                this.coreAPI.showToast("Error clearing identity.", "error");
+                this.coreAPI.showToast("Error clearing identity.", "error"); // Use coreAPI directly
                 this._identityStatus = 'error';
                 this._identityError = "Failed to clear identity.";
                 this._updateIdentityStatus('error', {error: this._identityError});
             }
         } else { // Just locking
-            const identityNote = this.coreAPI.getSystemNoteByType('config/nostr/identity');
+            const identityNote = this.coreAPI.getSystemNoteByType('config/nostr/identity'); // Use coreAPI directly
             if (identityNote?.content?.encryptedNsec) {
                 this._identityStatus = 'locked';
                 this._identityError = null;
                 this._updateIdentityStatus('locked', {pubkey: identityNote.content.pubkey});
-                this.coreAPI.showToast("Nostr identity locked.", "info");
+                this.coreAPI.showToast("Nostr identity locked.", "info"); // Use coreAPI directly
             } else {
                 this._identityStatus = 'no_identity';
                 this._identityError = null;
@@ -1135,17 +1135,6 @@ export const NostrPlugin = {
                         coreAPI.showToast(`Keygen fail: ${e.message}`, "error");
                     }
                 };
-                const handleRelaySave = (newRelaysText) => {
-                    // TODO: This needs to be adapted to save relays as a property
-                    // on the settings note if relays are moved to the ontology settings.
-                    const validRelays = newRelaysText.split('\n').map(r => r.trim()).filter(r => r.startsWith('ws'));
-                    const uniqueRelays = [...new Set(validRelays)];
-                    coreAPI.saveSystemNote('config/nostr/relays', {relays: uniqueRelays})
-                        .then(() => coreAPI.showToast("Legacy Relays saved.", "success"))
-                        .catch(err => coreAPI.showToast(`Error save: ${err.message}`, "error"));
-                };
-                const currentRelays = NostrPlugin._config.relays.join('\n');
-
                 // --- Render Logic (HTML structure largely unchanged, uses displayPubkey) ---
                 let identitySectionHtml;
                 if (identityStatus === 'loading') {
@@ -1227,22 +1216,27 @@ export const NostrPlugin = {
                             }, 750);
 
                             // Render appropriate input based on schema.type
-                            if (schema.type === 'number') {
-                                inputElement = html`<input type="number" id=${inputId} .value=${currentValue}
-                                                           ?required=${isRequired} min=${schema.min ?? ''}
-                                                           max=${schema.max ?? ''} step=${schema.step ?? ''}
-                                                           @input=${(e) => saveSetting(parseInt(e.target.value, 10) || (schema.default ?? 0))}>`;
-                            } else if (schema.type === 'textarea') {
-                                inputElement = html`<textarea id=${inputId} .value=${currentValue}
-                                                              ?required=${isRequired} rows=${schema.rows || 3}
-                                                              placeholder=${schema.placeholder || ''}
-                                                              @input=${(e) => saveSetting(e.target.value)}></textarea>`;
-                            } else { // Default text
-                                inputElement = html`<input type="text" id=${inputId} .value=${currentValue}
-                                                           ?required=${isRequired}
-                                                           placeholder=${schema.placeholder || ''}
-                                                           @input=${(e) => saveSetting(e.target.value)}>`;
+                            switch (schema.type) {
+                                case 'number':
+                                    inputElement = html`<input type="number" id=${inputId} .value=${currentValue ?? ''}
+                                                               ?required=${isRequired} min=${schema.min ?? ''}
+                                                               max=${schema.max ?? ''} step=${schema.step ?? ''}
+                                                               @input=${(e) => saveSetting(parseInt(e.target.value, 10) || (schema.default ?? 0))}>`;
+                                    break;
+                                case 'textarea':
+                                    inputElement = html`<textarea id=${inputId} .value=${currentValue ?? ''}
+                                                                  ?required=${isRequired} rows=${schema.rows || 3}
+                                                                  placeholder=${schema.placeholder || ''}
+                                                                  @input=${(e) => saveSetting(e.target.value)}></textarea>`;
+                                    break;
+                                case 'text':
+                                default:
+                                    inputElement = html`<input type="text" id=${inputId} .value=${currentValue ?? ''}
+                                                               ?required=${isRequired}
+                                                               placeholder=${schema.placeholder || ''}
+                                                               @input=${(e) => saveSetting(e.target.value)}>`;
                             }
+
 
                             return html`
                                 <div class="setting-item">

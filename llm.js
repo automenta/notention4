@@ -714,21 +714,31 @@ Generated Note Content:
                             const style = (isRequired && !currentValue) ? 'border-color: var(--vscode-inputValidation-warningBorder, orange);' : '';
 
 
-                            // TODO: Add support for select, checkbox, textarea based on schema.type
-                            if (schema.type === 'number') {
-                                inputElement = html`<input type="number" ...=${commonAttrs} style=${style}
-                                                           min=${schema.min ?? ''} max=${schema.max ?? ''}
-                                                           step=${schema.step ?? ''}
-                                                           @input=${(e) => handleNumberInput(key, e.target.value, schema.step && String(schema.step).includes('.'))}>`;
-                            } else if (schema.type === 'password') {
-                                inputElement = html`<input type="password" ...=${commonAttrs} style=${style}
-                                                           @input=${(e) => handleInput(key, e.target.value)}>`;
-                            } else if (schema.type === 'url') {
-                                inputElement = html`<input type="url" ...=${commonAttrs} style=${style}
-                                                           @input=${(e) => handleInput(key, e.target.value.trim())}>`;
-                            } else { // Default to text
-                                inputElement = html`<input type="text" ...=${commonAttrs} style=${style}
-                                                           @input=${(e) => handleInput(key, e.target.value.trim())}>`;
+                            // Render input based on schema type
+                            switch (schema.type) {
+                                case 'number':
+                                    inputElement = html`<input type="number" ...=${commonAttrs} style=${style}
+                                                               min=${schema.min ?? ''} max=${schema.max ?? ''}
+                                                               step=${schema.step ?? ''}
+                                                               @input=${(e) => handleNumberInput(key, e.target.value, schema.step && String(schema.step).includes('.'))}>`;
+                                    break;
+                                case 'password':
+                                    inputElement = html`<input type="password" ...=${commonAttrs} style=${style}
+                                                               @input=${(e) => handleInput(key, e.target.value)}>`;
+                                    break;
+                                case 'url':
+                                    inputElement = html`<input type="url" ...=${commonAttrs} style=${style}
+                                                               @input=${(e) => handleInput(key, e.target.value.trim())}>`;
+                                    break;
+                                case 'textarea': // Added textarea support
+                                    inputElement = html`<textarea ...=${commonAttrs} style=${style}
+                                                                 rows=${schema.rows || 3}
+                                                                 @input=${(e) => handleInput(key, e.target.value)}></textarea>`;
+                                    break;
+                                case 'text': // Default to text
+                                default:
+                                    inputElement = html`<input type="text" ...=${commonAttrs} style=${style}
+                                                               @input=${(e) => handleInput(key, e.target.value.trim())}>`;
                             }
 
                             return html`
