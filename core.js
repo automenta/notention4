@@ -17,6 +17,7 @@ import {SemanticParserPlugin} from "./parser.js";
 import {RichTextEditorPlugin} from "./editor.js";
 import {NostrPlugin} from "./nostr.js";
 import {LLMPlugin} from "./llm.js";
+import {MatcherPlugin} from "./matcher.js"; // Added for settings access if needed later
 
 const PLUGINS = [
     PropertiesPlugin,
@@ -285,6 +286,7 @@ class UIRenderer {
     _rootElement = null;
     _slotRegistry = new Map();
     _scrollPositions = {};
+    _ontologyService = null; // Cache ontology service
 
     constructor(stateManager, rootElementId = 'app') {
         this._stateManager = stateManager;
@@ -294,8 +296,20 @@ class UIRenderer {
         }
         // Subscribe to state changes to trigger re-renders
         this._stateManager.subscribe(this._scheduleRender.bind(this));
+        // Cache ontology service on init
+        // Note: CoreAPI might not be fully ready here. Better to get it lazily.
+        // this._ontologyService = window.realityNotebookCore?.getService('OntologyService');
         console.log("UIRenderer initialized with lit-html.");
     }
+
+    // Lazy getter for Ontology Service
+    _getOntologyService() {
+        if (!this._ontologyService) {
+            this._ontologyService = window.realityNotebookCore?.getService('OntologyService');
+        }
+        return this._ontologyService;
+    }
+
 
     _scheduleRender(newState) {
         // Use requestAnimationFrame to batch renders for performance
@@ -388,16 +402,32 @@ class UIRenderer {
 
     _renderNoteListItems(state) {
         const {notes, noteOrder, uiState} = state;
-        const {selectedNoteId, searchTerm, noteListSortMode = 'time'} = uiState; // Default to 'time'
-        const lowerSearchTerm = searchTerm.toLowerCase();
+        const {selectedNoteId, searchTerm, noteListSortMode = 'time'} = uiState;
 
-        // 1. Filter notes
+        // --- Enhanced Filtering Logic ---
+        const { textQuery, structuredFilters } = this._parseSearchQuery(searchTerm || '');
+        const lowerTextQuery = textQuery.toLowerCase();
+
+        // 1. Filter notes based on text and structured queries
         let filteredNoteIds = noteOrder.filter(id => {
             const note = notes[id];
             if (!note || note.isArchived) return false;
-            if (!searchTerm) return true;
-            return (note.name.toLowerCase().includes(lowerSearchTerm) || note.content.toLowerCase().includes(lowerSearchTerm));
+
+            // Text search match (if text query exists)
+            const textMatch = !lowerTextQuery ||
+                              (note.name.toLowerCase().includes(lowerTextQuery) ||
+                               note.content.toLowerCase().includes(lowerTextQuery));
+
+            // Structured filter match (if filters exist)
+            const properties = note.pluginData?.properties?.properties || [];
+            const structuredMatch = structuredFilters.length === 0 ||
+                                    this._evaluateStructuredFilters(properties, structuredFilters);
+
+            // Must match both (if they exist)
+            return textMatch && structuredMatch;
         });
+        // --- End Enhanced Filtering Logic ---
+
 
         // 2. Sort filtered notes
         const getPriority = (noteId) => {

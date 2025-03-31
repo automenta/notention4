@@ -146,11 +146,14 @@ export const MatcherPlugin = {
 
     registerReducer() {
         const pluginId = this.id;
-        // Reducer handles embedding cache AND related notes UI state
+        // Reducer handles embedding cache AND related notes UI state AND embedding status
         return (draft, action) => {
             // Initialize state structure if it doesn't exist
             if (!draft.pluginRuntimeState[pluginId]) {
-                draft.pluginRuntimeState[pluginId] = { relatedNotes: {} }; // { [noteId]: { isLoading: boolean, matches: MatchResult[] } }
+                draft.pluginRuntimeState[pluginId] = {
+                    relatedNotes: {}, // { [noteId]: { isLoading: boolean, matches: MatchResult[], error: string|null } }
+                    embeddingStatus: {} // { [noteId]: 'idle' | 'pending' | 'generated' | 'failed' }
+                };
             }
             const matcherState = draft.pluginRuntimeState[pluginId];
 
@@ -187,8 +190,32 @@ export const MatcherPlugin = {
                     // }
                     break;
                  }
+                 case 'CORE_DELETE_NOTE': { // Also clear related notes state for deleted note
+                    const { noteId } = action.payload;
+                    if (matcherState.relatedNotes[noteId]) {
+                        delete matcherState.relatedNotes[noteId];
+                    }
+                    break;
+                 }
 
-                // --- Embedding Cache State ---
+                // --- Embedding Status State ---
+                case 'MATCHER_EMBEDDING_START': {
+                    const { noteId } = action.payload;
+                    matcherState.embeddingStatus[noteId] = 'pending';
+                    break;
+                }
+                case 'MATCHER_EMBEDDING_SUCCESS': {
+                    const { noteId } = action.payload;
+                    matcherState.embeddingStatus[noteId] = 'generated';
+                    break;
+                }
+                case 'MATCHER_EMBEDDING_FAILURE': {
+                    const { noteId } = action.payload;
+                    matcherState.embeddingStatus[noteId] = 'failed';
+                    break;
+                }
+
+                // --- Embedding Cache State (Handled via CORE_DELETE_NOTE and CORE_SET_RUNTIME_CACHE) ---
                 // On update, the cache key using `updatedAt` will naturally become stale.
                 // No explicit invalidation needed here if _getOrGenerateEmbedding checks timestamp.
                 // case 'CORE_UPDATE_NOTE': { ... break; }
@@ -226,9 +253,38 @@ export const MatcherPlugin = {
 
     // --- Middleware for Triggering Background Matching ---
     registerMiddleware() {
-        const pluginInstance = this; // Capture 'this' for use in debounced function
+        const pluginInstance = this; // Capture 'this'
 
-        // Debounced function to trigger matching for a specific note
+        // --- Debounced Background Embedding Trigger ---
+        const debouncedTriggerEmbedding = Utils.debounce(async (noteId, state, dispatch) => {
+            const note = state.notes[noteId];
+            if (!note || note.isArchived || !pluginInstance.llmService) return; // Need LLM service
+
+            // Check if embedding is already up-to-date or pending
+            const currentStatus = state.pluginRuntimeState?.[pluginInstance.id]?.embeddingStatus?.[noteId];
+            const cacheKey = `matcher_embedding_${note.id}_${note.updatedAt}`;
+            const cachedEmbedding = state.runtimeCache[cacheKey];
+
+            if (cachedEmbedding || currentStatus === 'pending') {
+                // console.log(`Matcher Middleware: Skipping background embedding for ${noteId} (cached or pending).`);
+                return;
+            }
+
+            console.log(`Matcher Middleware: Triggering background embedding generation for ${noteId}`);
+            // Dispatch start action immediately
+            dispatch({ type: 'MATCHER_EMBEDDING_START', payload: { noteId } });
+            // Call the generation function (it handles success/failure dispatches internally)
+            try {
+                await pluginInstance._getOrGenerateEmbedding(note);
+                // Success/Failure actions are dispatched within _getOrGenerateEmbedding
+            } catch (error) {
+                // Error already logged and failure dispatched by _getOrGenerateEmbedding
+                console.error(`Matcher Middleware: Background embedding failed for ${noteId}`, error);
+            }
+        }, 2000); // Longer debounce for background task (e.g., 2 seconds after last edit)
+
+
+        // --- Debounced Related Notes Matching Trigger ---
         const debouncedTriggerMatching = Utils.debounce(async (noteId, state, dispatch) => {
             if (!noteId) return;
             const targetNote = state.notes[noteId];
@@ -389,6 +445,8 @@ export const MatcherPlugin = {
                             ${content}
                         </div>
                     </details>
+                    <!-- Embedding Status Indicator -->
+                    ${pluginInstance._renderEmbeddingStatus(state, noteId, html)}
                     <style>
                         .matcher-related-notes-panel summary { cursor: pointer; }
                         .related-notes-list { list-style: none; padding: 0; margin: 0; }
@@ -414,6 +472,18 @@ export const MatcherPlugin = {
                             padding: 8px; color: var(--secondary-text-color); font-style: italic;
                         }
                         .error-message { color: var(--danger-color); }
+                        .embedding-status-indicator {
+                            font-size: 0.8em;
+                            padding: 2px 6px;
+                            margin-top: 5px;
+                            border-radius: 3px;
+                            display: inline-block;
+                            opacity: 0.7;
+                        }
+                        .embedding-status-indicator.pending { background-color: var(--vscode-editorWarning-foreground); color: var(--vscode-editorWarning-background); }
+                        .embedding-status-indicator.generated { background-color: var(--vscode-editorInfo-foreground); color: var(--vscode-editorInfo-background); }
+                        .embedding-status-indicator.failed { background-color: var(--vscode-editorError-foreground); color: var(--vscode-editorError-background); }
+                        .embedding-status-indicator.idle { background-color: var(--vscode-disabledForeground); color: var(--vscode-editor-background); }
                     </style>
                 `;
             },
@@ -499,10 +569,33 @@ export const MatcherPlugin = {
                                     ${schema.description ? html`<span class="field-hint">${schema.description}</span>` : ''}
                                 </div>`;
                         })}
+                        <!-- Button to clear cache -->
+                        <div class="setting-item">
+                            <label>Embedding Cache:</label>
+                            <button @click=${() => dispatch({ type: 'MATCHER_CLEAR_ALL_EMBEDDINGS' })}
+                                    title="Clear all cached text embeddings generated by the Matcher plugin. They will be regenerated as needed.">
+                                Clear Cache
+                            </button>
+                            <span class="field-hint">Removes locally stored embeddings to save space or force regeneration.</span>
+                        </div>
                     </div>
                 `;
             }
         };
+     },
+
+     // --- UI Helper for Embedding Status ---
+     _renderEmbeddingStatus(state, noteId, html) {
+        const status = state.pluginRuntimeState?.[this.id]?.embeddingStatus?.[noteId] || 'idle';
+        let text = 'Embeddings: ';
+        let title = '';
+        switch (status) {
+            case 'pending': text += 'Generating...'; title = 'AI is processing this note for semantic search.'; break;
+            case 'generated': text += 'Ready'; title = 'Semantic embeddings are up-to-date.'; break;
+            case 'failed': text += 'Failed'; title = 'Could not generate semantic embeddings for this note. Check LLM settings/logs.'; break;
+            case 'idle': default: text += 'Not generated'; title = 'Embeddings will be generated when needed or on update.'; break;
+        }
+        return html`<span class="embedding-status-indicator ${status}" title=${title}>${text}</span>`;
      },
 
     // --- Internal Score Calculation Methods ---
@@ -686,21 +779,26 @@ export const MatcherPlugin = {
 
             if (!embeddingVector || !Array.isArray(embeddingVector) || embeddingVector.length === 0) {
                 throw new Error("LLMService returned invalid embedding data.");
-            }
+            // Dispatch success status
+            this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_SUCCESS', payload: { noteId: note.id } });
 
             // Cache the successful result
             this.coreAPI.dispatch({
                 type: 'CORE_SET_RUNTIME_CACHE',
-                payload: {key: cacheKey, value: embeddingVector}
+                payload: { key: cacheKey, value: embeddingVector }
             });
-            this.coreAPI.showGlobalStatus(`Matcher: Embedding generated for "${note.name}".`, "success", 1500);
+            // Status message handled by reducer/UI update now
+            // this.coreAPI.showGlobalStatus(`Matcher: Embedding generated for "${note.name}".`, "success", 1500);
 
             return embeddingVector;
 
         } catch (error) {
+            // Dispatch failure status (already done inside the function)
             console.error(`MatcherPlugin: Failed to generate embedding for note ${note.id}`, error);
             this.coreAPI.showGlobalStatus(`Matcher: Embedding failed for "${note.name}".`, "error", 4000);
             // Optionally cache the failure for a short time? For now, just return null.
+            // Dispatch failure status
+            this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_FAILURE', payload: { noteId: note.id } });
             return null;
         }
     },
