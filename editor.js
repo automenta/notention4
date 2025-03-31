@@ -8,7 +8,7 @@ import { Editor } from '@tiptap/core';
 import { Plugin as ProseMirrorPlugin, PluginKey } from '@tiptap/pm/state'; // Use ProseMirror Plugin directly for decorations
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
-// Phase 1: Disable InlineProperty // import { InlineProperty } from './InlineProperty.js'; // Import the new Node
+import { InlineProperty } from './InlineProperty.js'; // Import the new Node
 import tippy from 'tippy.js'; // Import tippy
 import 'tippy.js/dist/tippy.css'; // Import tippy CSS
 
@@ -133,8 +133,8 @@ class TiptapEditor extends AbstractEditorLibrary {
                         history: editorOptions.history ?? true,
                         // Add other StarterKit options here if needed
                     }),
-                    // Phase 1: Disable InlineProperty InlineProperty, // Add our custom node extension
-                    // Phase 1: Disable SuggestionPlugin SuggestionPlugin(this._dispatch), // Add the new SuggestionPlugin for parser UI
+                    InlineProperty, // Add our custom node extension
+                    SuggestionPlugin(this._dispatch), // Add the new SuggestionPlugin for parser UI
                     // Add more extensions like Placeholder, Link, etc.
                     ...(editorOptions.extensions || [])
                 ],
@@ -854,7 +854,6 @@ export const RichTextEditorPlugin = {
                     </div>
                     <style>
                         /* --- Suggestion Highlight & Popover Styles --- */
-                        /* Phase 1: SuggestionPlugin disabled, but keep styles for now */
                         .suggestion-highlight {
                             background-color: var(--suggestion-highlight-bg, rgba(255, 255, 0, 0.3)); /* Yellowish highlight */
                             border-bottom: 1px dotted var(--suggestion-highlight-border, orange);
@@ -1101,8 +1100,31 @@ export const RichTextEditorPlugin = {
                         this._editorInstance._tiptapInstance?.chain().focus().insertContent(content).run();
                     }
                 },
-                // Phase 1: Disable replaceTextWithInlineProperty
-                // replaceTextWithInlineProperty: (location, propData) => { ... },
+                replaceTextWithInlineProperty: (location, propData) => {
+                    if (this._editorInstance && !this._editorInstance.inactive() && location && propData) {
+                        try {
+                            // console.log(`EditorService: Replacing text at [${location.start}-${location.end}] with property:`, propData);
+                            this._editorInstance._tiptapInstance?.chain()
+                                .focus() // Ensure editor has focus
+                                .setTextSelection(location) // Select the text range
+                                .insertContent({ // Insert the custom node
+                                    type: InlineProperty.name, // Use the node's name
+                                    attrs: {
+                                        propId: propData.propId,
+                                        key: propData.key,
+                                        value: propData.value,
+                                        type: propData.type,
+                                    },
+                                })
+                                .run(); // Execute the command chain
+                        } catch (error) {
+                            console.error("EditorService.replaceTextWithInlineProperty Error:", error, { location, propData });
+                            this.coreAPI?.showGlobalStatus("Error replacing text with property.", "error");
+                        }
+                    } else {
+                        console.warn("EditorService.replaceTextWithInlineProperty: Editor inactive or invalid arguments.", { editor: this._editorInstance, location, propData });
+                    }
+                },
                 // Avoid exposing the raw Tiptap instance directly if possible
                 // getTiptapInstance: () => this._editorInstance?._tiptapInstance,
             }
