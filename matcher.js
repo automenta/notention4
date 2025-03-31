@@ -827,21 +827,34 @@ export const MatcherPlugin = {
      * @returns {Promise<object>} A promise resolving to { score: number (0-1), explanation: string }.
      */
     async _calculateVectorScore(noteA, noteB) {
-        if (!this.llmService) { // Should be checked before calling, but double-check
-            return {score: 0, explanation: "Vector matching disabled (LLM service unavailable)."};
+        // Check if LLM service is available AND configured with a model (needed for embeddings)
+        const llmConfig = this.llmService ? this.coreAPI.getService('LLMService')?.getCurrentConfig() : null;
+        const embeddingsPossible = !!(this.llmService && llmConfig?.modelName); // Assume embeddings need a model
+
+        if (!embeddingsPossible) {
+            return {score: 0, explanation: "Vector matching disabled (LLM service/model unavailable or not configured)."};
         }
 
         try {
-            const embeddingA = await this._getOrGenerateEmbedding(noteA);
-            const embeddingB = await this._getOrGenerateEmbedding(noteB);
+            // Get embeddings concurrently
+            const [embeddingA, embeddingB] = await Promise.all([
+                this._getOrGenerateEmbedding(noteA),
+                this._getOrGenerateEmbedding(noteB)
+            ]);
 
+            // Check if both embeddings were successfully generated
             if (!embeddingA || !embeddingB) {
+                let reason = "";
+                if (!embeddingA && !embeddingB) reason = "both notes";
+                else if (!embeddingA) reason = `note "${noteA.name || noteA.id}"`;
+                else reason = `note "${noteB.name || noteB.id}"`;
                 return {
                     score: 0,
-                    explanation: "Vector match failed: Could not generate embeddings for one or both notes."
+                    explanation: `Vector match failed: Could not generate embeddings for ${reason}.`
                 };
             }
 
+            // Calculate similarity
             const similarity = this._cosineSimilarity(embeddingA, embeddingB);
 
             if (isNaN(similarity)) {
@@ -849,14 +862,21 @@ export const MatcherPlugin = {
                 return {score: 0, explanation: "Vector match failed: Similarity calculation error."};
             }
 
+            // Return clamped score and explanation
             return {
-                score: Math.max(0, Math.min(1, similarity)),
+                score: Math.max(0, Math.min(1, similarity)), // Clamp score between 0 and 1
                 explanation: `Cosine similarity: ${similarity.toFixed(3)}`
             };
 
         } catch (error) {
+            // Catch errors from embedding generation or similarity calculation
             console.error("MatcherPlugin: _calculateVectorScore error", error);
-            return {score: 0, explanation: `Vector match error: ${error.message}`};
+            // Check if the error message indicates a configuration issue already handled by LLMService
+            const isConfigError = error.message.includes("LLM Config Error") || error.message.includes("Model Name is required");
+            const explanation = isConfigError
+                ? `Vector match failed: ${error.message}` // Use specific config error
+                : `Vector match error: ${error.message}`; // Generic error
+            return {score: 0, explanation: explanation};
         }
     },
 
@@ -867,53 +887,78 @@ export const MatcherPlugin = {
      * @returns {Promise<Array<number>|null>} The embedding vector or null on failure.
      */
     async _getOrGenerateEmbedding(note) {
-        if (!this.llmService) return null; // LLM needed
+        // Check if LLM service is available AND configured (as embeddings might need specific models/keys)
+        const llmConfig = this.llmService ? this.coreAPI.getService('LLMService')?.getCurrentConfig() : null;
+        const embeddingsPossible = !!(this.llmService && llmConfig?.modelName); // Basic check, assumes main model implies embedding capability
 
+        if (!embeddingsPossible) {
+            // console.warn(`MatcherPlugin: Skipping embedding generation for note ${note.id}, LLM service/model unavailable or not configured.`);
+            // Ensure status reflects this if it was pending
+            const currentStatus = this.coreAPI.getState().pluginRuntimeState?.[this.id]?.embeddingStatus?.[note.id];
+            if (currentStatus === 'pending') {
+                this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_FAILURE', payload: { noteId: note.id } });
+            }
+            return null;
+        }
+
+        // Use updatedAt timestamp in cache key for automatic invalidation on note update
         const cacheKey = `matcher_embedding_${note.id}_${note.updatedAt}`;
         const cachedEmbedding = this.coreAPI.getRuntimeCache(cacheKey);
 
         if (cachedEmbedding) {
-            // console.log(`MatcherPlugin: Using cached embedding for note ${note.id}`);
+            // console.log(`MatcherPlugin: Using cached embedding for note ${note.id} (updatedAt: ${note.updatedAt})`);
+            // Ensure status is 'generated' if we found a cached version
+             const currentStatus = this.coreAPI.getState().pluginRuntimeState?.[this.id]?.embeddingStatus?.[note.id];
+             if (currentStatus !== 'generated') {
+                 this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_SUCCESS', payload: { noteId: note.id } });
+             }
             return cachedEmbedding;
         }
 
-        // console.log(`MatcherPlugin: Generating embedding for note ${note.id}`);
+        // console.log(`MatcherPlugin: Generating embedding for note ${note.id} (updatedAt: ${note.updatedAt})`);
         const textToEmbed = `${note.name || ''}\n\n${note.content || ''}`.trim();
 
         if (!textToEmbed) {
             // console.log(`MatcherPlugin: Note ${note.id} has no content to embed.`);
+             this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_FAILURE', payload: { noteId: note.id } }); // Mark as failed if no content
             return null; // Cannot embed empty text
         }
 
+        // Dispatch START action before async call
+        this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_START', payload: { noteId: note.id } });
+        this.coreAPI.showGlobalStatus(`Matcher: Generating embedding for "${note.name || note.id}"...`, "info", 2500); // User feedback
+
         try {
-            this.coreAPI.showGlobalStatus(`Matcher: Generating embedding for "${note.name}"...`, "info", 2500);
+            // Call the LLM service
             const embeddingVector = await this.llmService.generateEmbeddings(textToEmbed);
 
-            if (!embeddingVector || !Array.isArray(embeddingVector) || embeddingVector.length === 0)
-                throw new Error("LLMService returned invalid embedding data.");
-            // Dispatch success status
+            // Validate the result
+            if (!embeddingVector || !Array.isArray(embeddingVector) || embeddingVector.length === 0) {
+                throw new Error("LLMService returned invalid or empty embedding data.");
+            }
+
+            // Dispatch SUCCESS action
             this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_SUCCESS', payload: { noteId: note.id } });
 
-            // Cache the successful result
+            // Cache the successful result using CORE_SET_RUNTIME_CACHE action
             this.coreAPI.dispatch({
                 type: 'CORE_SET_RUNTIME_CACHE',
                 payload: { key: cacheKey, value: embeddingVector }
             });
-            // Status message handled by reducer/UI update now
-            // this.coreAPI.showGlobalStatus(`Matcher: Embedding generated for "${note.name}".`, "success", 1500);
+            // console.log(`MatcherPlugin: Embedding generated and cached for note ${note.id} with key ${cacheKey}`);
+            this.coreAPI.showGlobalStatus(`Matcher: Embedding generated for "${note.name || note.id}".`, "success", 1500);
 
             return embeddingVector;
 
         } catch (error) {
-            // Dispatch failure status (already done inside the function)
+            // Dispatch FAILURE action
             console.error(`MatcherPlugin: Failed to generate embedding for note ${note.id}`, error);
-            this.coreAPI.showGlobalStatus(`Matcher: Embedding failed for "${note.name}".`, "error", 4000);
-            // Optionally cache the failure for a short time? For now, just return null.
-            // Dispatch failure status
             this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_FAILURE', payload: { noteId: note.id } });
-            return null;
+            // Show error status (LLMService might have already shown one, but this confirms the embedding context)
+            this.coreAPI.showGlobalStatus(`Matcher: Embedding failed for "${note.name || note.id}". Check LLM config/logs.`, "error", 4000);
+            return null; // Return null on failure
         }
-    }, // Added comma
+    },
 
     /**
      * Calculates the cosine similarity between two vectors.

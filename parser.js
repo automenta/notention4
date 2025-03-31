@@ -361,11 +361,13 @@ export const SemanticParserPlugin = {
         }
 
         // Determine parsing strategy
-        const useLLM = !!this.llmService; // Check if LLM service is available
+        // Determine parsing strategy: Use LLM if service exists AND has a configured model name
+        const llmConfig = this.llmService ? this.coreAPI.getService('LLMService')?.getCurrentConfig() : null;
+        const useLLM = !!(this.llmService && llmConfig?.modelName);
         const parseFn = useLLM ? this._parseWithLLM.bind(this) : this._parseWithHeuristics.bind(this);
         const source = useLLM ? 'LLM' : 'Heuristic';
 
-        console.log(`Parser: Triggering ${source} parse for note ${noteId}`);
+        console.log(`Parser: Triggering ${source} parse for note ${noteId} (LLM available: ${!!this.llmService}, LLM configured: ${!!llmConfig?.modelName})`);
 
         try {
             const suggestions = await parseFn(content, noteId);
@@ -391,9 +393,11 @@ export const SemanticParserPlugin = {
             ...s,
             id: s.id || utils.generateUUID(),
             status: s.status || 'pending',
-            // Ensure location is valid for decoration
+            // Ensure location is valid for decoration if present
             location: s.location && typeof s.location.start === 'number' && typeof s.location.end === 'number' ? s.location : null
-        })).filter(s => s.location); // Filter out suggestions without valid locations
+        }));
+        // --- Removed filter: Don't filter out suggestions without location ---
+        // We still want to store them in the state, even if they can't be decorated in the editor yet.
 
         // Dispatch action to update state. The editor plugin will react to this state change.
         this.coreAPI.dispatch({
@@ -692,10 +696,12 @@ JSON Output:
                 });
 
             console.log(`Parser: LLM found ${suggestions.length} potential suggestions.`);
-            // Filter out suggestions without location before returning
-            const locatedSuggestions = suggestions.filter(s => s.location);
-            console.log(`Parser: LLM found ${locatedSuggestions.length} potential suggestions with location info (required).`);
-            return locatedSuggestions;
+            // --- Location Handling ---
+            // LLM currently doesn't provide location. We return suggestions without it.
+            // The SuggestionPlugin in editor.js will only create decorations for suggestions *with* location.
+            // Future enhancement: Instruct LLM to return character indices.
+            console.log(`Parser: LLM found ${suggestions.length} potential suggestions.`);
+            return suggestions; // Return all suggestions, even without location
 
         } catch (error) {
             // Catch errors from LLM call or JSON parsing
