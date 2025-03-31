@@ -1,16 +1,25 @@
 "use strict";
 
 import localforage from "localforage";
-//import { DOMPurify } from "dompurify";
 import {produce} from "immer";
 
-//Util imports
 import {Utils} from './util.js';
 import {EventBus} from './event.js';
-import {SLOT_APP_STATUS_BAR, SLOT_EDITOR_BELOW_CONTENT, SLOT_EDITOR_CONTENT_AREA, SLOT_EDITOR_HEADER_ACTIONS, SLOT_EDITOR_PLUGIN_PANELS, SLOT_NOTE_LIST_ITEM_META, SLOT_NOTE_LIST_ITEM_STATUS, SLOT_SETTINGS_PANEL_SECTION, SLOT_SIDEBAR_HEADER, SLOT_SIDEBAR_NOTE_LIST_ACTIONS} from './ui.js';
+import {
+    SLOT_APP_STATUS_BAR,
+    SLOT_EDITOR_BELOW_CONTENT,
+    SLOT_EDITOR_CONTENT_AREA,
+    SLOT_EDITOR_HEADER_ACTIONS,
+    SLOT_EDITOR_PLUGIN_PANELS,
+    SLOT_NOTE_LIST_ITEM_META,
+    SLOT_NOTE_LIST_ITEM_STATUS,
+    SLOT_SETTINGS_PANEL_SECTION,
+    SLOT_SIDEBAR_HEADER,
+    SLOT_SIDEBAR_NOTE_LIST_ACTIONS
+} from './ui.js';
 
 
-//Plugin imports
+//Plugins
 import {PropertiesPlugin} from './property.js';
 import {OntologyPlugin} from './ontology.js';
 import {SemanticParserPlugin} from "./parser.js";
@@ -18,7 +27,6 @@ import {RichTextEditorPlugin} from "./editor.js";
 import {NostrPlugin} from "./nostr.js";
 import {LLMPlugin} from "./llm.js";
 import {MatcherPlugin} from "./matcher.js"; // Import MatcherPlugin
-
 const PLUGINS = [
     PropertiesPlugin,
     OntologyPlugin,
@@ -194,7 +202,7 @@ class PersistenceService {
             this._localForage.config({
                 name: 'RealityNotebook',
                 storeName: 'appState_v10_1', // Specific store name
-                description: 'Stores Reality Notebook application state'
+                description: 'Stores Netention application state'
             });
             // Debounced subscription to state changes for saving
             this._stateManager.subscribe(Utils.debounce(this._handleStateChange.bind(this), 1200));
@@ -224,9 +232,9 @@ class PersistenceService {
         }
     }
 
-    _handleStateChange(newState) {
+    async _handleStateChange(newState) {
         if (!this._localForage) return; // Don't save if storage isn't available
-        this.saveState(newState);
+        await this.saveState(newState);
     }
 
     async saveState(state) {
@@ -406,7 +414,7 @@ class UIRenderer {
         const {selectedNoteId, searchTerm, noteListSortMode = 'time'} = uiState;
 
         // --- Enhanced Filtering Logic ---
-        const { textQuery, structuredFilters } = this._parseSearchQuery(searchTerm || '');
+        const {textQuery, structuredFilters} = this._parseSearchQuery(searchTerm || '');
         const lowerTextQuery = textQuery.toLowerCase();
 
         // 1. Filter notes based on text and structured queries
@@ -416,13 +424,13 @@ class UIRenderer {
 
             // Text search match (if text query exists)
             const textMatch = !lowerTextQuery ||
-                              (note.name.toLowerCase().includes(lowerTextQuery) ||
-                               note.content.toLowerCase().includes(lowerTextQuery));
+                (note.name.toLowerCase().includes(lowerTextQuery) ||
+                    note.content.toLowerCase().includes(lowerTextQuery));
 
             // Structured filter match (if filters exist)
             const properties = note.pluginData?.properties?.properties || [];
             const structuredMatch = structuredFilters.length === 0 ||
-                                    this._evaluateStructuredFilters(properties, structuredFilters);
+                this._evaluateStructuredFilters(properties, structuredFilters);
 
             // Must match both (if they exist)
             return textMatch && structuredMatch;
@@ -502,14 +510,25 @@ class UIRenderer {
                 >
                 <div class="editor-header-actions" data-slot="${SLOT_EDITOR_HEADER_ACTIONS}" data-note-id=${note.id}>
                     <button class="core-archive-note" @click=${this._handleArchiveNote(note.id)}
-                            title="Archive Note" aria-label="Archive Note">Archive</button>
+                            title="Archive Note" aria-label="Archive Note">Archive
+                    </button>
                     <button class="core-delete-note" @click=${this._handleDeleteNote(note.id, note.name)}
-                            title="Delete Note" aria-label="Delete Note">Delete</button>
+                            title="Delete Note" aria-label="Delete Note">Delete
+                    </button>
                     ${this._renderSlot(state, SLOT_EDITOR_HEADER_ACTIONS, note.id)}
                     <!-- LLM Action Buttons -->
-                    <button class="editor-header-button llm-action-button" @click=${() => this._handleLlmSummarize(note.id)} title="Summarize selection or note">Summarize</button>
-                    <button class="editor-header-button llm-action-button" @click=${() => this._handleLlmAskQuestion(note.id)} title="Ask question about note content">Ask</button>
-                    <button class="editor-header-button llm-action-button" @click=${() => this._handleLlmGetActions(note.id)} title="Suggest actions based on note content">Actions</button>
+                    <button class="editor-header-button llm-action-button"
+                            @click=${() => this._handleLlmSummarize(note.id)} title="Summarize selection or note">
+                        Summarize
+                    </button>
+                    <button class="editor-header-button llm-action-button"
+                            @click=${() => this._handleLlmAskQuestion(note.id)} title="Ask question about note content">
+                        Ask
+                    </button>
+                    <button class="editor-header-button llm-action-button"
+                            @click=${() => this._handleLlmGetActions(note.id)}
+                            title="Suggest actions based on note content">Actions
+                    </button>
                 </div>
             </div>
             <div class="editor-content-wrapper"
@@ -587,7 +606,7 @@ class UIRenderer {
                                 : ''}
                     </div>
                 </div>
-                </div>
+            </div>
             </div>
         `;
     }
@@ -710,6 +729,7 @@ class UIRenderer {
             // Error shown by LLMService
         }
     }
+
     // --- End LLM Action Handlers ---
 
     // --- UI Event Handlers (Bound using arrow functions) ---
@@ -730,8 +750,14 @@ class UIRenderer {
             this._stateManager.dispatch({type: 'CORE_SET_CORE_SETTING', payload: {key, value}});
         }
     };
-    _handleSearchInput = (e) => this._stateManager.dispatch({type: 'CORE_SEARCH_TERM_CHANGED', payload: {searchTerm: e.target.value}});
-    _handleSortChange = (e) => this._stateManager.dispatch({type: 'CORE_SET_NOTE_LIST_SORT_MODE', payload: e.target.value});
+    _handleSearchInput = (e) => this._stateManager.dispatch({
+        type: 'CORE_SEARCH_TERM_CHANGED',
+        payload: {searchTerm: e.target.value}
+    });
+    _handleSortChange = (e) => this._stateManager.dispatch({
+        type: 'CORE_SET_NOTE_LIST_SORT_MODE',
+        payload: e.target.value
+    });
     _handleTitleInput = (noteId) => (e) => { // Debounced update for title
         const newValue = e.target.value;
         // Use a debounced function if desired, or dispatch directly
@@ -760,10 +786,10 @@ class UIRenderer {
                 // if (noteId) this._handleSelectNote(noteId);
             }
         } else if (e.key === 'Enter' || e.key === ' ') {
-             e.preventDefault();
-             const currentItem = e.target.closest('.note-list-item');
-             const noteId = currentItem?.dataset.noteId;
-             if (noteId) this._handleSelectNote(noteId);
+            e.preventDefault();
+            const currentItem = e.target.closest('.note-list-item');
+            const noteId = currentItem?.dataset.noteId;
+            if (noteId) this._handleSelectNote(noteId);
         }
     };
     _handleClearState = () => {
@@ -789,13 +815,13 @@ class UIRenderer {
             // Value can be quoted or unquoted
             const value = match[4] ?? match[5] ?? match[6];
 
-            structuredFilters.push({ key: key.toLowerCase(), operator, value });
+            structuredFilters.push({key: key.toLowerCase(), operator, value});
 
             // Remove the matched filter from the text query part
             textQuery = textQuery.replace(match[0], '').trim();
         }
 
-        return { textQuery: textQuery.trim(), structuredFilters };
+        return {textQuery: textQuery.trim(), structuredFilters};
     }
 
     // --- Structured Filter Evaluation Helper ---
@@ -829,22 +855,42 @@ class UIRenderer {
                     const numFilter = Number(filterValueStr);
                     if (!isNaN(numProp) && !isNaN(numFilter)) {
                         switch (filter.operator) {
-                            case ':': case '=': match = numProp === numFilter; break;
-                            case '>': match = numProp > numFilter; break;
-                            case '>=': match = numProp >= numFilter; break;
-                            case '<': match = numProp < numFilter; break;
-                            case '<=': match = numProp <= numFilter; break;
-                            case '!=': match = numProp !== numFilter; break;
-                            default: match = false; // Unsupported operator for type
+                            case ':':
+                            case '=':
+                                match = numProp === numFilter;
+                                break;
+                            case '>':
+                                match = numProp > numFilter;
+                                break;
+                            case '>=':
+                                match = numProp >= numFilter;
+                                break;
+                            case '<':
+                                match = numProp < numFilter;
+                                break;
+                            case '<=':
+                                match = numProp <= numFilter;
+                                break;
+                            case '!=':
+                                match = numProp !== numFilter;
+                                break;
+                            default:
+                                match = false; // Unsupported operator for type
                         }
                     }
                 } else if (propType === 'boolean') {
                     const boolProp = String(propValue).toLowerCase() === 'true' || propValue === true;
                     const boolFilter = String(filterValueStr).toLowerCase() === 'true' || filterValueStr === true;
-                     switch (filter.operator) {
-                        case ':': case '=': match = boolProp === boolFilter; break;
-                        case '!=': match = boolProp !== boolFilter; break;
-                        default: match = false;
+                    switch (filter.operator) {
+                        case ':':
+                        case '=':
+                            match = boolProp === boolFilter;
+                            break;
+                        case '!=':
+                            match = boolProp !== boolFilter;
+                            break;
+                        default:
+                            match = false;
                     }
                 } else if (propType === 'date') {
                     // TODO: Implement robust date comparison (e.g., using a library)
@@ -853,17 +899,31 @@ class UIRenderer {
                     const dateProp = new Date(propValue);
                     const dateFilter = new Date(filterValueStr); // Very basic parsing
                     if (!isNaN(dateProp) && !isNaN(dateFilter)) {
-                         switch (filter.operator) {
-                            case ':': case '=': match = dateProp.toDateString() === dateFilter.toDateString(); break; // Compare day only
-                            case '>': match = dateProp > dateFilter; break;
-                            case '>=': match = dateProp >= dateFilter; break;
-                            case '<': match = dateProp < dateFilter; break;
-                            case '<=': match = dateProp <= dateFilter; break;
-                            case '!=': match = dateProp.toDateString() !== dateFilter.toDateString(); break;
-                            default: match = false;
+                        switch (filter.operator) {
+                            case ':':
+                            case '=':
+                                match = dateProp.toDateString() === dateFilter.toDateString();
+                                break; // Compare day only
+                            case '>':
+                                match = dateProp > dateFilter;
+                                break;
+                            case '>=':
+                                match = dateProp >= dateFilter;
+                                break;
+                            case '<':
+                                match = dateProp < dateFilter;
+                                break;
+                            case '<=':
+                                match = dateProp <= dateFilter;
+                                break;
+                            case '!=':
+                                match = dateProp.toDateString() !== dateFilter.toDateString();
+                                break;
+                            default:
+                                match = false;
                         }
                     } else { // Fallback to string compare if dates invalid
-                         match = String(propValue).toLowerCase().includes(filterValueStr.toLowerCase());
+                        match = String(propValue).toLowerCase().includes(filterValueStr.toLowerCase());
                     }
                 } else if (propType === 'list') {
                     const listProp = Array.isArray(propValue) ? propValue : String(propValue).split(',').map(s => s.trim());
@@ -871,8 +931,7 @@ class UIRenderer {
                     match = listProp.some(item => String(item).toLowerCase().includes(lowerFilter));
                     if (filter.operator === '!=') match = !match;
                     else if (filter.operator !== ':' && filter.operator !== '=') match = false; // Only equality/contains for lists now
-                }
-                else { // Default: text comparison (case-insensitive contains)
+                } else { // Default: text comparison (case-insensitive contains)
                     const textProp = String(propValue).toLowerCase();
                     const textFilter = filterValueStr.toLowerCase();
                     match = textProp.includes(textFilter);
@@ -897,7 +956,7 @@ class UIRenderer {
     // --- Centralized Modal Rendering Logic ---
     _renderModal(state) {
         // Get modalType and modalProps from the NEW state structure
-        const { modalType, modalProps } = state.uiState;
+        const {modalType, modalProps} = state.uiState;
         if (!modalType) return '';
 
         switch (modalType) {
@@ -919,10 +978,10 @@ class UIRenderer {
     // --- Specific Modal Renderers ---
 
     _renderTemplateSelectorModal(state, props) {
-        const { templates = [], context = 'insert', onSelectActionType = 'TEMPLATE_SELECTED' } = props; // Expect templates array and context
+        const {templates = [], context = 'insert', onSelectActionType = 'TEMPLATE_SELECTED'} = props; // Expect templates array and context
 
         const handleSelect = (template) => {
-            this._stateManager.dispatch({ type: onSelectActionType, payload: { template, context } });
+            this._stateManager.dispatch({type: onSelectActionType, payload: {template, context}});
             this._handleCloseModal(); // Close modal after selection
         };
 
@@ -944,7 +1003,7 @@ class UIRenderer {
     }
 
     _renderPropertyAddModal(state, props) {
-        const { noteId, possibleKeys = [], onAddActionType = 'PROPERTY_ADD_CONFIRMED' } = props;
+        const {noteId, possibleKeys = [], onAddActionType = 'PROPERTY_ADD_CONFIRMED'} = props;
         const coreAPI = window.realityNotebookCore; // Get core API instance
         const ontologyService = coreAPI?.getService('OntologyService');
 
@@ -955,7 +1014,7 @@ class UIRenderer {
             const value = form.value.value;
 
             if (key) {
-                this._stateManager.dispatch({ type: onAddActionType, payload: { noteId, key, value } });
+                this._stateManager.dispatch({type: onAddActionType, payload: {noteId, key, value}});
                 this._handleCloseModal();
             } else {
                 coreAPI?.showGlobalStatus("Property key cannot be empty.", "warning");
@@ -966,7 +1025,7 @@ class UIRenderer {
             const customKeyInput = event.target.form.customKey;
             customKeyInput.style.display = event.target.value === '__custom__' ? 'block' : 'none';
             if (event.target.value !== '__custom__') {
-                 customKeyInput.value = ''; // Clear custom if selection changes
+                customKeyInput.value = ''; // Clear custom if selection changes
             }
         };
 
@@ -981,9 +1040,9 @@ class UIRenderer {
                         <select id="prop-key-select" name="keySelect" @change=${handleKeyChange} required>
                             <option value="" disabled selected>-- Select or Add --</option>
                             ${possibleKeys.map(k => {
-                                const hints = ontologyService?.getUIHints(k) || { icon: '?' };
-                                return html`<option value="${k}">${hints.icon} ${k}</option>`;
-                            })}
+            const hints = ontologyService?.getUIHints(k) || {icon: '?'};
+            return html`<option value="${k}">${hints.icon} ${k}</option>`;
+        })}
                             <option value="__custom__">-- Add Custom Key --</option>
                         </select>
                         <input type="text" name="customKey" placeholder="Enter custom key name" style="display: none; margin-top: 5px;">
@@ -1002,7 +1061,12 @@ class UIRenderer {
     }
 
     _renderPropertyEditModal(state, props) {
-        const { noteId, property, onUpdateActionType = 'PROPERTY_UPDATE_CONFIRMED', onDeleteActionType = 'PROPERTY_DELETE_CONFIRMED' } = props;
+        const {
+            noteId,
+            property,
+            onUpdateActionType = 'PROPERTY_UPDATE_CONFIRMED',
+            onDeleteActionType = 'PROPERTY_DELETE_CONFIRMED'
+        } = props;
         if (!property) return ''; // Should not happen
         const coreAPI = window.realityNotebookCore;
         const ontologyService = coreAPI?.getService('OntologyService');
@@ -1014,21 +1078,21 @@ class UIRenderer {
             // Reuse logic from InlinePropertyNodeView or PropertiesPlugin UI
             // For simplicity, using text input for now, but should be enhanced
             // based on inputType (date, select, checkbox, range etc.)
-             if (inputType === 'select' && hints.options) {
+            if (inputType === 'select' && hints.options) {
                 return html`<select name="value" required>
                     ${hints.options.map(opt => html`
                         <option value="${opt}" ?selected=${opt === property.value}>${opt}</option>
                     `)}
                 </select>`;
             } else if (inputType === 'checkbox') { // Boolean
-                 return html`<input type="checkbox" name="value" .checked=${!!property.value}>`;
+                return html`<input type="checkbox" name="value" .checked=${!!property.value}>`;
             } else if (inputType === 'date') {
-                 const dateValue = property.value ? new Date(property.value).toISOString().split('T')[0] : '';
-                 return html`<input type="date" name="value" .value=${dateValue}>`;
+                const dateValue = property.value ? new Date(property.value).toISOString().split('T')[0] : '';
+                return html`<input type="date" name="value" .value=${dateValue}>`;
             } else if (inputType === 'number') {
-                 return html`<input type="number" name="value" .value=${property.value ?? ''} step=${hints.step ?? 'any'}>`;
+                return html`<input type="number" name="value" .value=${property.value ?? ''} step=${hints.step ?? 'any'}>`;
             } else { // Default text
-                 return html`<input type="text" name="value" .value=${property.value ?? ''} required>`;
+                return html`<input type="text" name="value" .value=${property.value ?? ''} required>`;
             }
         };
 
@@ -1049,18 +1113,18 @@ class UIRenderer {
                 if (Object.keys(changes).length > 0) {
                     this._stateManager.dispatch({
                         type: onUpdateActionType,
-                        payload: { noteId, propertyId: property.id, changes }
+                        payload: {noteId, propertyId: property.id, changes}
                     });
                 }
                 this._handleCloseModal();
             } else {
-                 coreAPI?.showGlobalStatus("Property key cannot be empty.", "warning");
+                coreAPI?.showGlobalStatus("Property key cannot be empty.", "warning");
             }
         };
 
         const handleDelete = () => {
             if (confirm(`Are you sure you want to delete property "${property.key}"?`)) {
-                this._stateManager.dispatch({ type: onDeleteActionType, payload: { noteId, propertyId: property.id } });
+                this._stateManager.dispatch({type: onDeleteActionType, payload: {noteId, propertyId: property.id}});
                 this._handleCloseModal();
             }
         };
@@ -1174,64 +1238,11 @@ class PluginManager {
         console.log(`Plugin: [${id}] v${version || 'N/A'} registered`);
     }
 
-    // --- Topological Sort Implementation ---
-    _calculateLoadOrder() {
-        const graph = new Map(); // node -> Set<neighbor>
-        const inDegree = new Map();
-        const sorted = [];
-        const queue = [];
-
-        // Build graph and calculate in-degrees
-        this._pluginRegistry.forEach((entry, pluginId) => {
-            graph.set(pluginId, new Set());
-            inDegree.set(pluginId, 0);
-        });
-
-        this._pluginRegistry.forEach((entry, pluginId) => {
-            const dependencies = entry.definition.dependencies || [];
-            dependencies.forEach(depId => {
-                if (!this._pluginRegistry.has(depId)) {
-                    throw new Error(`Plugin [${pluginId}] has an unknown dependency: [${depId}]`);
-                }
-                // Add edge depId -> pluginId
-                if (graph.has(depId) && !graph.get(depId).has(pluginId)) {
-                    graph.get(depId).add(pluginId);
-                    inDegree.set(pluginId, (inDegree.get(pluginId) || 0) + 1);
-                }
-            });
-        });
-
-        // Initialize queue with nodes having in-degree 0
-        inDegree.forEach((degree, pluginId) => {
-            if (degree === 0)
-                queue.push(pluginId);
-        });
-
-        // Process the queue
-        while (queue.length > 0) {
-            const u = queue.shift();
-            sorted.push(u);
-
-            graph.get(u)?.forEach(v => {
-                inDegree.set(v, inDegree.get(v) - 1);
-                if (inDegree.get(v) === 0) {
-                    queue.push(v);
-                }
-            });
-        }
-
-        // Cyclic check
-        if (sorted.length !== this._pluginRegistry.size)
-            throw new Error(`Circular dependency detected involving plugins: ${Array.from(this._pluginRegistry.keys()).filter(id => !sorted.includes(id)).join(', ')}`);
-
-
-        this._pluginLoadOrder = sorted;
-        console.log("Plugin: load order:", this._pluginLoadOrder);
-    }
 
     activatePlugins() {
         try {
-            this._calculateLoadOrder(); // Throws on error
+            this._pluginLoadOrder = Utils.dependencySort(this._pluginRegistry);
+            console.log("Plugin: load order:", this._pluginLoadOrder);
         } catch (e) {
             console.error("Plugin: Stopped activation due to dependency errors.", e);
             this._eventBus.publish('PLUGIN_ACTIVATION_FAILED', {error: e.message});
@@ -1416,9 +1427,8 @@ class CoreAPI {
             setTimeout(() => {
                 // Check if the message is still the same before clearing
                 const currentState = this.getState();
-                if (currentState.uiState.globalStatus?.message === message && currentState.uiState.globalStatus?.type === type) {
+                if (currentState.uiState.globalStatus?.message === message && currentState.uiState.globalStatus?.type === type)
                     this.dispatch({type: 'CORE_CLEAR_GLOBAL_STATUS'});
-                }
             }, duration);
         }
     };
@@ -1688,9 +1698,9 @@ async function main() {
             // Dispatch action to merge loaded state and reset transient fields
             state.dispatch({type: 'CORE_STATE_LOADED', payload: {loadedState}});
             if (loadedState) {
-                 api.showGlobalStatus("Data loaded.", "success", 1500);
+                api.showGlobalStatus("Data loaded.", "success", 1500);
             } else {
-                 api.showGlobalStatus("No saved data found, starting fresh.", "info", 2000);
+                api.showGlobalStatus("No saved data found, starting fresh.", "info", 2000);
             }
         } catch (loadError) {
             console.error("Core: Failed to load persistent state.", loadError);
@@ -1717,7 +1727,7 @@ async function main() {
 
         // Initial Render is triggered by CORE_STATE_LOADED state change via UIRenderer subscription.
 
-        console.log("%cReality Notebook Core Initialized Successfully.", "color: green; font-weight: bold;");
+        console.log("%cNetention Core Initialized Successfully.", "color: green; font-weight: bold;");
         api.showGlobalStatus("Application Ready", "success", 2000);
 
         // Post-initialization (Example: Trigger onboarding check)
@@ -1740,4 +1750,4 @@ async function main() {
 }
 
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', main); else main();
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', main); else await main();

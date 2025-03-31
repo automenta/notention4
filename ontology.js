@@ -11,60 +11,69 @@ const ONTOLOGY = {
             type: "date", // Expected data type
             description: "The date when a task or item is due.",
             uiHint: "date", // Link to uiHints key
-            validation: { required: false } // Example constraint
+            validation: {required: false} // Example constraint
         },
         "priority": {
             type: "number",
             description: "Numeric priority level (e.g., 1-10).",
             uiHint: "priority",
-            validation: { required: false, min: 1, max: 10 }
+            validation: {required: false, min: 1, max: 10}
         },
         "status": {
             type: "text", // Could be 'enum' if we add support
             description: "Current status of a task or item.",
             uiHint: "status",
-            validation: { required: false, allowedValues: ["Todo", "In Progress", "Done", "Blocked"] }
+            validation: {required: false, allowedValues: ["Todo", "In Progress", "Done", "Blocked"]}
         },
         "assignee": {
             type: "reference", // Link to another entity (e.g., contact note)
             description: "Person responsible for the task.",
             uiHint: "assignee",
-            validation: { required: false, referenceType: "contact" } // Specify linked type
+            validation: {required: false, referenceType: "contact"} // Specify linked type
         },
         "project": {
             type: "reference",
             description: "Associated project.",
             uiHint: "project",
-            validation: { required: false, referenceType: "project" }
+            validation: {required: false, referenceType: "project"}
         },
         "tags": {
             type: "list", // List of strings
             description: "Keywords or labels.",
             uiHint: "tags",
-            validation: { required: false, itemType: "text" }
+            validation: {required: false, itemType: "text"}
         },
         "location": {
             type: "location", // Specific type for locations
             description: "A physical place or address.",
             uiHint: "location",
-            validation: { required: false }
+            validation: {required: false}
         },
         "url": {
             type: "url",
             description: "A web address.",
             uiHint: "url",
-            validation: { required: false }
+            validation: {required: false}
         }
         // Add more property definitions here...
     },
     // Type Inference Rules (Enhanced): More specific rules
     rules: [
         // Order matters - more specific rules first
-        { pattern: "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:\\d{2})?)?$", type: "date", description: "ISO 8601 Date/DateTime" },
-        { pattern: "^(https?|ftp):\\/\\/[^\\s/$.?#].[^\\s]*$", type: "url", description: "Detects URLs" },
-        { pattern: "^\\d+$", type: "number", description: "Detects whole numbers" },
-        { pattern: "^\\d*\\.\\d+$", type: "number", description: "Detects decimal numbers" },
-        { pattern: "^(true|false|yes|no|on|off)$", type: "boolean", caseSensitive: false, description: "Detects common boolean strings" },
+        {
+            pattern: "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:\\d{2})?)?$",
+            type: "date",
+            description: "ISO 8601 Date/DateTime"
+        },
+        {pattern: "^(https?|ftp):\\/\\/[^\\s/$.?#].[^\\s]*$", type: "url", description: "Detects URLs"},
+        {pattern: "^\\d+$", type: "number", description: "Detects whole numbers"},
+        {pattern: "^\\d*\\.\\d+$", type: "number", description: "Detects decimal numbers"},
+        {
+            pattern: "^(true|false|yes|no|on|off)$",
+            type: "boolean",
+            caseSensitive: false,
+            description: "Detects common boolean strings"
+        },
         // Add rules for locations, specific formats, etc.
     ],
     // Templates remain the same for now
@@ -78,22 +87,27 @@ const ONTOLOGY = {
     // UI Hints (Expanded): Provide icons, colors, input types, options for properties/types
     uiHints: {
         // By Type
-        "date": { icon: "📅", color: "#3498db", inputType: "date" },
-        "url": { icon: "🔗", color: "#2ecc71", inputType: "url" },
-        "number": { icon: "#️⃣", color: "#f39c12", inputType: "number" },
-        "boolean": { icon: "✔️", color: "#9b59b6", inputType: "checkbox" },
-        "reference": { icon: "📎", color: "#34495e", inputType: "text" }, // Input could be a search/select later
-        "list": { icon: "📜", color: "#7f8c8d", inputType: "textarea" }, // Simple input for comma-separated?
-        "location": { icon: "📍", color: "#e74c3c", inputType: "text" },
-        "text": { icon: "📝", color: "#888", inputType: "text" },
+        "date": {icon: "📅", color: "#3498db", inputType: "date"},
+        "url": {icon: "🔗", color: "#2ecc71", inputType: "url"},
+        "number": {icon: "#️⃣", color: "#f39c12", inputType: "number"},
+        "boolean": {icon: "✔️", color: "#9b59b6", inputType: "checkbox"},
+        "reference": {icon: "📎", color: "#34495e", inputType: "text"}, // Input could be a search/select later
+        "list": {icon: "📜", color: "#7f8c8d", inputType: "textarea"}, // Simple input for comma-separated?
+        "location": {icon: "📍", color: "#e74c3c", inputType: "text"},
+        "text": {icon: "📝", color: "#888", inputType: "text"},
         // By Specific Property Key (overrides type hint if needed)
-        "priority": { icon: "⭐", color: "#f1c40f", inputType: "range", min: 1, max: 10, step: 1 }, // Use range slider
-        "status": { icon: "📊", color: "#1abc9c", inputType: "select", options: ["Todo", "In Progress", "Done", "Blocked"] }, // Use dropdown
-        "assignee": { icon: "👤", color: "#e67e22", inputType: "text" }, // Could link to contacts later
-        "project": { icon: "📁", color: "#2980b9", inputType: "text" }, // Could link to project notes later
-        "tags": { icon: "#️⃣", color: "#7f8c8d", inputType: "text" }, // Input for comma-separated tags
+        "priority": {icon: "⭐", color: "#f1c40f", inputType: "range", min: 1, max: 10, step: 1}, // Use range slider
+        "status": {
+            icon: "📊",
+            color: "#1abc9c",
+            inputType: "select",
+            options: ["Todo", "In Progress", "Done", "Blocked"]
+        }, // Use dropdown
+        "assignee": {icon: "👤", color: "#e67e22", inputType: "text"}, // Could link to contacts later
+        "project": {icon: "📁", color: "#2980b9", inputType: "text"}, // Could link to project notes later
+        "tags": {icon: "#️⃣", color: "#7f8c8d", inputType: "text"}, // Input for comma-separated tags
         // Default fallback
-        "default": { icon: "❓", color: "#ccc", inputType: "text" }
+        "default": {icon: "❓", color: "#ccc", inputType: "text"}
     },
     // Keywords (Expanded): Include common properties derived from definitions
     keywords: {
@@ -279,19 +293,23 @@ export const OntologyPlugin = {
                  * @returns {object} An object with UI hints (e.g., { icon: ' M ', color: '#ccc', inputType: 'text' }).
                  */
                 getUIHints: (propertyKey) => {
-                    const defaultHint = this._ontologyData?.uiHints?.default || { icon: '❓', color: '#ccc', inputType: 'text' };
+                    const defaultHint = this._ontologyData?.uiHints?.default || {
+                        icon: '❓',
+                        color: '#ccc',
+                        inputType: 'text'
+                    };
                     if (!propertyKey || !this._ontologyData) return defaultHint;
 
                     // 1. Check for hint specific to the property key
                     const keyHint = this._ontologyData.uiHints?.[propertyKey] || this._ontologyData.uiHints?.[propertyKey.toLowerCase()];
-                    if (keyHint) return { ...defaultHint, ...keyHint }; // Merge with default
+                    if (keyHint) return {...defaultHint, ...keyHint}; // Merge with default
 
                     // 2. Check for hint based on the property's defined type
                     const propertyDefinition = this._ontologyData.properties?.[propertyKey] || this._ontologyData.properties?.[propertyKey.toLowerCase()];
                     const type = propertyDefinition?.type;
                     if (type) {
                         const typeHint = this._ontologyData.uiHints?.[type];
-                        if (typeHint) return { ...defaultHint, ...typeHint }; // Merge with default
+                        if (typeHint) return {...defaultHint, ...typeHint}; // Merge with default
                     }
 
                     // 3. Fallback to default
@@ -323,7 +341,7 @@ export const OntologyPlugin = {
     registerUISlots: function () {
         return {
             [SLOT_SETTINGS_PANEL_SECTION]: (props) => {
-                const { state, dispatch, html } = props;
+                const {state, dispatch, html} = props;
                 const configNote = this.coreAPI.getSystemNoteByType('config/ontology');
                 const noteId = configNote?.id;
                 const currentOntologyData = this._ontologyData || ONTOLOGY; // Use loaded data or default
@@ -452,11 +470,11 @@ export const OntologyPlugin = {
     },
 
     _renderKeywordsSection(ontologyData, noteId, dispatch, html) {
-        const keywords = ontologyData.keywords || { categories: [], tags: [] };
+        const keywords = ontologyData.keywords || {categories: [], tags: []};
 
         const handleKeywordChange = (type, index, newValue) => {
             const updatedOntology = JSON.parse(JSON.stringify(ontologyData)); // Deep copy
-            if (!updatedOntology.keywords) updatedOntology.keywords = { categories: [], tags: [] };
+            if (!updatedOntology.keywords) updatedOntology.keywords = {categories: [], tags: []};
             if (updatedOntology.keywords[type] && updatedOntology.keywords[type][index] !== undefined) {
                 updatedOntology.keywords[type][index] = newValue.trim();
                 // Filter out empty keywords on save? Or just on change here? Let's filter on save.
@@ -466,7 +484,7 @@ export const OntologyPlugin = {
 
         const handleAddKeyword = (type) => {
             const updatedOntology = JSON.parse(JSON.stringify(ontologyData)); // Deep copy
-            if (!updatedOntology.keywords) updatedOntology.keywords = { categories: [], tags: [] };
+            if (!updatedOntology.keywords) updatedOntology.keywords = {categories: [], tags: []};
             if (!updatedOntology.keywords[type]) updatedOntology.keywords[type] = [];
             updatedOntology.keywords[type].push(""); // Add empty string to edit
             this._handleSaveOntology(updatedOntology, noteId, dispatch); // Save immediately to show new input
@@ -492,7 +510,7 @@ export const OntologyPlugin = {
                                 @click=${() => handleDeleteKeyword(type, index)}>×</button>
                     </div>
                 `)}
-                <button class="ontology-add-button small" @click=${() => handleAddKeyword(type)}>+ Add ${type.slice(0,-1)}</button>
+                <button class="ontology-add-button small" @click=${() => handleAddKeyword(type)}>+ Add ${type.slice(0, -1)}</button>
             </div>
         `;
 
@@ -511,7 +529,7 @@ export const OntologyPlugin = {
         const newItemKey = prompt(`Enter new key for ${sectionKey} (or leave blank for array items):`);
         if (newItemKey === null) return; // User cancelled
 
-        const updatedOntology = { ...ontologyData }; // Shallow copy
+        const updatedOntology = {...ontologyData}; // Shallow copy
 
         if (Array.isArray(updatedOntology[sectionKey])) {
             updatedOntology[sectionKey] = [...updatedOntology[sectionKey], {}]; // Add empty object for arrays (rules, templates)
@@ -520,7 +538,7 @@ export const OntologyPlugin = {
                 alert(`Invalid or duplicate key: "${newItemKey}"`);
                 return;
             }
-            updatedOntology[sectionKey] = { ...(updatedOntology[sectionKey] || {}), [newItemKey]: {} }; // Add empty object for maps (properties, uiHints)
+            updatedOntology[sectionKey] = {...(updatedOntology[sectionKey] || {}), [newItemKey]: {}}; // Add empty object for maps (properties, uiHints)
         }
 
         this._handleSaveOntology(updatedOntology, noteId, dispatch);
@@ -533,13 +551,13 @@ export const OntologyPlugin = {
 
         if (!confirm(`Are you sure you want to delete this item from ${sectionKey}?`)) return;
 
-        const updatedOntology = { ...ontologyData }; // Shallow copy
+        const updatedOntology = {...ontologyData}; // Shallow copy
 
         if (Array.isArray(updatedOntology[sectionKey])) {
             const index = parseInt(itemKey, 10);
             updatedOntology[sectionKey] = updatedOntology[sectionKey].filter((_, i) => i !== index);
         } else {
-            updatedOntology[sectionKey] = { ...(updatedOntology[sectionKey] || {}) }; // Ensure object exists
+            updatedOntology[sectionKey] = {...(updatedOntology[sectionKey] || {})}; // Ensure object exists
             delete updatedOntology[sectionKey][itemKey];
         }
 
@@ -572,7 +590,7 @@ export const OntologyPlugin = {
                 // Do not proceed with saving if JSON is invalid
                 // Clear any pending debounced save for this field to prevent saving bad data
                 if (this._debouncedSaveOntology.cancel) {
-                     this._debouncedSaveOntology.cancel();
+                    this._debouncedSaveOntology.cancel();
                 }
                 return;
             }
@@ -608,7 +626,7 @@ export const OntologyPlugin = {
     },
 
     // Debounced save function
-    _debouncedSaveOntology: Utils.debounce(function(updatedOntology, noteId, dispatch) {
+    _debouncedSaveOntology: Utils.debounce(function (updatedOntology, noteId, dispatch) {
         this._handleSaveOntology(updatedOntology, noteId, dispatch);
     }, 1500), // Debounce time in ms
 
@@ -629,7 +647,7 @@ export const OntologyPlugin = {
                 type: 'CORE_UPDATE_NOTE',
                 payload: {
                     noteId: noteId,
-                    changes: { content: ontologyString }
+                    changes: {content: ontologyString}
                 }
             });
             // No need to manually update this._ontologyData, the subscription will handle it.

@@ -1,5 +1,5 @@
-import { Node } from '@tiptap/core';
-import { InlinePropertyNodeView } from './InlinePropertyNodeView.js'; // We'll create this next
+import {Node} from '@tiptap/core';
+import {InlinePropertyNodeView} from './InlinePropertyNodeView.js'; // We'll create this next
 
 /**
  * Tiptap Node for representing inline properties.
@@ -19,24 +19,24 @@ export const InlineProperty = Node.create({
             propId: {
                 default: null,
                 parseHTML: element => element.getAttribute('data-prop-id'),
-                renderHTML: attributes => ({ 'data-prop-id': attributes.propId }),
+                renderHTML: attributes => ({'data-prop-id': attributes.propId}),
             },
             key: {
                 default: '',
                 parseHTML: element => element.getAttribute('data-key'),
-                renderHTML: attributes => ({ 'data-key': attributes.key }),
+                renderHTML: attributes => ({'data-key': attributes.key}),
             },
             value: {
                 default: '',
                 // Parse value from attribute, potentially JSON stringified for complex types?
                 // For simplicity, assume string for now, NodeView will handle display/edit based on type.
                 parseHTML: element => element.getAttribute('data-value'),
-                renderHTML: attributes => ({ 'data-value': attributes.value }),
+                renderHTML: attributes => ({'data-value': attributes.value}),
             },
             type: {
                 default: 'text',
                 parseHTML: element => element.getAttribute('data-type'),
-                renderHTML: attributes => ({ 'data-type': attributes.type }),
+                renderHTML: attributes => ({'data-type': attributes.type}),
             },
         };
     },
@@ -51,9 +51,9 @@ export const InlineProperty = Node.create({
     },
 
     // How to render this node back to HTML
-    renderHTML({ HTMLAttributes }) {
+    renderHTML({HTMLAttributes}) {
         // The NodeView will handle the actual rendering, but this defines the basic tag structure
-        return ['span', { ...HTMLAttributes, 'data-inline-property': '' }, 0]; // 0 indicates no content inside the tag itself
+        return ['span', {...HTMLAttributes, 'data-inline-property': ''}, 0]; // 0 indicates no content inside the tag itself
     },
 
     // Use our custom NodeView
@@ -61,7 +61,7 @@ export const InlineProperty = Node.create({
         // The NodeView constructor will receive node, editor, getPos, decorations
         // We also need access to dispatch and ontologyService, passed via editor props
         return (node, editor, getPos, decorations) => {
-            const { dispatch, ontologyService } = editor.options.editorProps;
+            const {dispatch, ontologyService} = editor.options.editorProps;
             if (!dispatch || !ontologyService) {
                 console.error("InlineProperty NodeView: Missing dispatch or ontologyService in editor props!");
                 // Fallback rendering or throw error?
@@ -69,7 +69,7 @@ export const InlineProperty = Node.create({
                 span.textContent = `[Error: Missing services for property ${node.attrs.key}]`;
                 span.style.color = 'red';
                 span.style.border = '1px solid red';
-                return { dom: span };
+                return {dom: span};
             }
             return new InlinePropertyNodeView(node, editor.view, getPos, dispatch, ontologyService);
         };

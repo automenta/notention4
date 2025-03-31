@@ -3,6 +3,9 @@
 // Purpose: Calculate semantic compatibility score between two notes.
 // Combines property-based matching and optional vector-based matching.
 
+import {Utils} from './util.js';
+import { SLOT_EDITOR_PLUGIN_PANELS, SLOT_SETTINGS_PANEL_SECTION } from './ui.js';
+
 export const MatcherPlugin = {
     id: 'matcher',
     name: 'Semantic Matcher',
@@ -152,7 +155,7 @@ export const MatcherPlugin = {
                     // Clamp score between 0 and 1
                     finalScore = Math.max(0, Math.min(1, finalScore));
 
-                    return { score: finalScore, explanation };
+                    return {score: finalScore, explanation};
                 },
             }
         };
@@ -174,7 +177,7 @@ export const MatcherPlugin = {
             switch (action.type) {
                 // --- Related Notes UI State ---
                 case 'MATCHER_FIND_RELATED_START': {
-                    const { noteId } = action.payload;
+                    const {noteId} = action.payload;
                     if (!matcherState.relatedNotes[noteId]) matcherState.relatedNotes[noteId] = {};
                     matcherState.relatedNotes[noteId].isLoading = true;
                     matcherState.relatedNotes[noteId].matches = []; // Clear previous matches
@@ -182,7 +185,7 @@ export const MatcherPlugin = {
                     break;
                 }
                 case 'MATCHER_FIND_RELATED_SUCCESS': {
-                    const { noteId, matches } = action.payload;
+                    const {noteId, matches} = action.payload;
                     if (!matcherState.relatedNotes[noteId]) matcherState.relatedNotes[noteId] = {};
                     matcherState.relatedNotes[noteId].isLoading = false;
                     matcherState.relatedNotes[noteId].matches = matches;
@@ -190,41 +193,41 @@ export const MatcherPlugin = {
                     break;
                 }
                 case 'MATCHER_FIND_RELATED_FAILURE': {
-                    const { noteId, error } = action.payload;
+                    const {noteId, error} = action.payload;
                     if (!matcherState.relatedNotes[noteId]) matcherState.relatedNotes[noteId] = {};
                     matcherState.relatedNotes[noteId].isLoading = false;
                     matcherState.relatedNotes[noteId].error = error;
                     break;
                 }
-                 case 'CORE_SELECT_NOTE': {
+                case 'CORE_SELECT_NOTE': {
                     // Optionally clear results for the previously selected note to save memory?
                     // const previousNoteId = draft.uiState.selectedNoteId; // This is tricky, state might already be updated
                     // if (previousNoteId && matcherState.relatedNotes[previousNoteId]) {
                     //     delete matcherState.relatedNotes[previousNoteId];
                     // }
                     break;
-                 }
-                 case 'CORE_DELETE_NOTE': { // Also clear related notes state for deleted note
-                    const { noteId } = action.payload;
+                }
+                case 'CORE_DELETE_NOTE': { // Also clear related notes state for deleted note
+                    const {noteId} = action.payload;
                     if (matcherState.relatedNotes[noteId]) {
                         delete matcherState.relatedNotes[noteId];
                     }
                     break;
-                 }
+                }
 
                 // --- Embedding Status State ---
                 case 'MATCHER_EMBEDDING_START': {
-                    const { noteId } = action.payload;
+                    const {noteId} = action.payload;
                     matcherState.embeddingStatus[noteId] = 'pending';
                     break;
                 }
                 case 'MATCHER_EMBEDDING_SUCCESS': {
-                    const { noteId } = action.payload;
+                    const {noteId} = action.payload;
                     matcherState.embeddingStatus[noteId] = 'generated';
                     break;
                 }
                 case 'MATCHER_EMBEDDING_FAILURE': {
-                    const { noteId } = action.payload;
+                    const {noteId} = action.payload;
                     matcherState.embeddingStatus[noteId] = 'failed';
                     break;
                 }
@@ -286,7 +289,7 @@ export const MatcherPlugin = {
 
             console.log(`Matcher Middleware: Triggering background embedding generation for ${noteId}`);
             // Dispatch start action immediately
-            dispatch({ type: 'MATCHER_EMBEDDING_START', payload: { noteId } });
+            dispatch({type: 'MATCHER_EMBEDDING_START', payload: {noteId}});
             // Call the generation function (it handles success/failure dispatches internally)
             try {
                 await pluginInstance._getOrGenerateEmbedding(note);
@@ -305,7 +308,7 @@ export const MatcherPlugin = {
             if (!targetNote || targetNote.isArchived) return; // Don't match for non-existent or archived notes
 
             console.log(`Matcher Middleware: Triggering related notes search for ${noteId}`);
-            dispatch({ type: 'MATCHER_FIND_RELATED_START', payload: { noteId } });
+            dispatch({type: 'MATCHER_FIND_RELATED_START', payload: {noteId}});
 
             try {
                 const matcherService = pluginInstance.coreAPI.getService('MatcherService');
@@ -318,7 +321,7 @@ export const MatcherPlugin = {
                 const similarityPromises = allOtherNotes.map(async otherNote => {
                     try {
                         const result = await matcherService.calculateCompatibility(targetNote, otherNote);
-                        return { note: otherNote, score: result.score, explanation: result.explanation };
+                        return {note: otherNote, score: result.score, explanation: result.explanation};
                     } catch (error) {
                         console.error(`Matcher Middleware: Error comparing ${noteId} with ${otherNote.id}`, error);
                         return null; // Ignore errors for individual comparisons
@@ -342,11 +345,11 @@ export const MatcherPlugin = {
 
                 // console.log(`Matcher Middleware: Found ${topMatches.length} matches above threshold.`);
 
-                dispatch({ type: 'MATCHER_FIND_RELATED_SUCCESS', payload: { noteId, matches: topMatches } });
+                dispatch({type: 'MATCHER_FIND_RELATED_SUCCESS', payload: {noteId, matches: topMatches}});
 
             } catch (error) {
                 console.error(`Matcher Middleware: Failed to find related notes for ${noteId}`, error);
-                dispatch({ type: 'MATCHER_FIND_RELATED_FAILURE', payload: { noteId, error: error.message } });
+                dispatch({type: 'MATCHER_FIND_RELATED_FAILURE', payload: {noteId, error: error.message}});
             }
         }, 1000); // Debounce time (e.g., 1 second after selection or update)
 
@@ -368,17 +371,17 @@ export const MatcherPlugin = {
             // Trigger on note content/property update (debounced)
             // Check if the updated note is the currently selected one
             if ((action.type === 'CORE_UPDATE_NOTE' || action.type === 'PROPERTY_ADD' || action.type === 'PROPERTY_UPDATE' || action.type === 'PROPERTY_DELETE') && action.payload.noteId === state.uiState.selectedNoteId) {
-                 const noteId = action.payload.noteId;
-                 // Only trigger if content or properties actually changed
-                 if (action.type === 'CORE_UPDATE_NOTE' && !action.payload.changes?.content) {
-                     // If only name changed, maybe don't re-trigger? For now, let it re-trigger matching.
-                 }
-                 debouncedTriggerMatching(noteId, state, storeApi.dispatch);
+                const noteId = action.payload.noteId;
+                // Only trigger if content or properties actually changed
+                if (action.type === 'CORE_UPDATE_NOTE' && !action.payload.changes?.content) {
+                    // If only name changed, maybe don't re-trigger? For now, let it re-trigger matching.
+                }
+                debouncedTriggerMatching(noteId, state, storeApi.dispatch);
 
-                 // Also trigger background embedding if content changed
-                 if (action.type === 'CORE_UPDATE_NOTE' && action.payload.changes?.content) {
-                     debouncedTriggerEmbedding(noteId, state, storeApi.dispatch);
-                 }
+                // Also trigger background embedding if content changed
+                if (action.type === 'CORE_UPDATE_NOTE' && action.payload.changes?.content) {
+                    debouncedTriggerEmbedding(noteId, state, storeApi.dispatch);
+                }
             }
 
             // Trigger background embedding for newly added notes
@@ -395,8 +398,8 @@ export const MatcherPlugin = {
     },
 
 
-     // --- UI Rendering ---
-     registerUISlots() {
+    // --- UI Rendering ---
+    registerUISlots() {
         const pluginId = this.id;
         const coreAPI = this.coreAPI; // Capture coreAPI
         const pluginInstance = this; // Capture plugin instance for handlers
@@ -411,7 +414,7 @@ export const MatcherPlugin = {
                     let actionType = 'PROPERTY_ADD';
                     let payload = {
                         noteId: settingsNoteId,
-                        propertyData: { key: key, value: value, type: schema.type || 'text' }
+                        propertyData: {key: key, value: value, type: schema.type || 'text'}
                     };
 
                     if (existingProp) {
@@ -420,12 +423,14 @@ export const MatcherPlugin = {
                             payload = {
                                 noteId: settingsNoteId,
                                 propertyId: existingProp.id,
-                                changes: { value: value }
+                                changes: {value: value}
                             };
-                            dispatch({ type: actionType, payload: payload });
-                        } else { return; } // No change
+                            dispatch({type: actionType, payload: payload});
+                        } else {
+
+                        } // No change
                     } else {
-                        dispatch({ type: actionType, payload: payload });
+                        dispatch({type: actionType, payload: payload});
                     }
                     // TODO: Add UI save status feedback?
                 }, 750);
@@ -437,14 +442,14 @@ export const MatcherPlugin = {
         return {
             // --- Related Notes Panel ---
             [SLOT_EDITOR_PLUGIN_PANELS]: (props) => {
-                const { state, dispatch, noteId, html } = props;
+                const {state, dispatch, noteId, html} = props;
                 if (!noteId) return ''; // No note selected
 
                 const matcherState = state.pluginRuntimeState?.[pluginId]?.relatedNotes?.[noteId];
-                const { isLoading = false, matches = [], error = null } = matcherState || {};
+                const {isLoading = false, matches = [], error = null} = matcherState || {};
 
                 const handleNoteClick = (relatedNoteId) => {
-                    dispatch({ type: 'CORE_SELECT_NOTE', payload: { noteId: relatedNoteId } });
+                    dispatch({type: 'CORE_SELECT_NOTE', payload: {noteId: relatedNoteId}});
                 };
 
                 let content;
@@ -523,7 +528,7 @@ export const MatcherPlugin = {
 
             // --- Settings Panel Section ---
             [SLOT_SETTINGS_PANEL_SECTION]: (props) => {
-                const { state, dispatch, html } = props;
+                const {state, dispatch, html} = props;
                 const settingsOntology = pluginInstance.getSettingsOntology();
                 const settingsNote = coreAPI.getSystemNoteByType(`config/settings/${pluginId}`);
                 const propsApi = coreAPI.getPluginAPI('properties');
@@ -531,7 +536,9 @@ export const MatcherPlugin = {
 
                 // Convert current properties to a simple { key: value } map
                 const currentValues = {};
-                currentProperties.forEach(p => { currentValues[p.key] = p.value; });
+                currentProperties.forEach(p => {
+                    currentValues[p.key] = p.value;
+                });
 
                 // Get defaults from ontology definition
                 const defaultValues = {};
@@ -541,7 +548,7 @@ export const MatcherPlugin = {
                     }
                 });
 
-                const displayConfig = { ...defaultValues, ...currentValues };
+                const displayConfig = {...defaultValues, ...currentValues};
 
                 // --- Input Handlers ---
                 const handleInput = (key, value, schema) => {
@@ -564,11 +571,12 @@ export const MatcherPlugin = {
                             <h4>${pluginInstance.name}</h4>
                             <p>Settings note not found.</p>
                             <button @click=${() => dispatch({
-                                type: 'CORE_ADD_NOTE', payload: {
-                                    name: `${pluginInstance.name} Settings`,
-                                    systemType: `config/settings/${pluginId}`,
-                                    content: `Stores configuration properties for the ${pluginId} plugin.`
-                                }})}>Create Settings Note</button>
+                        type: 'CORE_ADD_NOTE', payload: {
+                            name: `${pluginInstance.name} Settings`,
+                            systemType: `config/settings/${pluginId}`,
+                            content: `Stores configuration properties for the ${pluginId} plugin.`
+                        }
+                    })}>Create Settings Note</button>
                         </div>`;
                 }
 
@@ -579,33 +587,33 @@ export const MatcherPlugin = {
                         <h4>${pluginInstance.name}</h4>
                         <p class="settings-description">Configure matching behavior. Autosaves on change.</p>
                         ${sortedKeys.map(key => {
-                            const schema = settingsOntology[key];
-                            const currentValue = displayConfig[key];
-                            const inputId = `matcher-setting-${key}`;
-                            let inputElement;
+                    const schema = settingsOntology[key];
+                    const currentValue = displayConfig[key];
+                    const inputId = `matcher-setting-${key}`;
+                    let inputElement;
 
-                            if (schema.type === 'number') {
-                                const isFloat = schema.step && String(schema.step).includes('.');
-                                inputElement = html`<input type="number" id=${inputId} .value=${currentValue ?? ''}
+                    if (schema.type === 'number') {
+                        const isFloat = schema.step && String(schema.step).includes('.');
+                        inputElement = html`<input type="number" id=${inputId} .value=${currentValue ?? ''}
                                                            min=${schema.min ?? ''} max=${schema.max ?? ''} step=${schema.step ?? ''}
                                                            @input=${(e) => handleNumberInput(key, e.target.value, schema)}>`;
-                            } else { // Default text (add more types if needed)
-                                inputElement = html`<input type="text" id=${inputId} .value=${currentValue ?? ''}
+                    } else { // Default text (add more types if needed)
+                        inputElement = html`<input type="text" id=${inputId} .value=${currentValue ?? ''}
                                                            placeholder=${schema.placeholder || ''}
                                                            @input=${(e) => handleInput(key, e.target.value, schema)}>`;
-                            }
+                    }
 
-                            return html`
+                    return html`
                                 <div class="setting-item">
                                     <label for=${inputId}>${schema.label || key}</label>
                                     ${inputElement}
                                     ${schema.description ? html`<span class="field-hint">${schema.description}</span>` : ''}
                                 </div>`;
-                        })}
+                })}
                         <!-- Button to clear cache -->
                         <div class="setting-item">
                             <label>Embedding Cache:</label>
-                            <button @click=${() => dispatch({ type: 'MATCHER_CLEAR_ALL_EMBEDDINGS' })}
+                            <button @click=${() => dispatch({type: 'MATCHER_CLEAR_ALL_EMBEDDINGS'})}
                                     title="Clear all cached text embeddings generated by the Matcher plugin. They will be regenerated as needed.">
                                 Clear Cache
                             </button>
@@ -651,21 +659,34 @@ export const MatcherPlugin = {
                 `;
             }
         };
-     },
+    },
 
-     // --- UI Helper for Embedding Status (Keep for later phases) ---
-     _renderEmbeddingStatus(state, noteId, html) {
+    // --- UI Helper for Embedding Status (Keep for later phases) ---
+    _renderEmbeddingStatus(state, noteId, html) {
         const status = state.pluginRuntimeState?.[this.id]?.embeddingStatus?.[noteId] || 'idle';
         let text = 'Embeddings: ';
         let title = '';
         switch (status) {
-            case 'pending': text += 'Generating...'; title = 'AI is processing this note for semantic search.'; break;
-            case 'generated': text += 'Ready'; title = 'Semantic embeddings are up-to-date.'; break;
-            case 'failed': text += 'Failed'; title = 'Could not generate semantic embeddings for this note. Check LLM settings/logs.'; break;
-            case 'idle': default: text += 'Not generated'; title = 'Embeddings will be generated when needed or on update.'; break;
+            case 'pending':
+                text += 'Generating...';
+                title = 'AI is processing this note for semantic search.';
+                break;
+            case 'generated':
+                text += 'Ready';
+                title = 'Semantic embeddings are up-to-date.';
+                break;
+            case 'failed':
+                text += 'Failed';
+                title = 'Could not generate semantic embeddings for this note. Check LLM settings/logs.';
+                break;
+            case 'idle':
+            default:
+                text += 'Not generated';
+                title = 'Embeddings will be generated when needed or on update.';
+                break;
         }
         return html`<span class="embedding-status-indicator ${status}" title=${title}>${text}</span>`;
-     },
+    },
 
     // --- Internal Score Calculation Methods ---
 
@@ -676,11 +697,11 @@ export const MatcherPlugin = {
      * @returns {object} { score: number (0-1), explanation: string }
      */
     _calculatePropertyScore(propsA = [], propsB = []) {
-        if (!this.ontologyService) return { score: 0, explanation: "Ontology service unavailable." };
+        if (!this.ontologyService) return {score: 0, explanation: "Ontology service unavailable."};
         if (!Array.isArray(propsA)) propsA = []; // Ensure arrays
         if (!Array.isArray(propsB)) propsB = [];
 
-        if (propsA.length === 0 && propsB.length === 0) return { score: 0, explanation: "No properties on either note." };
+        if (propsA.length === 0 && propsB.length === 0) return {score: 0, explanation: "No properties on either note."};
 
         const mapA = new Map(propsA.map(p => [p.key?.toLowerCase(), p])); // Use lowercase keys for matching
         const mapB = new Map(propsB.map(p => [p.key?.toLowerCase(), p]));
@@ -804,8 +825,8 @@ export const MatcherPlugin = {
         // Boost score slightly based on the *number* of matching properties?
         // Example: Add a small bonus proportional to matchingPropertiesCount / allKeys.size
         if (allKeys.size > 0 && matchingPropertiesCount > 0) {
-             const matchRatioBonus = (matchingPropertiesCount / allKeys.size) * 0.1; // Small bonus (max 0.1)
-             finalScore = Math.min(1, finalScore + matchRatioBonus);
+            const matchRatioBonus = (matchingPropertiesCount / allKeys.size) * 0.1; // Small bonus (max 0.1)
+            finalScore = Math.min(1, finalScore + matchRatioBonus);
         }
 
 
@@ -816,7 +837,7 @@ export const MatcherPlugin = {
         // Ensure score is clamped between 0 and 1
         finalScore = Math.max(0, Math.min(1, finalScore));
 
-        return { score: finalScore, explanation };
+        return {score: finalScore, explanation};
     },
 
     /**
@@ -832,7 +853,10 @@ export const MatcherPlugin = {
         const embeddingsPossible = !!(this.llmService && llmConfig?.modelName); // Assume embeddings need a model
 
         if (!embeddingsPossible) {
-            return {score: 0, explanation: "Vector matching disabled (LLM service/model unavailable or not configured)."};
+            return {
+                score: 0,
+                explanation: "Vector matching disabled (LLM service/model unavailable or not configured)."
+            };
         }
 
         try {
@@ -896,7 +920,7 @@ export const MatcherPlugin = {
             // Ensure status reflects this if it was pending
             const currentStatus = this.coreAPI.getState().pluginRuntimeState?.[this.id]?.embeddingStatus?.[note.id];
             if (currentStatus === 'pending') {
-                this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_FAILURE', payload: { noteId: note.id } });
+                this.coreAPI.dispatch({type: 'MATCHER_EMBEDDING_FAILURE', payload: {noteId: note.id}});
             }
             return null;
         }
@@ -908,10 +932,10 @@ export const MatcherPlugin = {
         if (cachedEmbedding) {
             // console.log(`MatcherPlugin: Using cached embedding for note ${note.id} (updatedAt: ${note.updatedAt})`);
             // Ensure status is 'generated' if we found a cached version
-             const currentStatus = this.coreAPI.getState().pluginRuntimeState?.[this.id]?.embeddingStatus?.[note.id];
-             if (currentStatus !== 'generated') {
-                 this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_SUCCESS', payload: { noteId: note.id } });
-             }
+            const currentStatus = this.coreAPI.getState().pluginRuntimeState?.[this.id]?.embeddingStatus?.[note.id];
+            if (currentStatus !== 'generated') {
+                this.coreAPI.dispatch({type: 'MATCHER_EMBEDDING_SUCCESS', payload: {noteId: note.id}});
+            }
             return cachedEmbedding;
         }
 
@@ -920,12 +944,12 @@ export const MatcherPlugin = {
 
         if (!textToEmbed) {
             // console.log(`MatcherPlugin: Note ${note.id} has no content to embed.`);
-             this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_FAILURE', payload: { noteId: note.id } }); // Mark as failed if no content
+            this.coreAPI.dispatch({type: 'MATCHER_EMBEDDING_FAILURE', payload: {noteId: note.id}}); // Mark as failed if no content
             return null; // Cannot embed empty text
         }
 
         // Dispatch START action before async call
-        this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_START', payload: { noteId: note.id } });
+        this.coreAPI.dispatch({type: 'MATCHER_EMBEDDING_START', payload: {noteId: note.id}});
         this.coreAPI.showGlobalStatus(`Matcher: Generating embedding for "${note.name || note.id}"...`, "info", 2500); // User feedback
 
         try {
@@ -938,12 +962,12 @@ export const MatcherPlugin = {
             }
 
             // Dispatch SUCCESS action
-            this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_SUCCESS', payload: { noteId: note.id } });
+            this.coreAPI.dispatch({type: 'MATCHER_EMBEDDING_SUCCESS', payload: {noteId: note.id}});
 
             // Cache the successful result using CORE_SET_RUNTIME_CACHE action
             this.coreAPI.dispatch({
                 type: 'CORE_SET_RUNTIME_CACHE',
-                payload: { key: cacheKey, value: embeddingVector }
+                payload: {key: cacheKey, value: embeddingVector}
             });
             // console.log(`MatcherPlugin: Embedding generated and cached for note ${note.id} with key ${cacheKey}`);
             this.coreAPI.showGlobalStatus(`Matcher: Embedding generated for "${note.name || note.id}".`, "success", 1500);
@@ -953,7 +977,7 @@ export const MatcherPlugin = {
         } catch (error) {
             // Dispatch FAILURE action
             console.error(`MatcherPlugin: Failed to generate embedding for note ${note.id}`, error);
-            this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_FAILURE', payload: { noteId: note.id } });
+            this.coreAPI.dispatch({type: 'MATCHER_EMBEDDING_FAILURE', payload: {noteId: note.id}});
             // Show error status (LLMService might have already shown one, but this confirms the embedding context)
             this.coreAPI.showGlobalStatus(`Matcher: Embedding failed for "${note.name || note.id}". Check LLM config/logs.`, "error", 4000);
             return null; // Return null on failure
@@ -1041,7 +1065,7 @@ export const MatcherPlugin = {
      * @returns {number} Jaccard index (0 to 1).
      * @private
      */
-     _jaccardIndex(setA, setB) {
+    _jaccardIndex(setA, setB) {
         if (!(setA instanceof Set) || !(setB instanceof Set)) return 0;
         const intersectionSize = new Set([...setA].filter(x => setB.has(x))).size;
         const unionSize = setA.size + setB.size - intersectionSize;

@@ -94,8 +94,8 @@ export class InlinePropertyNodeView {
     }
 
     renderDisplay() {
-        const { key, value, type } = this.node.attrs;
-        const hints = this.ontologyService.getUIHints(key) || { icon: '?', color: '#ccc' };
+        const {key, value, type} = this.node.attrs;
+        const hints = this.ontologyService.getUIHints(key) || {icon: '?', color: '#ccc'};
         // Use the same formatting logic as PropertiesPlugin (could be shared utility)
         const displayValue = this._formatDisplayValue(value, type);
 
@@ -125,7 +125,7 @@ export class InlinePropertyNodeView {
         if (this.isEditing) return;
         this.isEditing = true;
 
-        const { key, value, type, propId } = this.node.attrs;
+        const {key, value, type, propId} = this.node.attrs;
         if (!propId) {
             console.warn("InlinePropertyNodeView: Cannot edit, missing propId attribute.");
             this.isEditing = false;
@@ -171,9 +171,17 @@ export class InlinePropertyNodeView {
             inputElement.type = inputType; // Use hint: 'text', 'number', 'date', 'url', etc.
             // Format value correctly for specific input types
             if (inputType === 'date') {
-                try { inputElement.value = value ? new Date(value).toISOString().split('T')[0] : ''; } catch { inputElement.value = ''; }
+                try {
+                    inputElement.value = value ? new Date(value).toISOString().split('T')[0] : '';
+                } catch {
+                    inputElement.value = '';
+                }
             } else if (inputType === 'datetime-local') {
-                try { inputElement.value = value ? new Date(value).toISOString().slice(0, 16) : ''; } catch { inputElement.value = ''; }
+                try {
+                    inputElement.value = value ? new Date(value).toISOString().slice(0, 16) : '';
+                } catch {
+                    inputElement.value = '';
+                }
             } else {
                 inputElement.value = value;
             }
@@ -219,7 +227,7 @@ export class InlinePropertyNodeView {
         }
 
         if (saveChanges) {
-            const { key, type, propId } = this.node.attrs;
+            const {key, type, propId} = this.node.attrs;
             const originalValue = inputElement.dataset.originalValue;
             const newValueRaw = (inputElement.type === 'checkbox') ? inputElement.checked : inputElement.value;
             // Normalize the *new* value based on the property's type before comparing/saving
@@ -245,10 +253,10 @@ export class InlinePropertyNodeView {
                 // We update the node attribute here optimistically for smoother UI transition.
                 this.node.attrs.value = newValueNormalized;
             } else {
-                 console.log(`InlinePropertyNodeView: No changes detected for ${key}.`);
+                console.log(`InlinePropertyNodeView: No changes detected for ${key}.`);
             }
         } else {
-             console.log(`InlinePropertyNodeView: Editing cancelled for ${key}.`);
+            console.log(`InlinePropertyNodeView: Editing cancelled for ${key}.`);
         }
 
         // Always revert to display mode
@@ -311,26 +319,33 @@ export class InlinePropertyNodeView {
                 if (['true', 'yes', '1', 'on'].includes(lowerVal)) return true;
                 if (['false', 'no', '0', 'off'].includes(lowerVal)) return false;
                 return Boolean(value);
-            case 'date': return value; // Keep as string for now
+            case 'date':
+                return value; // Keep as string for now
             case 'list':
-                 if (typeof value === 'string') return value.split(',').map(s => s.trim()).filter(s => s);
-                 return Array.isArray(value) ? value : [value];
-            case 'text': default: return String(value);
+                if (typeof value === 'string') return value.split(',').map(s => s.trim()).filter(s => s);
+                return Array.isArray(value) ? value : [value];
+            case 'text':
+            default:
+                return String(value);
         }
     }
 
     _formatDisplayValue(value, type) {
         if (value === null || value === undefined) return '';
         switch (type) {
-            case 'boolean': return value ? 'Yes' : 'No';
+            case 'boolean':
+                return value ? 'Yes' : 'No';
             case 'date':
                 try {
                     const date = new Date(value);
                     if (!isNaN(date.getTime())) return date.toLocaleDateString(); // Simpler format
-                } catch {}
+                } catch {
+                }
                 return String(value);
-            case 'list': return Array.isArray(value) ? value.join(', ') : String(value);
-            default: return String(value);
+            case 'list':
+                return Array.isArray(value) ? value.join(', ') : String(value);
+            default:
+                return String(value);
         }
     }
 }

@@ -13,7 +13,7 @@ window.onerror = function (message, source, lineno, colno, error) {
                         <p>You may need to reload the application or clear local data using the browser's developer tools (Application -> Local Storage).</p>
                     </div>`;
             // Use SAFE_FOR_TEMPLATES to allow basic structure but sanitize content
-            appRoot.innerHTML = DOMPurify.sanitize(errorHtml, { USE_PROFILES: { html: true } });
+            appRoot.innerHTML = DOMPurify.sanitize(errorHtml, {USE_PROFILES: {html: true}});
         } else {
             // Basic text fallback, avoid inserting raw message directly if possible
             appRoot.textContent = `Application Error: An unexpected error occurred. Please check the browser console for details (${message}). Reloading or clearing data might help.`;

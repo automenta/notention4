@@ -7,9 +7,9 @@
 // - CoreAPI utilities (utils, showToast, showConfirmationDialog, saveSystemNote, getSystemNoteByType)
 // - UI Slot constants
 
-import {Utils} from "./util.js"; const debounce = Utils.debounce;
+import {Utils} from "./util.js";
 import {SimplePool} from 'nostr-tools/pool'
-import {getEventHash, getPublicKey} from 'nostr-tools/pure'
+import {getPublicKey} from 'nostr-tools/pure'
 import {
     SLOT_APP_STATUS_BAR,
     SLOT_EDITOR_HEADER_ACTIONS,
@@ -17,6 +17,8 @@ import {
     SLOT_SETTINGS_PANEL_SECTION
 } from './ui.js'; // Adjust path as needed
 import "./nostr.css";
+
+const debounce = Utils.debounce;
 
 
 // --- Crypto & Utility Helper Functions ---
@@ -197,7 +199,7 @@ export const NostrPlugin = {
 
         this.coreAPI.dispatch({
             type: 'NOSTR_CONFIG_LOADED',
-            payload: { relays: this._config.relays, autoLockMinutes: this._config.autoLockMinutes }
+            payload: {relays: this._config.relays, autoLockMinutes: this._config.autoLockMinutes}
         });
 
         const identityNote = this.coreAPI.getSystemNoteByType('config/nostr/identity');
@@ -1002,7 +1004,7 @@ export const NostrPlugin = {
                         plugin._config.relays = newRelaysList; // Update internal cache
                         store.dispatch({
                             type: 'NOSTR_CONFIG_LOADED',
-                            payload: { relays: newRelaysList, autoLockMinutes: plugin._config.autoLockMinutes }
+                            payload: {relays: newRelaysList, autoLockMinutes: plugin._config.autoLockMinutes}
                         }); // Update state
 
                         if (plugin._connectionStatus === 'connected' && plugin._relayPool) {
@@ -1017,7 +1019,7 @@ export const NostrPlugin = {
             }
             // Handle Deletion Event Publishing (Kind 5) when local note is deleted
             else if (action.type === 'CORE_DELETE_NOTE') {
-                const { noteId, pluginDataSnapshot } = action.payload; // Expect snapshot in payload
+                const {noteId, pluginDataSnapshot} = action.payload; // Expect snapshot in payload
                 const nostrDataBeforeDelete = pluginDataSnapshot?.[pluginId]; // Use snapshot
                 const nostrService = plugin.getNostrService();
                 const nostrState = nextState.pluginRuntimeState[pluginId]; // Use nextState for current status
@@ -1344,13 +1346,15 @@ export const NostrPlugin = {
                 } else if (isShared) {
                     buttonHtml = html`
                         <button class="editor-header-button nostr-unshare-button" @click=${handleUnshare}
-                                title="Publish deletion event on Nostr" ?disabled=${isPendingPublish || isConnected !== 'connected'}>
+                                title="Publish deletion event on Nostr"
+                                ?disabled=${isPendingPublish || isConnected !== 'connected'}>
                             ${isPendingPublish ? 'Working...' : '🌐 Unshare'}
                         </button>`;
                 } else {
                     buttonHtml = html`
                         <button class="editor-header-button nostr-share-button" @click=${handleShare}
-                                title="Share this note on Nostr" ?disabled=${isPendingPublish || isConnected !== 'connected'}>
+                                title="Share this note on Nostr"
+                                ?disabled=${isPendingPublish || isConnected !== 'connected'}>
                             ${isPendingPublish ? 'Sharing...' : 'Share'}
                             ${isConnected !== 'connected' ? ' (Offline)' : ''}
                         </button>`;

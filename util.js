@@ -74,6 +74,57 @@ export const Utils = {
         }
     },
 
+    dependencySort(plugins) {
+        const graph = new Map(); // node -> Set<neighbor>
+        const inDegree = new Map();
+        const sorted = [];
+        const queue = [];
+
+        // Build graph and calculate in-degrees
+        plugins.forEach((entry, pluginId) => {
+            graph.set(pluginId, new Set());
+            inDegree.set(pluginId, 0);
+        });
+
+        plugins.forEach((entry, pluginId) => {
+            const dependencies = entry.definition.dependencies || [];
+            dependencies.forEach(depId => {
+                if (!plugins.has(depId))
+                    throw new Error(`Plugin [${pluginId}] has an unknown dependency: [${depId}]`);
+
+                // Add edge depId -> pluginId
+                if (graph.has(depId) && !graph.get(depId).has(pluginId)) {
+                    graph.get(depId).add(pluginId);
+                    inDegree.set(pluginId, (inDegree.get(pluginId) || 0) + 1);
+                }
+            });
+        });
+
+        // Initialize queue with nodes having in-degree 0
+        inDegree.forEach((degree, pluginId) => {
+            if (degree === 0)
+                queue.push(pluginId);
+        });
+
+        // Process the queue
+        while (queue.length > 0) {
+            const u = queue.shift();
+            sorted.push(u);
+
+            graph.get(u)?.forEach(v => {
+                inDegree.set(v, inDegree.get(v) - 1);
+                if (inDegree.get(v) === 0)
+                    queue.push(v);
+            });
+        }
+
+        // Cyclic check
+        if (sorted.length !== plugins.size)
+            throw new Error(`Circular dependency detected involving plugins: ${Array.from(plugins.keys()).filter(id => !sorted.includes(id)).join(', ')}`);
+
+        return sorted;
+    }
+
     // deepClone is generally not needed with Immer managing state.
     // If required elsewhere, prefer structuredClone where available.
     // deepClone: (obj) => structuredClone(obj), // Use modern API if needed

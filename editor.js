@@ -4,26 +4,29 @@
  */
 "use strict";
 
-import { Editor } from '@tiptap/core';
-import { Plugin as ProseMirrorPlugin, PluginKey } from '@tiptap/pm/state'; // Use ProseMirror Plugin directly for decorations
-import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import {Editor} from '@tiptap/core';
+import {Plugin as ProseMirrorPlugin, PluginKey} from '@tiptap/pm/state'; // Use ProseMirror Plugin directly for decorations
+import {Decoration, DecorationSet} from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
-import { InlineProperty } from './InlineProperty.js'; // Import the new Node
+import {InlineProperty} from './InlineProperty.js'; // Import the new Node
 import tippy from 'tippy.js'; // Import tippy
 import 'tippy.js/dist/tippy.css'; // Import tippy CSS
+import {Utils} from "./util.js";
+import {SLOT_EDITOR_CONTENT_AREA} from './ui.js';
 
 // Ensure lit is imported correctly based on your setup
-const { html, render: litRender } = window.lit ?? window.litHtml ?? { html: null, render: null };
+const {html, render: litRender} = window.lit ?? window.litHtml ?? {html: null, render: null};
 if (!html || !litRender) {
     console.error("Lit-html not found. UI rendering will fail.");
     // Provide dummy functions to prevent further errors immediately
-    window.litHtml = { html: (strings, ...values) => strings.join(''), render: () => {} };
+    window.litHtml = {
+        html: (strings, ...values) => strings.join(''), render: () => {
+        }
+    };
 }
 
 
-import { Utils } from "./util.js"; const debounce = Utils.debounce;
-
-import { SLOT_EDITOR_CONTENT_AREA } from './ui.js';
+const debounce = Utils.debounce;
 
 // --- Abstract Base Class (Optional but good practice) ---
 class AbstractEditorLibrary {
@@ -143,7 +146,7 @@ class TiptapEditor extends AbstractEditorLibrary {
                 autofocus: editorOptions.autofocus ?? false,
                 editorProps: editorProps, // Pass the props here
 
-                onUpdate: ({ editor }) => {
+                onUpdate: ({editor}) => {
                     if (this._isUpdatingInternally) return; // Prevent loops during programmatic updates
 
                     const newContent = this.getContent(); // Use own method
@@ -403,7 +406,7 @@ function SuggestionPlugin(dispatch) {
         confirmButton.onclick = () => {
             dispatch({
                 type: 'PARSER_CONFIRM_SUGGESTION',
-                payload: { noteId: currentNoteId, suggestion }
+                payload: {noteId: currentNoteId, suggestion}
             });
             // Optionally hide popover immediately
             tippyInstances.forEach(instance => instance.hide());
@@ -417,7 +420,7 @@ function SuggestionPlugin(dispatch) {
         ignoreButton.onclick = () => {
             dispatch({
                 type: 'PARSER_IGNORE_SUGGESTION',
-                payload: { noteId: currentNoteId, suggestionId: suggestion.id }
+                payload: {noteId: currentNoteId, suggestionId: suggestion.id}
             });
             tippyInstances.forEach(instance => instance.hide());
         };
@@ -446,13 +449,13 @@ function SuggestionPlugin(dispatch) {
                 if (meta) {
                     // Update noteId if changed via meta
                     if (meta.noteId !== undefined && meta.noteId !== nextPluginState.noteId) {
-                        nextPluginState = { ...nextPluginState, noteId: meta.noteId };
+                        nextPluginState = {...nextPluginState, noteId: meta.noteId};
                         currentNoteId = meta.noteId; // Update local variable
                         // console.log(`SuggestionPlugin State: Note ID updated to ${currentNoteId}`);
                     }
                     // Update decorations if provided via meta
                     if (meta.decorationSet !== undefined) {
-                        nextPluginState = { ...nextPluginState, decorationSet: meta.decorationSet };
+                        nextPluginState = {...nextPluginState, decorationSet: meta.decorationSet};
                         currentDecorationSet = meta.decorationSet; // Update local variable
                         // console.log(`SuggestionPlugin State: Decorations updated via meta`);
                     }
@@ -461,9 +464,9 @@ function SuggestionPlugin(dispatch) {
                 // Always map decorations through the transaction to adjust positions based on document changes
                 const mappedSet = nextPluginState.decorationSet.map(tr.mapping, tr.doc);
                 if (mappedSet !== nextPluginState.decorationSet) {
-                     nextPluginState = { ...nextPluginState, decorationSet: mappedSet };
-                     currentDecorationSet = mappedSet; // Update local variable
-                     // console.log(`SuggestionPlugin State: Decorations mapped`);
+                    nextPluginState = {...nextPluginState, decorationSet: mappedSet};
+                    currentDecorationSet = mappedSet; // Update local variable
+                    // console.log(`SuggestionPlugin State: Decorations mapped`);
                 }
 
                 return nextPluginState; // Return the potentially updated plugin state
@@ -485,7 +488,10 @@ function SuggestionPlugin(dispatch) {
             const store = window.realityNotebookCore; // Access the global core API/store instance
             if (!store) {
                 console.error("SuggestionPlugin: Could not access core API/store. Plugin will not function.");
-                return { destroy() {} }; // Return minimal view object if core is missing
+                return {
+                    destroy() {
+                    }
+                }; // Return minimal view object if core is missing
             }
 
             let previousSuggestionsJson = null; // Cache to detect actual changes in relevant suggestions
@@ -499,11 +505,11 @@ function SuggestionPlugin(dispatch) {
                 // If no note is associated with the editor, clear decorations and exit
                 if (!noteId) {
                     if (currentDecorationSet !== DecorationSet.empty) {
-                         destroyTippyInstances(); // Clean up any existing popovers
-                         // Dispatch a transaction to clear decorations in the plugin state
-                         editorView.dispatch(
-                             editorView.state.tr.setMeta(suggestionPluginKey, { decorationSet: DecorationSet.empty })
-                         );
+                        destroyTippyInstances(); // Clean up any existing popovers
+                        // Dispatch a transaction to clear decorations in the plugin state
+                        editorView.dispatch(
+                            editorView.state.tr.setMeta(suggestionPluginKey, {decorationSet: DecorationSet.empty})
+                        );
                     }
                     previousSuggestionsJson = null; // Reset cache
                     return;
@@ -514,7 +520,10 @@ function SuggestionPlugin(dispatch) {
                 const pendingSuggestions = suggestions.filter(s => s.status === 'pending' && s.location); // Ensure location exists
 
                 // Create a comparable representation of suggestions (ID and location)
-                const currentSuggestionsJson = JSON.stringify(pendingSuggestions.map(s => ({ id: s.id, loc: s.location })));
+                const currentSuggestionsJson = JSON.stringify(pendingSuggestions.map(s => ({
+                    id: s.id,
+                    loc: s.location
+                })));
 
                 // Only update decorations if the relevant suggestions have actually changed
                 if (currentSuggestionsJson !== previousSuggestionsJson) {
@@ -524,7 +533,7 @@ function SuggestionPlugin(dispatch) {
 
                     // Create Tiptap/ProseMirror decorations from the pending suggestions
                     const decorations = pendingSuggestions.map(suggestion => {
-                        const { start, end } = suggestion.location;
+                        const {start, end} = suggestion.location;
 
                         // 1. Inline Decoration: Highlights the suggested text
                         const highlightDeco = Decoration.inline(start, end, {
@@ -557,15 +566,15 @@ function SuggestionPlugin(dispatch) {
                                         tippyInstances.filter(i => i !== instance && i?.state && !i.state.isDestroyed).forEach(i => i.hide());
                                     },
                                     onDestroy(instance) {
-                                         // Remove the instance from our tracking array upon destruction
-                                         tippyInstances = tippyInstances.filter(i => i !== instance);
+                                        // Remove the instance from our tracking array upon destruction
+                                        tippyInstances = tippyInstances.filter(i => i !== instance);
                                     }
                                 });
                                 tippyInstances.push(instance); // Track the Tippy instance for cleanup
 
                                 return button; // Return the button element as the widget
                             },
-                            { side: 1 } // Bias widget rendering towards the right side if possible
+                            {side: 1} // Bias widget rendering towards the right side if possible
                         );
 
                         return [highlightDeco, widgetDeco]; // Return both decorations for this suggestion
@@ -601,12 +610,12 @@ function SuggestionPlugin(dispatch) {
                         // to update the noteId in the plugin state and clear existing decorations.
                         destroyTippyInstances();
                         view.dispatch(
-                             view.state.tr.setMeta(suggestionPluginKey, {
-                                 noteId: newNoteId,
-                                 decorationSet: DecorationSet.empty // Reset decorations for the new note
-                             })
-                         );
-                         previousSuggestionsJson = null; // Reset suggestion cache for the new note
+                            view.state.tr.setMeta(suggestionPluginKey, {
+                                noteId: newNoteId,
+                                decorationSet: DecorationSet.empty // Reset decorations for the new note
+                            })
+                        );
+                        previousSuggestionsJson = null; // Reset suggestion cache for the new note
                     }
                 }
             };
@@ -647,16 +656,16 @@ function renderToolbarContent(editorInstance) {
                 @click=${() => tiptap.applyDecoration(null, {style: 'code'})}></></button>
         <span class="toolbar-divider"></span>
         <select title="Text Style" class="toolbar-select" @change=${(e) => {
-            const style = e.target.value;
-            if (style.startsWith('heading')) {
-                const level = parseInt(style.split('-')[1], 10);
-                tiptap.applyDecoration(null, {style: 'heading', level});
-            } else if (style === 'paragraph') {
-                tiptap.applyDecoration(null, {style: 'paragraph'});
-            }
-            // Optional: Reset selection visually, though Tiptap's isActive should handle the <option> selected state
-            // e.target.value = '';
-        }}>
+        const style = e.target.value;
+        if (style.startsWith('heading')) {
+            const level = parseInt(style.split('-')[1], 10);
+            tiptap.applyDecoration(null, {style: 'heading', level});
+        } else if (style === 'paragraph') {
+            tiptap.applyDecoration(null, {style: 'paragraph'});
+        }
+        // Optional: Reset selection visually, though Tiptap's isActive should handle the <option> selected state
+        // e.target.value = '';
+    }}>
             <option value="paragraph" ?selected=${tiptap.isActive('paragraph')}>Paragraph</option>
             <option value="heading-1" ?selected=${tiptap.isActive('heading', {level: 1})}>Heading 1</option>
             <option value="heading-2" ?selected=${tiptap.isActive('heading', {level: 2})}>Heading 2</option>
@@ -758,7 +767,7 @@ export const RichTextEditorPlugin = {
         // --- Main Slot Renderer ---
         return {
             [SLOT_EDITOR_CONTENT_AREA]: (props) => {
-                const { state, dispatch, noteId } = props;
+                const {state, dispatch, noteId} = props;
                 const note = noteId ? state.notes[noteId] : null;
                 // Properties data is no longer directly used for rendering here
                 // const propertiesData = note?.pluginData?.properties?.properties || [];
@@ -791,7 +800,7 @@ export const RichTextEditorPlugin = {
                                             type: 'CORE_UPDATE_NOTE',
                                             payload: {
                                                 noteId: this._currentNoteId,
-                                                changes: { content: currentEditorContent }
+                                                changes: {content: currentEditorContent}
                                             }
                                         });
                                     }
@@ -832,7 +841,7 @@ export const RichTextEditorPlugin = {
                     } else if (!note && !this._editorInstance) {
                         // Clear mount point if no note and no editor instance
                         if (!mountPoint.hasChildNodes() || mountPoint.textContent?.trim()) {
-                             mountPoint.innerHTML = ''; // Clear previous content like "Select note"
+                            mountPoint.innerHTML = ''; // Clear previous content like "Select note"
                         }
                         this._updateToolbarUI(); // Ensure toolbar is cleared/updated
                     }
@@ -1085,7 +1094,7 @@ export const RichTextEditorPlugin = {
                 isEditorActive: () => !!this._editorInstance && !this._editorInstance._tiptapInstance?.isDestroyed,
                 getSelectedText: () => {
                     if (!this._editorInstance || this._editorInstance.inactive()) return '';
-                    const { from, to, empty } = this._editorInstance.getSelection() || {};
+                    const {from, to, empty} = this._editorInstance.getSelection() || {};
                     if (empty || !from || !to) return '';
                     try {
                         return this._editorInstance._tiptapInstance.state.doc.textBetween(from, to, ' ');
@@ -1118,11 +1127,18 @@ export const RichTextEditorPlugin = {
                                 })
                                 .run(); // Execute the command chain
                         } catch (error) {
-                            console.error("EditorService.replaceTextWithInlineProperty Error:", error, { location, propData });
+                            console.error("EditorService.replaceTextWithInlineProperty Error:", error, {
+                                location,
+                                propData
+                            });
                             this.coreAPI?.showGlobalStatus("Error replacing text with property.", "error");
                         }
                     } else {
-                        console.warn("EditorService.replaceTextWithInlineProperty: Editor inactive or invalid arguments.", { editor: this._editorInstance, location, propData });
+                        console.warn("EditorService.replaceTextWithInlineProperty: Editor inactive or invalid arguments.", {
+                            editor: this._editorInstance,
+                            location,
+                            propData
+                        });
                     }
                 },
                 // Avoid exposing the raw Tiptap instance directly if possible
@@ -1136,7 +1152,7 @@ export const RichTextEditorPlugin = {
         const pluginInstance = this;
         return storeApi => next => action => {
             if (action.type === 'TEMPLATE_SELECTED') {
-                const { template, context } = action.payload;
+                const {template, context} = action.payload;
                 if (context === 'insert') {
                     pluginInstance._insertTemplateContent(template);
                 } else if (context === 'generate') {
@@ -1229,7 +1245,7 @@ export const RichTextEditorPlugin = {
             // Placeholder replacements
             const replacements = {
                 '{{date}}': this.coreAPI.utils.formatDate(Date.now()).split(',')[0], // Just date part
-                '{{time}}': new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), // Simple time HH:MM AM/PM
+                '{{time}}': new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}), // Simple time HH:MM AM/PM
                 '{{datetime}}': this.coreAPI.utils.formatDate(Date.now()), // Full date and time
                 '{{selectedText}}': selectedText,
                 '{{noteName}}': currentNote?.name || 'Untitled Note',

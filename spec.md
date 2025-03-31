@@ -3,7 +3,7 @@ Notes) and editor integration, ensures better support for all plugin types, and 
 
 ```javascript
 /**
- * Reality Notebook v10.1 - Refined Hybrid Specification (Core & Plugin Interface)
+ * Netention v10.1 - Refined Hybrid Specification (Core & Plugin Interface)
  *
  * Focus: Viability, Completeness, Plugin Support. Core is functional standalone.
  */
@@ -1114,7 +1114,7 @@ onDeactivate: () => {
 // ==========================================================================
 
 async function main() {
-    console.log("Initializing Reality Notebook v10.1 Core...");
+    console.log("Initializing Netention v10.1 Core...");
 
     // 1. Initialize Core Services
     const eventBus = new EventBus();
@@ -1149,7 +1149,7 @@ async function main() {
     // 5. Initial Render (Now includes plugin UI registered during activation)
     uiRenderer.renderApp();
 
-    console.log("Reality Notebook Core Initialized and Rendered.");
+    console.log("Netention Core Initialized and Rendered.");
 
     // Post-initialization tasks? e.g., check for onboarding needed by dispatching an action
     // stateManager.dispatch({ type: 'APP_INITIALIZED_CHECK_ONBOARDING' });
