@@ -410,7 +410,7 @@ export const OntologyPlugin = {
                     <label>Type:</label><input type="text" .value=${propValue.type || 'text'} @input=${(e) => this._handleOntologyChange(e, 'type', ontologyData, noteId, dispatch)}>
                     <label>Description:</label><input type="text" .value=${propValue.description || ''} @input=${(e) => this._handleOntologyChange(e, 'description', ontologyData, noteId, dispatch)}>
                     <label>UI Hint Key:</label><input type="text" .value=${propValue.uiHint || ''} @input=${(e) => this._handleOntologyChange(e, 'uiHint', ontologyData, noteId, dispatch)}>
-                    <label>Validation (JSON):</label><textarea rows="2" .value=${JSON.stringify(propValue.validation || {}, null, 2)} @input=${(e) => this._handleOntologyChange(e, 'validation', ontologyData, noteId, dispatch)}></textarea>
+                    <label>Validation <small>(Valid JSON required)</small>:</label><textarea rows="3" .value=${JSON.stringify(propValue.validation || {}, null, 2)} @input=${(e) => this._handleOntologyChange(e, 'validation', ontologyData, noteId, dispatch)}></textarea>
                 </div>
             </div>
         `;
@@ -438,7 +438,7 @@ export const OntologyPlugin = {
                     <label>Icon:</label><input type="text" .value=${hintValue.icon || ''} @input=${(e) => this._handleOntologyChange(e, 'icon', ontologyData, noteId, dispatch)}>
                     <label>Color:</label><input type="color" .value=${hintValue.color || '#cccccc'} @input=${(e) => this._handleOntologyChange(e, 'color', ontologyData, noteId, dispatch)}>
                     <label>Input Type:</label><input type="text" .value=${hintValue.inputType || 'text'} @input=${(e) => this._handleOntologyChange(e, 'inputType', ontologyData, noteId, dispatch)}>
-                    <label>Options (JSON Array):</label><input type="text" .value=${JSON.stringify(hintValue.options || [])} @input=${(e) => this._handleOntologyChange(e, 'options', ontologyData, noteId, dispatch)}>
+                    <label>Options <small>(Valid JSON Array req.)</small>:</label><input type="text" .value=${JSON.stringify(hintValue.options || [])} @input=${(e) => this._handleOntologyChange(e, 'options', ontologyData, noteId, dispatch)}>
                     <label>Min:</label><input type="number" .value=${hintValue.min ?? ''} @input=${(e) => this._handleOntologyChange(e, 'min', ontologyData, noteId, dispatch)}>
                     <label>Max:</label><input type="number" .value=${hintValue.max ?? ''} @input=${(e) => this._handleOntologyChange(e, 'max', ontologyData, noteId, dispatch)}>
                     <label>Step:</label><input type="number" .value=${hintValue.step ?? ''} @input=${(e) => this._handleOntologyChange(e, 'step', ontologyData, noteId, dispatch)}>
@@ -453,7 +453,7 @@ export const OntologyPlugin = {
                 <button class="ontology-delete-button" title="Delete Template" @click=${(e) => this._handleDeleteOntologyItem(e, ontologyData, noteId, dispatch)}>×</button>
                 <div class="ontology-item-fields">
                     <label>Name:</label><input type="text" .value=${templateValue.name || ''} @input=${(e) => this._handleOntologyChange(e, 'name', ontologyData, noteId, dispatch)}>
-                    <label>Content:</label><textarea rows="4" .value=${templateValue.content || ''} @input=${(e) => this._handleOntologyChange(e, 'content', ontologyData, noteId, dispatch)}></textarea>
+                    <label>Content:</label><textarea rows="5" .value=${templateValue.content || ''} @input=${(e) => this._handleOntologyChange(e, 'content', ontologyData, noteId, dispatch)}></textarea>
                 </div>
             </div>
         `;

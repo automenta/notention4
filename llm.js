@@ -135,13 +135,12 @@ export const LLMPlugin = {
             this._coreAPI.showGlobalStatus(
                 "LLMPlugin: Model Name required! Please configure it in settings.",
                 "warning",
-                0 // 0 duration makes it persistent until cleared or replaced
+                0, // 0 duration makes it persistent until cleared or replaced
+                `${this.id}-config-modelName` // Add a unique ID to manage this specific message
             );
         } else {
-            // Optionally clear the warning if it was previously shown and now config is okay
-            // This requires tracking the status message ID or content, which coreAPI might support.
-            // If not, just showing a success/ready message might overwrite it:
-            // this._coreAPI.showGlobalStatus("LLMPlugin: Ready.", "info", 2000);
+            // Clear the specific warning if the model name is now configured
+            this._coreAPI.clearGlobalStatus(`${this.id}-config-modelName`);
         }
 
         // Check for API Key if using a non-local endpoint

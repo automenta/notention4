@@ -197,6 +197,20 @@ export const NostrPlugin = {
         const relaysList = relaysString.split('\n').map(r => r.trim()).filter(r => r.startsWith('ws'));
         this._config.relays = [...new Set(relaysList)]; // Ensure unique and valid format
 
+        // Warn if no relays are configured after loading
+        if (this._config.relays.length === 0) {
+            console.warn("NostrPlugin: No relays configured after loading settings.");
+            this.coreAPI.showGlobalStatus(
+                "Nostr: No relays configured. Please add relay URLs in Nostr settings.",
+                "warning",
+                10000, // Show for 10 seconds
+                `${this.id}-config-relays`
+            );
+        } else {
+            this.coreAPI.clearGlobalStatus(`${this.id}-config-relays`); // Clear warning if relays are present
+        }
+
+
         this.coreAPI.dispatch({
             type: 'NOSTR_CONFIG_LOADED',
             payload: {relays: this._config.relays, autoLockMinutes: this._config.autoLockMinutes}
@@ -1137,19 +1151,24 @@ export const NostrPlugin = {
                 if (identityStatus === 'loading') {
                     identitySectionHtml = html`<p>Loading...</p>`;
                 } else if (identityStatus === 'no_identity') { /* ... Setup form ... */
-                    identitySectionHtml = html`<h4>Setup Nostr</h4><p><strong style="color: var(--warning-color);">Handle
-                        nsec with care!</strong></p>
-                    <form id="nostr-setup-form" @submit=${handleSetupSubmit}><label>nsec Private Key:</label><input
-                            type="password" id="nostr-nsec" name="nsec" required placeholder="nsec1..."
-                            autocomplete="off">
-                        <button type="button" @click=${handleGenerateNewKey}>Generate</button>
-                        <label>Passphrase (optional):</label><input type="password" id="nostr-setup-passphrase"
-                                                                    name="passphrase" placeholder="Recommended"
-                                                                    autocomplete="new-password">
+                    identitySectionHtml = html`<h4>Setup Nostr</h4>
+                    <p class="settings-description warning">
+                        <strong>Security Warning:</strong> Your 'nsec' key controls your Nostr identity.
+                        <strong>Never share it. Back it up securely offline.</strong> Losing it means losing access.
+                    </p>
+                    <form id="nostr-setup-form" @submit=${handleSetupSubmit}>
+                        <label>nsec Private Key:</label>
+                        <input type="password" id="nostr-nsec" name="nsec" required placeholder="nsec1..." autocomplete="off">
+                        <button type="button" @click=${handleGenerateNewKey}>Generate New Key</button>
+                        <label>Passphrase (optional but recommended):</label>
+                        <input type="password" id="nostr-setup-passphrase" name="passphrase" placeholder="Secure your key" autocomplete="new-password">
+                        <span class="field-hint">Encrypts your key in browser storage. <strong>Saving without a passphrase is insecure.</strong></span>
                         <button type="submit">Save Identity</button>
-                    </form>${identityError ? html`<p class="error">${identityError}</p>` : ''}`;
+                    </form>
+                    ${identityError ? html`<p class="error">${identityError}</p>` : ''}`;
                 } else if (identityStatus === 'locked') { /* ... Unlock form ... */
-                    identitySectionHtml = html`<h4>Unlock Nostr</h4><p>Public Key: ${displayPubkey}</p>
+                    identitySectionHtml = html`<h4>Unlock Nostr</h4>
+                    <p>Public Key: ${displayPubkey}</p>
                     <form id="nostr-unlock-form" @submit=${handleUnlockSubmit}><label>Enter Passphrase:</label><input
                             type="password" id="nostr-unlock-passphrase" name="passphrase" required
                             autocomplete="current-password">
@@ -1250,42 +1269,38 @@ export const NostrPlugin = {
                 let titleText = '';
                 let action = null;
                 if (identityStatus === 'unlocked') {
-                    statusIcon = html`<span title="Unlocked"
-                                            style="color: var(--success-color); margin-right: 4px;">🔓</span>`;
-                    titleText = `Unlocked (${displayPubkeyShort})`;
+                    statusIcon = html`<span title="Nostr Identity Unlocked" style="color: var(--success-color); margin-right: 4px;">🔓</span>`;
+                    titleText = `Nostr Unlocked (${displayPubkeyShort})`;
                     if (connectionStatus === 'connected') {
                         statusText += 'Connected';
-                        titleText += ' | Click to Disconnect';
+                        titleText += ' | Relays active. Click to Disconnect.';
                         action = () => dispatch({type: 'NOSTR_DISCONNECT_REQUEST'});
                     } else if (connectionStatus === 'connecting') {
                         statusText += 'Connecting...';
-                        titleText += ' | Connecting...';
+                        titleText += ' | Connecting to relays...';
                     } else if (connectionStatus === 'error') {
-                        statusText += 'Conn. Err';
-                        titleText += ` | Err: ${nostrState.connectionError}. Retry?`;
+                        statusText += 'Conn. Error';
+                        titleText += ` | Connection Error: ${nostrState.connectionError || 'Unknown'}. Click to Retry.`;
                         action = () => dispatch({type: 'NOSTR_CONNECT_REQUEST'});
                     } else {
                         statusText += 'Offline';
-                        titleText += ' | Click to Connect';
+                        titleText += ' | Disconnected. Click to Connect.';
                         action = () => dispatch({type: 'NOSTR_CONNECT_REQUEST'});
                     }
                 } else if (identityStatus === 'locked') {
-                    statusIcon = html`<span title="Locked"
-                                            style="color: var(--warning-color); margin-right: 4px;">🔒</span>`;
+                    statusIcon = html`<span title="Nostr Identity Locked" style="color: var(--warning-color); margin-right: 4px;">🔒</span>`;
                     statusText += 'Locked';
-                    titleText = `Locked (${displayPubkeyShort}). Click for Settings`;
+                    titleText = `Nostr Locked (${displayPubkeyShort}). Click to open Settings and unlock.`;
                     action = () => coreAPI.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
                 } else if (identityStatus === 'no_identity') {
-                    statusIcon = html`<span title="No ID"
-                                            style="color: var(--secondary-text-color); margin-right: 4px;">⚠️</span>`;
-                    statusText += 'Setup';
-                    titleText = 'Click to Setup Nostr';
+                    statusIcon = html`<span title="Nostr Identity Not Setup" style="color: var(--secondary-text-color); margin-right: 4px;">⚠️</span>`;
+                    statusText += 'Setup Needed';
+                    titleText = 'Nostr identity not configured. Click to open Settings and set up.';
                     action = () => coreAPI.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
                 } else if (identityStatus === 'error') {
-                    statusIcon = html`<span title="Error"
-                                            style="color: var(--danger-color); margin-right: 4px;">❌</span>`;
-                    statusText += 'Error';
-                    titleText = `Identity Error: ${nostrState.identityError}. Settings?`;
+                    statusIcon = html`<span title="Nostr Identity Error" style="color: var(--danger-color); margin-right: 4px;">❌</span>`;
+                    statusText += 'Identity Error';
+                    titleText = `Nostr Identity Error: ${nostrState.identityError || 'Unknown'}. Click to open Settings.`;
                     action = () => coreAPI.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
                 } else {
                     statusText += 'Loading...';
