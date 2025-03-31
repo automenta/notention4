@@ -133,8 +133,8 @@ class TiptapEditor extends AbstractEditorLibrary {
                         history: editorOptions.history ?? true,
                         // Add other StarterKit options here if needed
                     }),
-                    InlineProperty, // Add our custom node extension
-                    SuggestionPlugin(this._dispatch), // Add the new SuggestionPlugin for parser UI
+                    // Phase 1: Disable InlineProperty InlineProperty, // Add our custom node extension
+                    // Phase 1: Disable SuggestionPlugin SuggestionPlugin(this._dispatch), // Add the new SuggestionPlugin for parser UI
                     // Add more extensions like Placeholder, Link, etc.
                     ...(editorOptions.extensions || [])
                 ],
@@ -853,81 +853,10 @@ export const RichTextEditorPlugin = {
                         </div>
                     </div>
                     <style>
-                        /* --- REMOVED .inline-property styles --- */
-                        /* --- REMOVED .inline-property-input styles (now inside NodeView styles) --- */
-
-                        /* --- Styles for NodeView --- */
-                        .inline-property-nodeview {
-                            display: inline-block; /* Behave like a span */
-                            vertical-align: baseline;
-                            margin: 0 1px;
-                            padding: 0;
-                            border-radius: 3px;
-                            /* Add transition for smoother hover? */
-                        }
-                        .inline-property-nodeview .inline-property-display {
-                            display: inline-block; /* Needed for padding/border */
-                            background-color: var(--prop-inline-bg, #f0f0f0);
-                            border: 1px solid var(--prop-inline-border, #ddd);
-                            border-radius: 3px;
-                            padding: 0px 4px;
-                            cursor: pointer;
-                            white-space: nowrap;
-                            line-height: 1.4; /* Adjust for better vertical alignment */
-                            color: var(--prop-inline-text, #333);
-                        }
-                        .inline-property-nodeview .inline-property-display:hover {
-                            background-color: var(--prop-inline-hover-bg, #e0e0e0);
-                            border-color: var(--prop-inline-hover-border, #ccc);
-                        }
-                        .inline-property-nodeview .property-icon {
-                            margin-right: 3px;
-                            font-size: 0.9em;
-                            opacity: 0.8;
-                        }
-                        .inline-property-nodeview .property-key {
-                            font-weight: 500; /* Slightly bolder key */
-                            margin-right: 2px;
-                            color: var(--prop-color, #555); /* Use color from hint */
-                        }
-                        .inline-property-nodeview .property-value {
-                            /* Styles for value */
-                        }
-                        /* Style when selected by Tiptap */
-                        .ProseMirror-selectednode > .inline-property-nodeview .inline-property-display { /* Target child */
-                            box-shadow: 0 0 0 2px var(--accent-color, blue);
-                            background-color: var(--prop-inline-hover-bg, #e0e0e0); /* Keep hover style when selected */
-                        }
-                        /* Input styling within NodeView */
-                        .inline-property-nodeview .inline-property-input {
-                            border: 1px solid var(--accent-color, blue);
-                            padding: 0px 3px; /* Minimal padding */
-                            border-radius: 2px;
-                            font-size: inherit;
-                            font-family: inherit;
-                            vertical-align: baseline;
-                            line-height: 1.3; /* Match display */
-                            margin: 0; /* No extra margin */
-                            /* Adjust width based on type? */
-                        }
-                        .inline-property-nodeview .inline-property-input[type="checkbox"] {
-                            height: 0.9em; width: 0.9em; vertical-align: middle;
-                        }
-                        .inline-property-nodeview .inline-property-input[type="date"],
-                        .inline-property-nodeview .inline-property-input[type="time"],
-                        .inline-property-nodeview .inline-property-input[type="datetime-local"] {
-                            padding: 0 2px;
-                        }
-                        .inline-property-nodeview .inline-property-input[type="range"] {
-                            vertical-align: middle;
-                            padding: 0;
-                        }
-                        .inline-property-nodeview select.inline-property-input { /* Style select specifically */
-                            padding: 0 2px;
-                        }
-
+                        /* Phase 1: Remove InlinePropertyNodeView styles */
 
                         /* --- Suggestion Highlight & Popover Styles --- */
+                        /* Phase 1: SuggestionPlugin disabled, but keep styles for now */
                         .suggestion-highlight {
                             background-color: var(--suggestion-highlight-bg, rgba(255, 255, 0, 0.3)); /* Yellowish highlight */
                             border-bottom: 1px dotted var(--suggestion-highlight-border, orange);
@@ -1174,41 +1103,8 @@ export const RichTextEditorPlugin = {
                         this._editorInstance._tiptapInstance?.chain().focus().insertContent(content).run();
                     }
                 },
-                replaceTextWithInlineProperty: (location, propData) => {
-                    if (!this._editorInstance || this._editorInstance.inactive() || !location || !propData) {
-                        console.warn("EditorService: Cannot replace text with inline property. Invalid args.", { location, propData });
-                        return;
-                    }
-                    const { start, end } = location;
-                    const { propId, key, value, type } = propData; // propId might be temporary
-
-                    if (typeof start !== 'number' || typeof end !== 'number' || start >= end) {
-                         console.warn("EditorService: Invalid location for inline property replacement.", location);
-                         return;
-                    }
-
-                    console.log(`EditorService: Replacing text from ${start} to ${end} with inline property:`, propData);
-
-                    try {
-                        this._editorInstance._tiptapInstance?.chain()
-                            .focus() // Ensure editor has focus
-                            .setTextSelection({ from: start, to: end }) // Select the text range
-                            .insertContent({ // Insert the node
-                                type: 'inlineProperty', // Node type name
-                                attrs: {
-                                    propId: propId, // Use the provided ID (might be temporary)
-                                    key: key,
-                                    value: value, // Use the normalized value
-                                    type: type
-                                }
-                            })
-                            // Optional: Move cursor after the inserted node
-                            // .setTextSelection(end + 1) // Adjust based on how Tiptap handles insertion position
-                            .run();
-                    } catch (error) {
-                        console.error("EditorService: Error replacing text with inline property node:", error);
-                    }
-                },
+                // Phase 1: Disable replaceTextWithInlineProperty
+                // replaceTextWithInlineProperty: (location, propData) => { ... },
                 // Avoid exposing the raw Tiptap instance directly if possible
                 // getTiptapInstance: () => this._editorInstance?._tiptapInstance,
             }
