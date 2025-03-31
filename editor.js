@@ -853,8 +853,6 @@ export const RichTextEditorPlugin = {
                         </div>
                     </div>
                     <style>
-                        /* Phase 1: Remove InlinePropertyNodeView styles */
-
                         /* --- Suggestion Highlight & Popover Styles --- */
                         /* Phase 1: SuggestionPlugin disabled, but keep styles for now */
                         .suggestion-highlight {
