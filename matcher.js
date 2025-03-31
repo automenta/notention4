@@ -116,29 +116,43 @@ export const MatcherPlugin = {
                     const settings = this.coreAPI.getPluginSettings(this.id);
                     const defaultOntology = this.getSettingsOntology(); // Get defaults defined in the plugin
                     const propWeight = settings?.propWeight ?? defaultOntology.propWeight.default ?? 0.7;
-                    const vectorWeight = settings?.vectorWeight ?? defaultOntology.vectorWeight.default ?? 0.3;
+                    const vectorWeight = settings?.vectorWeight ?? defaultOntology.vectorWeight.default ?? 0.3; // Keep vector weight for future use
 
                     let finalScore = 0;
                     let explanation = "";
 
-                    // Normalize weights if they don't add up to 1 (optional, but good practice)
-                    const totalWeight = propWeight + (vectorAvailable ? vectorWeight : 0);
-                    const normPropWeight = totalWeight > 0 ? propWeight / totalWeight : 1; // If total is 0, give prop full weight
-                    const normVectorWeight = totalWeight > 0 && vectorAvailable ? vectorWeight / totalWeight : 0;
+                    // For Phase 3, prioritize property score. If vector is available, use weights, otherwise property score is 100%.
+                    let effectivePropWeight = propWeight;
+                    let effectiveVectorWeight = vectorAvailable ? vectorWeight : 0;
 
-                    if (vectorAvailable) {
-                        finalScore = (propScoreResult.score * normPropWeight) + (vectorScoreResult.score * normVectorWeight);
-                        explanation = `Property Match (${(normPropWeight * 100).toFixed(0)}%): ${propScoreResult.explanation}\nVector Match (${(normVectorWeight * 100).toFixed(0)}%): ${vectorScoreResult.explanation}`;
+                    // Normalize weights so they sum to 1 (or propWeight is 1 if vector is unavailable/zero)
+                    const totalWeight = effectivePropWeight + effectiveVectorWeight;
+                    if (totalWeight > 0) {
+                        effectivePropWeight = effectivePropWeight / totalWeight;
+                        effectiveVectorWeight = effectiveVectorWeight / totalWeight;
                     } else {
-                        // If vector isn't available or failed, property score takes full weight (normPropWeight will be 1)
-                        finalScore = propScoreResult.score * normPropWeight;
-                        explanation = `Property Match (${(normPropWeight * 100).toFixed(0)}%): ${propScoreResult.explanation}\nVector Match: ${vectorScoreResult.explanation}`; // Still show why vector failed/disabled
+                        // If both weights are 0, default to property score only
+                        effectivePropWeight = 1;
+                        effectiveVectorWeight = 0;
                     }
+
+                    // Calculate final score using normalized effective weights
+                    finalScore = (propScoreResult.score * effectivePropWeight) + (vectorScoreResult.score * effectiveVectorWeight);
+
+                    // Build explanation string
+                    explanation = `Property Match (${(effectivePropWeight * 100).toFixed(0)}%): ${propScoreResult.explanation}`;
+                    if (vectorAvailable && effectiveVectorWeight > 0) {
+                        explanation += `\nVector Match (${(effectiveVectorWeight * 100).toFixed(0)}%): ${vectorScoreResult.explanation}`;
+                    } else {
+                        // Include reason if vector wasn't used
+                        explanation += `\nVector Match: ${vectorScoreResult.explanation}`;
+                    }
+
 
                     // Clamp score between 0 and 1
                     finalScore = Math.max(0, Math.min(1, finalScore));
 
-                    return {score: finalScore, explanation};
+                    return { score: finalScore, explanation };
                 },
             }
         };
@@ -315,14 +329,18 @@ export const MatcherPlugin = {
 
                 // Filter, sort, and limit results using configured settings
                 const settings = pluginInstance.coreAPI.getPluginSettings(pluginInstance.id);
-                const defaultOntology = pluginInstance.getSettingsOntology();
+                const defaultOntology = pluginInstance.getSettingsOntology(); // Get defaults defined in the plugin
                 const topN = settings?.topN ?? defaultOntology.topN.default ?? 5;
                 const scoreThreshold = settings?.scoreThreshold ?? defaultOntology.scoreThreshold.default ?? 0.3;
 
+                // console.log(`Matcher Middleware: Filtering ${results.length} results with threshold ${scoreThreshold}, limiting to ${topN}`);
+
                 const topMatches = results
-                    .filter(r => r.score >= scoreThreshold)
-                    .sort((a, b) => b.score - a.score) // Sort descending by score
-                    .slice(0, topN);
+                    .filter(r => r.score >= scoreThreshold) // Apply threshold
+                    .sort((a, b) => b.score - a.score)     // Sort descending by score
+                    .slice(0, topN);                       // Limit to top N
+
+                // console.log(`Matcher Middleware: Found ${topMatches.length} matches above threshold.`);
 
                 dispatch({ type: 'MATCHER_FIND_RELATED_SUCCESS', payload: { noteId, matches: topMatches } });
 
@@ -459,10 +477,11 @@ export const MatcherPlugin = {
                             ${content}
                         </div>
                     </details>
-                    <!-- Embedding Status Indicator -->
-                    ${pluginInstance._renderEmbeddingStatus(state, noteId, html)}
+                    <!-- Embedding Status Indicator (Keep for later phases) -->
+                    ${pluginInstance.llmService ? pluginInstance._renderEmbeddingStatus(state, noteId, html) : ''}
                     <style>
-                        .matcher-related-notes-panel summary { cursor: pointer; }
+                        .matcher-related-notes-panel summary { cursor: pointer; font-weight: bold; }
+                        .matcher-related-notes-panel .plugin-panel-content { padding-top: 5px; }
                         .related-notes-list { list-style: none; padding: 0; margin: 0; }
                         .related-note-item {
                             padding: 4px 0;
@@ -590,15 +609,51 @@ export const MatcherPlugin = {
                                     title="Clear all cached text embeddings generated by the Matcher plugin. They will be regenerated as needed.">
                                 Clear Cache
                             </button>
-                            <span class="field-hint">Removes locally stored embeddings to save space or force regeneration.</span>
+                            <span class="field-hint">Removes locally stored embeddings to save space or force regeneration. Requires LLM plugin.</span>
                         </div>
                     </div>
+                    <style>
+                        /* Add some basic styling for the settings form */
+                        .matcher-settings .settings-description {
+                            font-size: 0.9em;
+                            color: var(--secondary-text-color);
+                            margin-bottom: 1em;
+                        }
+                        .matcher-settings .setting-item {
+                            margin-bottom: 1em;
+                            display: flex;
+                            flex-direction: column; /* Stack label, input, hint */
+                        }
+                        .matcher-settings .setting-item label {
+                            margin-bottom: 0.3em;
+                            font-weight: bold;
+                        }
+                        .matcher-settings .setting-item input[type="number"],
+                        .matcher-settings .setting-item input[type="text"] {
+                            padding: 4px 6px;
+                            border: 1px solid var(--input-border-color, #ccc);
+                            border-radius: 3px;
+                            background-color: var(--input-background-color, #fff);
+                            color: var(--input-text-color, #333);
+                            max-width: 150px; /* Limit width of inputs */
+                        }
+                        .matcher-settings .setting-item .field-hint {
+                            font-size: 0.85em;
+                            color: var(--secondary-text-color);
+                            margin-top: 0.4em;
+                        }
+                         .matcher-settings .setting-item button {
+                            padding: 4px 8px;
+                            cursor: pointer;
+                            align-self: flex-start; /* Align button left */
+                         }
+                    </style>
                 `;
             }
         };
      },
 
-     // --- UI Helper for Embedding Status ---
+     // --- UI Helper for Embedding Status (Keep for later phases) ---
      _renderEmbeddingStatus(state, noteId, html) {
         const status = state.pluginRuntimeState?.[this.id]?.embeddingStatus?.[noteId] || 'idle';
         let text = 'Embeddings: ';
@@ -621,11 +676,14 @@ export const MatcherPlugin = {
      * @returns {object} { score: number (0-1), explanation: string }
      */
     _calculatePropertyScore(propsA = [], propsB = []) {
-        if (!this.ontologyService) return {score: 0, explanation: "Ontology service unavailable."};
-        if (propsA.length === 0 && propsB.length === 0) return {score: 0, explanation: "No properties on either note."};
+        if (!this.ontologyService) return { score: 0, explanation: "Ontology service unavailable." };
+        if (!Array.isArray(propsA)) propsA = []; // Ensure arrays
+        if (!Array.isArray(propsB)) propsB = [];
 
-        const mapA = new Map(propsA.map(p => [p.key, p]));
-        const mapB = new Map(propsB.map(p => [p.key, p]));
+        if (propsA.length === 0 && propsB.length === 0) return { score: 0, explanation: "No properties on either note." };
+
+        const mapA = new Map(propsA.map(p => [p.key?.toLowerCase(), p])); // Use lowercase keys for matching
+        const mapB = new Map(propsB.map(p => [p.key?.toLowerCase(), p]));
         const allKeys = new Set([...mapA.keys(), ...mapB.keys()]);
 
         let totalScore = 0;
@@ -640,6 +698,7 @@ export const MatcherPlugin = {
                 // Key exists in both, compare values
                 const valueA = propA.value;
                 const valueB = propB.value;
+                // Use the type stored on the property if available, otherwise infer
                 const typeA = propA.type || this.ontologyService.inferType(valueA, key);
                 const typeB = propB.type || this.ontologyService.inferType(valueB, key);
 
@@ -653,22 +712,37 @@ export const MatcherPlugin = {
                             matchScore = this._compareDates(valueA, valueB);
                             break;
                         case 'number':
-                            if (typeof valueA === 'number' && typeof valueB === 'number') {
-                                const diff = Math.abs(valueA - valueB);
-                                const range = Math.max(Math.abs(valueA), Math.abs(valueB), 1);
-                                matchScore = Math.max(0, 1 - (diff / range));
-                                matchScore = isNaN(matchScore) ? 0 : matchScore * 0.9; // Slightly penalize non-exact
-                            } else { matchScore = (valueA == valueB) ? 0.5 : 0; } // Loose equality check if not numbers
+                            // Ensure both are treated as numbers for comparison
+                            const numA = Number(valueA);
+                            const numB = Number(valueB);
+                            if (!isNaN(numA) && !isNaN(numB)) {
+                                const diff = Math.abs(numA - numB);
+                                // Use a dynamic range based on the values themselves, or a fixed range?
+                                // Let's use a simple approach: 1 for exact match, decreasing score based on difference.
+                                // Max difference considered "relevant" could be context-dependent.
+                                // For priority (1-10), a diff of 1 is significant. For counts, less so.
+                                // Simple linear decay: score = max(0, 1 - diff / scale)
+                                // Let's use a scale of 10 for general numbers for now.
+                                const scale = 10;
+                                matchScore = Math.max(0, 1 - (diff / scale));
+                                if (diff > 0) matchScore *= 0.9; // Penalize non-exact matches slightly
+                            } else {
+                                // If conversion failed, fallback to string comparison
+                                matchScore = (String(valueA) === String(valueB)) ? 0.5 : 0;
+                            }
                             break;
                         case 'boolean':
-                            matchScore = (valueA === valueB) ? 1.0 : 0;
+                            // Normalize boolean representation before comparing
+                            const boolA = ['true', 'yes', '1', 'on'].includes(String(valueA).toLowerCase());
+                            const boolB = ['true', 'yes', '1', 'on'].includes(String(valueB).toLowerCase());
+                            matchScore = (boolA === boolB) ? 1.0 : 0;
                             break;
                         case 'list':
                             matchScore = this._compareLists(valueA, valueB);
                             break;
                         case 'reference':
-                            // High score for exact match of reference values (note names/IDs)
-                            if (typeof valueA === 'string' && typeof valueB === 'string' && valueA.toLowerCase() === valueB.toLowerCase()) {
+                            // High score for exact match (case-insensitive) of reference values (e.g., note names/IDs)
+                            if (typeof valueA === 'string' && typeof valueB === 'string' && valueA.trim().toLowerCase() === valueB.trim().toLowerCase()) {
                                 matchScore = 0.95; // High score for direct reference match
                             } else {
                                 matchScore = 0; // No match if references differ
@@ -676,49 +750,73 @@ export const MatcherPlugin = {
                             // TODO: Future: Resolve references to actual note IDs and compare IDs
                             break;
                         case 'url':
+                            // Normalize URLs before comparing? (e.g., remove trailing slash, http vs https?) Basic for now.
+                            matchScore = (String(valueA).trim() === String(valueB).trim()) ? 1.0 : 0.5; // Lower score for non-exact?
+                            break;
                         case 'location': // Basic string match for now
                         case 'text':
                         default: // Default to string comparison
-                            if (valueA === valueB) {
+                            const strA = String(valueA).trim();
+                            const strB = String(valueB).trim();
+                            if (strA.toLowerCase() === strB.toLowerCase()) {
                                 matchScore = 1.0;
-                            } else if (typeof valueA === 'string' && typeof valueB === 'string') {
-                                // Simple Jaccard index for words? Or keep prefix match? Let's try Jaccard.
-                                const wordsA = new Set(valueA.toLowerCase().split(/\s+/).filter(w => w.length > 2));
-                                const wordsB = new Set(valueB.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+                            } else {
+                                // Use Jaccard index for partial text match
+                                const wordsA = new Set(strA.toLowerCase().split(/\s+/).filter(w => w.length > 1)); // Min word length 2
+                                const wordsB = new Set(strB.toLowerCase().split(/\s+/).filter(w => w.length > 1));
                                 if (wordsA.size > 0 || wordsB.size > 0) {
-                                     matchScore = this._jaccardIndex(wordsA, wordsB) * 0.7; // Penalize non-exact text
+                                    matchScore = this._jaccardIndex(wordsA, wordsB) * 0.7; // Penalize non-exact text
                                 } else {
-                                     matchScore = 0; // No meaningful words
+                                    matchScore = 0; // No meaningful words
                                 }
-                            } else { // Different underlying types treated as string
-                                matchScore = (String(valueA) === String(valueB)) ? 0.8 : 0; // Penalize type coercion match
                             }
                             break;
                     }
                 } else {
                     // Type mismatch - potential for future cross-type comparison (e.g., string "10" vs number 10)
-                    matchScore = 0; // Keep score 0 for type mismatches for now
+                    // For now, consider it no match.
+                    matchScore = 0;
                     comparisonType = `Mismatch (${typeA} vs ${typeB})`;
                 }
 
-                if (matchScore > 0.01) { // Use a small threshold to count as matching
+                // Apply weighting based on property type? (e.g., matching 'status' might be more important than 'url')
+                // For now, all matches contribute equally.
+
+                if (matchScore > 0.1) { // Use a slightly higher threshold to count as matching
                     totalScore += matchScore;
                     matchingPropertiesCount++;
-                    explanations.push(`'${key}' (${comparisonType}): ${matchScore.toFixed(2)}`);
+                    // Use original key casing for explanation for readability
+                    const displayKey = propA.key || key;
+                    explanations.push(`'${displayKey}' (${comparisonType}): ${matchScore.toFixed(2)}`);
                 }
             }
+            // If key exists only in one note, it doesn't contribute to the score.
         }
 
-        // Normalize score: Average score over all unique properties, or over matching properties?
-        // Let's normalize by the total number of unique properties involved.
+        // Normalize score: Average score over the number of properties that *matched*?
+        // Or normalize by the total number of unique properties across both notes?
+        // Normalizing by total unique properties (`allKeys.size`) gives a sense of overall similarity.
+        // Normalizing by `matchingPropertiesCount` emphasizes the strength of the matches found.
+        // Let's normalize by `allKeys.size` to represent the proportion of shared/similar properties.
         const normalizationFactor = allKeys.size > 0 ? allKeys.size : 1;
-        const finalScore = totalScore / normalizationFactor;
+        let finalScore = normalizationFactor > 0 ? totalScore / normalizationFactor : 0;
+
+        // Boost score slightly based on the *number* of matching properties?
+        // Example: Add a small bonus proportional to matchingPropertiesCount / allKeys.size
+        if (allKeys.size > 0 && matchingPropertiesCount > 0) {
+             const matchRatioBonus = (matchingPropertiesCount / allKeys.size) * 0.1; // Small bonus (max 0.1)
+             finalScore = Math.min(1, finalScore + matchRatioBonus);
+        }
+
 
         const explanation = matchingPropertiesCount > 0
-            ? `${matchingPropertiesCount} matching properties (${explanations.join(', ')}). Score: ${finalScore.toFixed(3)}`
+            ? `${matchingPropertiesCount} matching properties (${explanations.join(', ')}). Avg score: ${finalScore.toFixed(3)}`
             : "No matching property keys found.";
 
-        return {score: Math.max(0, Math.min(1, finalScore)), explanation};
+        // Ensure score is clamped between 0 and 1
+        finalScore = Math.max(0, Math.min(1, finalScore));
+
+        return { score: finalScore, explanation };
     },
 
     /**

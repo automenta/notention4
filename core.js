@@ -17,7 +17,7 @@ import {SemanticParserPlugin} from "./parser.js";
 import {RichTextEditorPlugin} from "./editor.js";
 import {NostrPlugin} from "./nostr.js";
 import {LLMPlugin} from "./llm.js";
-import {MatcherPlugin} from "./matcher.js"; // Added for settings access if needed later
+import {MatcherPlugin} from "./matcher.js"; // Import MatcherPlugin
 
 const PLUGINS = [
     PropertiesPlugin,
@@ -25,7 +25,8 @@ const PLUGINS = [
     SemanticParserPlugin,
     RichTextEditorPlugin,
     NostrPlugin,
-    LLMPlugin
+    LLMPlugin,
+    MatcherPlugin // Add MatcherPlugin to the list
 ];
 
 
