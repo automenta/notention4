@@ -773,9 +773,129 @@ class UIRenderer {
         }
     };
 
+    // --- Search Query Parsing Helper ---
+    _parseSearchQuery(query) {
+        const structuredFilters = [];
+        // Regex to find key:value pairs, potentially with operators like >, <, !=
+        // Example: key:value key:"quoted value" key>10 key!=false
+        const filterRegex = /(\w+)\s*(!?[:><]=?)\s*("([^"]*)"|'([^']*)'|(\S+))/g;
+        let textQuery = query;
+        let match;
+
+        while ((match = filterRegex.exec(query)) !== null) {
+            const key = match[1];
+            const operator = match[2];
+            // Value can be quoted or unquoted
+            const value = match[4] ?? match[5] ?? match[6];
+
+            structuredFilters.push({ key: key.toLowerCase(), operator, value });
+
+            // Remove the matched filter from the text query part
+            textQuery = textQuery.replace(match[0], '').trim();
+        }
+
+        return { textQuery: textQuery.trim(), structuredFilters };
+    }
+
+    // --- Structured Filter Evaluation Helper ---
+    _evaluateStructuredFilters(noteProperties, structuredFilters) {
+        const ontologyService = this._getOntologyService(); // Use lazy getter
+
+        for (const filter of structuredFilters) {
+            const prop = noteProperties.find(p => p.key.toLowerCase() === filter.key);
+
+            // If filtering on a key the note doesn't have, it's not a match (unless operator is !=)
+            if (!prop && filter.operator !== '!=') {
+                return false;
+            }
+            // Handle != operator specifically for non-existent keys
+            if (!prop && filter.operator === '!=') {
+                continue; // Property doesn't exist, so it's "not equal" to the filter value
+            }
+
+            // Property exists, now compare values
+            const propValue = prop.value;
+            const filterValueStr = filter.value;
+            const propType = prop.type || ontologyService?.inferType(propValue, filter.key) || 'text';
+
+            let match = false;
+
+            // --- Comparison Logic (Needs refinement for dates, numbers, booleans) ---
+            try {
+                // Basic type coercion/comparison
+                if (propType === 'number') {
+                    const numProp = Number(propValue);
+                    const numFilter = Number(filterValueStr);
+                    if (!isNaN(numProp) && !isNaN(numFilter)) {
+                        switch (filter.operator) {
+                            case ':': case '=': match = numProp === numFilter; break;
+                            case '>': match = numProp > numFilter; break;
+                            case '>=': match = numProp >= numFilter; break;
+                            case '<': match = numProp < numFilter; break;
+                            case '<=': match = numProp <= numFilter; break;
+                            case '!=': match = numProp !== numFilter; break;
+                            default: match = false; // Unsupported operator for type
+                        }
+                    }
+                } else if (propType === 'boolean') {
+                    const boolProp = String(propValue).toLowerCase() === 'true' || propValue === true;
+                    const boolFilter = String(filterValueStr).toLowerCase() === 'true' || filterValueStr === true;
+                     switch (filter.operator) {
+                        case ':': case '=': match = boolProp === boolFilter; break;
+                        case '!=': match = boolProp !== boolFilter; break;
+                        default: match = false;
+                    }
+                } else if (propType === 'date') {
+                    // TODO: Implement robust date comparison (e.g., using a library)
+                    // Handle relative dates ('today', 'next-week', 'yesterday') and operators
+                    // Placeholder: simple string comparison for now
+                    const dateProp = new Date(propValue);
+                    const dateFilter = new Date(filterValueStr); // Very basic parsing
+                    if (!isNaN(dateProp) && !isNaN(dateFilter)) {
+                         switch (filter.operator) {
+                            case ':': case '=': match = dateProp.toDateString() === dateFilter.toDateString(); break; // Compare day only
+                            case '>': match = dateProp > dateFilter; break;
+                            case '>=': match = dateProp >= dateFilter; break;
+                            case '<': match = dateProp < dateFilter; break;
+                            case '<=': match = dateProp <= dateFilter; break;
+                            case '!=': match = dateProp.toDateString() !== dateFilter.toDateString(); break;
+                            default: match = false;
+                        }
+                    } else { // Fallback to string compare if dates invalid
+                         match = String(propValue).toLowerCase().includes(filterValueStr.toLowerCase());
+                    }
+                } else if (propType === 'list') {
+                    const listProp = Array.isArray(propValue) ? propValue : String(propValue).split(',').map(s => s.trim());
+                    const lowerFilter = filterValueStr.toLowerCase();
+                    match = listProp.some(item => String(item).toLowerCase().includes(lowerFilter));
+                    if (filter.operator === '!=') match = !match;
+                    else if (filter.operator !== ':' && filter.operator !== '=') match = false; // Only equality/contains for lists now
+                }
+                else { // Default: text comparison (case-insensitive contains)
+                    const textProp = String(propValue).toLowerCase();
+                    const textFilter = filterValueStr.toLowerCase();
+                    match = textProp.includes(textFilter);
+                    if (filter.operator === '!=') match = !match;
+                    else if (filter.operator !== ':' && filter.operator !== '=') match = false; // Only equality/contains for text now
+                }
+            } catch (e) {
+                console.warn(`Error comparing property '${filter.key}' (type: ${propType})`, e);
+                match = false;
+            }
+            // --- End Comparison Logic ---
+
+            // If any filter doesn't match, the whole set fails
+            if (!match) return false;
+        }
+
+        // All filters passed
+        return true;
+    }
+
 
     // --- Centralized Modal Rendering Logic ---
     _renderModal(state) {
+        // Get modalType and modalProps from the NEW state structure
         const { modalType, modalProps } = state.uiState;
         if (!modalType) return '';
 

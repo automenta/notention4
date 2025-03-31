@@ -353,10 +353,24 @@ export const MatcherPlugin = {
                  const noteId = action.payload.noteId;
                  // Only trigger if content or properties actually changed
                  if (action.type === 'CORE_UPDATE_NOTE' && !action.payload.changes?.content) {
-                     // If only name changed, maybe don't re-trigger? For now, let it re-trigger.
+                     // If only name changed, maybe don't re-trigger? For now, let it re-trigger matching.
                  }
                  debouncedTriggerMatching(noteId, state, storeApi.dispatch);
+
+                 // Also trigger background embedding if content changed
+                 if (action.type === 'CORE_UPDATE_NOTE' && action.payload.changes?.content) {
+                     debouncedTriggerEmbedding(noteId, state, storeApi.dispatch);
+                 }
             }
+
+            // Trigger background embedding for newly added notes
+            if (action.type === 'CORE_ADD_NOTE') {
+                const newNoteId = state.noteOrder[0]; // Assuming core adds to the start
+                if (newNoteId) {
+                    debouncedTriggerEmbedding(newNoteId, state, storeApi.dispatch);
+                }
+            }
+
 
             return result;
         };
