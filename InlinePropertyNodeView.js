@@ -3,12 +3,13 @@
  * Handles rendering the property pill and the editing input.
  */
 export class InlinePropertyNodeView {
-    constructor(node, view, getPos, dispatch, ontologyService) {
+    constructor(node, view, getPos, dispatch, ontologyService, coreAPI) { // Added coreAPI
         this.node = node;
         this.view = view;
         this.getPos = getPos;
         this.dispatch = dispatch;
         this.ontologyService = ontologyService;
+        this.coreAPI = coreAPI; // Store coreAPI
 
         this.isEditing = false;
         this._outerDOM = null; // The main container span
@@ -209,6 +210,9 @@ export class InlinePropertyNodeView {
         }
         this._innerDOM = inputElement;
 
+        // Clear any previous validation error style
+        inputElement.classList.remove('validation-error-inline');
+
         // Focus and select
         inputElement.focus();
         if (typeof inputElement.select === 'function' && !['checkbox', 'select', 'range'].includes(inputType)) {
@@ -234,23 +238,43 @@ export class InlinePropertyNodeView {
             const newValueNormalized = this._normalizeValue(newValueRaw, type);
 
             // Only dispatch if value actually changed
-            // Use simple string comparison for original value as it was stored as string attribute
+            // --- Validation ---
+            const propertiesAPI = this.coreAPI?.getPluginAPI('properties');
+            let validationResult = { isValid: true, message: null };
+            if (propertiesAPI?._validateValue) {
+                validationResult = propertiesAPI._validateValue(key, newValueNormalized, type);
+            } else {
+                console.warn("InlinePropertyNodeView: Properties API or _validateValue not available for validation.");
+            }
+
+            if (!validationResult.isValid) {
+                console.warn(`InlinePropertyNodeView: Validation failed for ${key}: ${validationResult.message}`);
+                // Add error style and prevent saving/closing
+                inputElement.classList.add('validation-error-inline');
+                inputElement.title = validationResult.message; // Show error on hover
+                // Do NOT switch back to display mode
+                // Ensure isEditing remains true
+                this.isEditing = true;
+                return; // Stop processing here
+            }
+            // --- End Validation ---
+
+            // Validation passed, remove error style if present
+            inputElement.classList.remove('validation-error-inline');
+            inputElement.title = ''; // Clear error tooltip
+
+            // Only dispatch if value actually changed
             if (String(originalValue) !== String(newValueNormalized)) {
                 console.log(`InlinePropertyNodeView: Saving changes for ${key}: ${originalValue} -> ${newValueNormalized}`);
                 this.dispatch({
                     type: 'PROPERTY_UPDATE',
                     payload: {
-                        noteId: this._findNoteId(), // Need to find the note ID this node belongs to
+                        noteId: this._findNoteId(),
                         propertyId: propId,
-                        changes: {
-                            value: newValueNormalized,
-                            // Optionally update type if input suggests it? For now, keep original type.
-                            // type: newType || type
-                        }
+                        changes: { value: newValueNormalized }
                     }
                 });
-                // Note: The state change should trigger a Tiptap update, which *might* call our `update` method.
-                // We update the node attribute here optimistically for smoother UI transition.
+                // Optimistically update node attribute for smoother UI transition
                 this.node.attrs.value = newValueNormalized;
             } else {
                 console.log(`InlinePropertyNodeView: No changes detected for ${key}.`);
@@ -259,7 +283,7 @@ export class InlinePropertyNodeView {
             console.log(`InlinePropertyNodeView: Editing cancelled for ${key}.`);
         }
 
-        // Always revert to display mode
+        // Revert to display mode ONLY if validation passed or saveChanges was false
         this.renderDisplay();
         // isEditing is set to false within renderDisplay
     }
@@ -348,4 +372,24 @@ export class InlinePropertyNodeView {
                 return String(value);
         }
     }
+
+    // Add CSS for validation error
+    static injectCSS() {
+        const styleId = 'inline-property-validation-style';
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.textContent = `
+                .inline-property-input.validation-error-inline {
+                    border: 1px solid var(--danger-color, red) !important;
+                    outline: 1px solid var(--danger-color, red) !important;
+                    background-color: var(--danger-background-muted, #ffe0e0);
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    }
 }
+
+// Inject CSS when the class is loaded
+InlinePropertyNodeView.injectCSS();
