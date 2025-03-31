@@ -467,12 +467,12 @@ class UIRenderer {
                         .value=${note.name}
                         placeholder="Note Title"
                         aria-label="Note Title"
-                        @input=${(e) => this._handleTitleInput(note.id, e.target.value)}
+                        @input=${this._handleTitleInput(note.id)}
                 >
                 <div class="editor-header-actions" data-slot="${SLOT_EDITOR_HEADER_ACTIONS}" data-note-id=${note.id}>
-                    <button class="core-archive-note" @click=${() => this._handleArchiveNote(note.id)}
+                    <button class="core-archive-note" @click=${this._handleArchiveNote(note.id)}
                             title="Archive Note" aria-label="Archive Note">Archive</button>
-                    <button class="core-delete-note" @click=${() => this._handleDeleteNote(note.id, note.name)}
+                    <button class="core-delete-note" @click=${this._handleDeleteNote(note.id, note.name)}
                             title="Delete Note" aria-label="Delete Note">Delete</button>
                     ${this._renderSlot(state, SLOT_EDITOR_HEADER_ACTIONS, note.id)}
                     <!-- LLM Action Buttons -->
@@ -496,7 +496,7 @@ class UIRenderer {
                                 aria-label="Note Content"
                                 placeholder="Start writing..."
                                 .value=${note.content}
-                                @input=${(e) => this._handleContentInput(note.id, e.target.value)}
+                                @input=${this._handleContentInput(note.id)}
                                 style="flex-grow: 1; width: 100%; border: none; padding: 10px; font-family: inherit; font-size: inherit; resize: none; outline: none;"
                         ></textarea>
                     </div>`}
@@ -681,37 +681,60 @@ class UIRenderer {
     }
     // --- End LLM Action Handlers ---
 
-
+    // --- UI Event Handlers (Bound using arrow functions) ---
     _handleOpenSettings = () => this._stateManager.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
-
     _handleCloseModal = () => this._stateManager.dispatch({type: 'CORE_CLOSE_MODAL'});
-
     _handleAddNote = () => this._stateManager.dispatch({type: 'CORE_ADD_NOTE'});
-
     _handleSelectNote = (noteId) => this._stateManager.dispatch({type: 'CORE_SELECT_NOTE', payload: {noteId}});
-
-    _handleArchiveNote = (noteId) => this._stateManager.dispatch({type: 'CORE_ARCHIVE_NOTE', payload: {noteId}});
-
-    _handleDeleteNote = (noteId, noteName) => {
+    _handleArchiveNote = (noteId) => () => this._stateManager.dispatch({type: 'CORE_ARCHIVE_NOTE', payload: {noteId}}); // Wrap if needed for direct use
+    _handleDeleteNote = (noteId, noteName) => () => { // Wrap if needed for direct use
         if (confirm(`Are you sure you want to permanently delete "${noteName || 'Untitled Note'}"?`)) {
             this._stateManager.dispatch({type: 'CORE_DELETE_NOTE', payload: {noteId}});
         }
     };
-
     _handleCoreSettingChange = (e) => {
         const key = e.target.dataset.settingKey;
-        const value = e.target.value;
+        const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value; // Handle checkbox
         if (key) {
             this._stateManager.dispatch({type: 'CORE_SET_CORE_SETTING', payload: {key, value}});
         }
     };
-
-    // --- Event Handler for #2 (Priority Sort) ---
+    _handleSearchInput = (e) => this._stateManager.dispatch({type: 'CORE_SEARCH_TERM_CHANGED', payload: {searchTerm: e.target.value}});
     _handleSortChange = (e) => this._stateManager.dispatch({type: 'CORE_SET_NOTE_LIST_SORT_MODE', payload: e.target.value});
-
-    // --- Rendering Helper for #2 (Priority Sort Button) ---
-    _renderSortControl = (state) => html`... sort control ...` // Placeholder - added directly in main template below
-
+    _handleTitleInput = (noteId) => (e) => { // Debounced update for title
+        const newValue = e.target.value;
+        // Use a debounced function if desired, or dispatch directly
+        // For simplicity, dispatching directly here. Consider debouncing if performance is an issue.
+        this._stateManager.dispatch({type: 'CORE_UPDATE_NOTE', payload: {noteId, changes: {name: newValue}}});
+    };
+    _handleContentInput = (noteId) => (e) => { // Debounced update for core textarea content
+        const newValue = e.target.value;
+        // This handler is only for the *core* textarea, not Tiptap.
+        // Debouncing is recommended here.
+        // Example (assuming a debounce utility is available):
+        // this._debouncedContentUpdate(noteId, newValue);
+        // Direct dispatch for simplicity:
+        this._stateManager.dispatch({type: 'CORE_UPDATE_NOTE', payload: {noteId, changes: {content: newValue}}});
+    };
+    _handleNoteListKeyDown = (e) => {
+        // Basic keyboard navigation for note list (example)
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            const currentItem = e.target.closest('.note-list-item');
+            const nextItem = e.key === 'ArrowDown' ? currentItem?.nextElementSibling : currentItem?.previousElementSibling;
+            if (nextItem && nextItem.matches('.note-list-item')) {
+                nextItem.focus();
+                // Optionally select on navigation:
+                // const noteId = nextItem.dataset.noteId;
+                // if (noteId) this._handleSelectNote(noteId);
+            }
+        } else if (e.key === 'Enter' || e.key === ' ') {
+             e.preventDefault();
+             const currentItem = e.target.closest('.note-list-item');
+             const noteId = currentItem?.dataset.noteId;
+             if (noteId) this._handleSelectNote(noteId);
+        }
+    };
     _handleClearState = () => {
         if (confirm(`WARNING: This will delete ALL your notes and settings locally and cannot be undone. Are you absolutely sure?`)) {
             if (confirm(`SECOND WARNING: Please confirm again that you want to erase everything.`)) {
@@ -719,6 +742,7 @@ class UIRenderer {
             }
         }
     };
+
 
     // --- Centralized Modal Rendering Logic ---
     _renderModal(state) {
@@ -1505,21 +1529,42 @@ async function main() {
         window._dispatch = state.dispatch.bind(state);
         window._clearState = persistence.clearState.bind(persistence); // Expose clear function
 
-        // Load Initial State (awaits async storage access)
-        const loadedState = await persistence.loadState();
-        // Dispatch action to merge loaded state and reset transient fields
-        state.dispatch({type: 'CORE_STATE_LOADED', payload: {loadedState}});
+        // Load Initial State
+        api.showGlobalStatus("Loading saved data...", "info");
+        let loadedState = null;
+        try {
+            loadedState = await persistence.loadState();
+            // Dispatch action to merge loaded state and reset transient fields
+            state.dispatch({type: 'CORE_STATE_LOADED', payload: {loadedState}});
+            if (loadedState) {
+                 api.showGlobalStatus("Data loaded.", "success", 1500);
+            } else {
+                 api.showGlobalStatus("No saved data found, starting fresh.", "info", 2000);
+            }
+        } catch (loadError) {
+            console.error("Core: Failed to load persistent state.", loadError);
+            // Dispatch with null state to initialize default structure
+            state.dispatch({type: 'CORE_STATE_LOADED', payload: {loadedState: null}});
+            api.showGlobalStatus("Error loading data. Starting with default state.", "error", 5000);
+            // Optionally render a more persistent error message if loading fails critically
+        }
 
-        // Apply initial theme (already done reactively in UIRenderer based on state)
-        // uiRenderer.renderApp(); // Trigger initial render based on loaded state
-
+        // Register Plugins
         plugins.registerPlugins(PLUGINS);
 
-        //  Activate Plugins (Handles dependency sort, lifecycle methods)
-        plugins.activatePlugins(); // Will activate any registered plugins
+        // Activate Plugins
+        api.showGlobalStatus("Initializing plugins...", "info");
+        try {
+            plugins.activatePlugins(); // Handles dependency sort, lifecycle methods
+            // Status messages for success/failure are handled within activatePlugins
+        } catch (activationError) {
+            // This catch is mostly for synchronous errors during the activation loop setup,
+            // individual plugin errors are caught inside activatePlugins.
+            console.error("Core: Critical error during plugin activation phase.", activationError);
+            api.showGlobalStatus(`Critical plugin activation error: ${activationError.message}`, "error", 0); // Persistent error
+        }
 
         // Initial Render is triggered by CORE_STATE_LOADED state change via UIRenderer subscription.
-        // No explicit renderApp() call needed here.
 
         console.log("%cReality Notebook Core Initialized Successfully.", "color: green; font-weight: bold;");
         api.showGlobalStatus("Application Ready", "success", 2000);

@@ -1263,16 +1263,42 @@ export const RichTextEditorPlugin = {
 
     // --- Refactored Template Insertion Logic ---
     _insertTemplateContent(template) {
-         if (!this.coreAPI || !this._editorInstance || !template) return;
+        if (!this.coreAPI || !this._editorInstance || !template || this._editorInstance.inactive()) {
+            console.warn("EditorPlugin: Cannot insert template, editor or template invalid.");
+            this.coreAPI?.showGlobalStatus("Cannot insert template.", "warning");
+            return;
+        }
 
-         let contentToInsert = template.content || '';
-         // Basic placeholder replacement (extend as needed)
-         contentToInsert = contentToInsert.replace(/{{date}}/gi, this.coreAPI.utils.formatDate(Date.now()));
-         // TODO: Add more placeholder logic
+        try {
+            let contentToInsert = template.content || '';
+            const editorService = this.providesServices().EditorService;
+            const selectedText = editorService.getSelectedText() || '';
+            const currentNote = this.coreAPI.getSelectedNote(); // Get currently selected note
 
-         // Use EditorService to insert
-         this.providesServices().EditorService.insertContentAtCursor?.(contentToInsert);
-         this.coreAPI.showGlobalStatus(`Template "${template.name}" inserted.`, "success", 2000);
+            // Placeholder replacements
+            const replacements = {
+                '{{date}}': this.coreAPI.utils.formatDate(Date.now()).split(',')[0], // Just date part
+                '{{time}}': new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), // Simple time HH:MM AM/PM
+                '{{datetime}}': this.coreAPI.utils.formatDate(Date.now()), // Full date and time
+                '{{selectedText}}': selectedText,
+                '{{noteName}}': currentNote?.name || 'Untitled Note',
+                // Add more placeholders as needed: {{noteId}}, {{cursor}}, etc.
+            };
+
+            // Replace placeholders (case-insensitive)
+            Object.entries(replacements).forEach(([placeholder, value]) => {
+                const regex = new RegExp(placeholder.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi'); // Escape regex chars
+                contentToInsert = contentToInsert.replace(regex, value);
+            });
+
+            // Use EditorService to insert
+            editorService.insertContentAtCursor?.(contentToInsert);
+            this.coreAPI.showGlobalStatus(`Template "${template.name}" inserted.`, "success", 2000);
+
+        } catch (error) {
+            console.error("EditorPlugin: Error inserting template content:", error);
+            this.coreAPI.showGlobalStatus(`Error inserting template: ${error.message}`, "error", 4000);
+        }
     },
 
     // --- Trigger for Template Insertion Modal ---

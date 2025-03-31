@@ -8,20 +8,32 @@ window.onerror = function (message, source, lineno, colno, error) {
                     <div class="error-display">
                         <h1>Application Error</h1>
                         <p>An unexpected error occurred. Please check the console for details.</p>
-                        <p><strong>Message:</strong> ${message}</p>
-                        ${error?.stack ? `<pre>${error.stack}</pre>` : ''}
-                        <p>You may need to reload the application or clear local data.</p>
+                        <p><strong>Message:</strong> ${DOMPurify.sanitize(message)}</p>
+                        ${error?.stack ? `<pre>${DOMPurify.sanitize(error.stack)}</pre>` : ''}
+                        <p>You may need to reload the application or clear local data using the browser's developer tools (Application -> Local Storage).</p>
                     </div>`;
-            appRoot.innerHTML = DOMPurify.sanitize(errorHtml);
+            // Use SAFE_FOR_TEMPLATES to allow basic structure but sanitize content
+            appRoot.innerHTML = DOMPurify.sanitize(errorHtml, { USE_PROFILES: { html: true } });
         } else {
-            appRoot.textContent = `Application Error: ${message}. Check console.`; // Fallback
+            // Basic text fallback, avoid inserting raw message directly if possible
+            appRoot.textContent = `Application Error: An unexpected error occurred. Please check the browser console for details (${message}). Reloading or clearing data might help.`;
         }
     }
-    // Prevent default browser error handling
+    // Prevent default browser error handling (optional, depends on desired behavior)
     return true;
 };
 window.onunhandledrejection = function (event) {
     console.error("Unhandled Promise Rejection:", event.reason);
-    // Optionally display a less intrusive error using the status bar if CoreAPI is available
-    window.realityNotebookCore?.showGlobalStatus(`Unhandled rejection: ${event.reason?.message || event.reason}`, 'error', 10000);
+    const reason = event.reason;
+    let errorMessage = "An unhandled promise rejection occurred.";
+    if (reason instanceof Error) {
+        errorMessage = `Unhandled rejection: ${reason.message}`;
+    } else if (typeof reason === 'string') {
+        errorMessage = `Unhandled rejection: ${reason}`;
+    } else {
+        errorMessage = `Unhandled rejection: ${JSON.stringify(reason)}`;
+    }
+    // Display error using status bar if CoreAPI is available and initialized
+    window.realityNotebookCore?.showGlobalStatus(errorMessage, 'error', 10000);
+    // Optionally add more robust global error display here if needed
 };
