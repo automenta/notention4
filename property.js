@@ -77,14 +77,14 @@ export const PropertiesPlugin = {
                     // Infer type using OntologyService if not explicitly provided
                     let type = propertyData.type || (this.ontologyService ? this.ontologyService.inferType(value, key) : 'text');
 
-                    // Normalize value based on type
-                    value = this._normalizeValue(value, type);
+                    // Normalize value based on type *before* validation
+                    const normalizedValue = this._normalizeValue(value, type);
 
                     // --- Validate Value ---
-                    const validationResult = this._validateValue(key, value, type);
+                    const validationResult = this._validateValue(key, normalizedValue, type);
                     if (!validationResult.isValid) {
-                        console.warn(`PropertiesPlugin: PROPERTY_ADD - Validation failed for key '${key}': ${validationResult.message}`);
-                        coreAPI.showGlobalStatus(`Invalid value for '${key}': ${validationResult.message}`, "warning");
+                        console.warn(`PropertiesPlugin: PROPERTY_ADD - Validation failed for key '${key}' with value '${normalizedValue}': ${validationResult.message}`);
+                        coreAPI.showGlobalStatus(`Invalid value for '${key}': ${validationResult.message}`, "warning", 5000);
                         break; // Stop processing this action
                     }
                     // --- End Validation ---
@@ -96,7 +96,7 @@ export const PropertiesPlugin = {
                     const newProp = {
                         id: propertyId, // Use the temporaryId if provided, otherwise generate
                         key: key,
-                        value: value, // Already normalized and validated
+                        value: normalizedValue, // Use the normalized and validated value
                         type: type,
                         createdAt: Date.now(),
                         updatedAt: Date.now(),
@@ -146,26 +146,39 @@ export const PropertiesPlugin = {
                     }
 
                     // --- Validate Value (only if value or type changed) ---
+                    let validatedValue = updatedProp.value; // Start with current value
                     if (hasChanged) { // Only validate if key, value, or type was part of the change request
-                        const validationResult = this._validateValue(updatedProp.key, valueToValidate, finalType);
+                        // Use the potentially new value for validation
+                        validatedValue = changes.hasOwnProperty('value') ? valueToValidate : updatedProp.value;
+                        const validationResult = this._validateValue(updatedProp.key, validatedValue, finalType);
+
                         if (!validationResult.isValid) {
-                            console.warn(`PropertiesPlugin: PROPERTY_UPDATE - Validation failed for key '${updatedProp.key}': ${validationResult.message}`);
-                            coreAPI.showGlobalStatus(`Invalid value for '${updatedProp.key}': ${validationResult.message}`, "warning");
+                            console.warn(`PropertiesPlugin: PROPERTY_UPDATE - Validation failed for key '${updatedProp.key}' with value '${validatedValue}': ${validationResult.message}`);
+                            coreAPI.showGlobalStatus(`Invalid value for '${updatedProp.key}': ${validationResult.message}`, "warning", 5000);
                             // Do NOT proceed with the update
                             break; // Stop processing this action
                         }
-                        // Validation passed, apply the normalized value if it was the field being changed
+                        // Validation passed. If the value was the field being changed, ensure we use the validated (normalized) version.
                         if (changes.hasOwnProperty('value')) {
-                             updatedProp.value = valueToValidate;
+                             updatedProp.value = validatedValue; // Assign the validated, normalized value
+                        } else {
+                             // If only key or type changed, value remains the same (but was validated against new key/type)
+                             updatedProp.value = validatedValue;
                         }
-                    }
-                    // --- End Validation ---
 
-                    if (hasChanged) { // If any valid change occurred
+                        // Apply other changes (key, type) if they were part of the request
+                        if (changes.hasOwnProperty('key')) updatedProp.key = changes.key.trim();
+                        if (changes.hasOwnProperty('type')) updatedProp.type = finalType;
+
+                        // --- End Validation ---
+
+                        // Update timestamp and replace object in array
                         updatedProp.updatedAt = Date.now();
-                        propsArray[propIndex] = updatedProp; // Replace the old property object
+                        propsArray[propIndex] = updatedProp;
                         note.updatedAt = Date.now(); // Mark note as updated
                         // console.log(`PropertiesPlugin: Updated property ${propertyId} on note ${noteId}:`, changes);
+                    } else {
+                        // console.log(`PropertiesPlugin: PROPERTY_UPDATE - No effective changes detected for property ${propertyId}`);
                     }
                     break;
                 }
