@@ -8,7 +8,7 @@ import { Editor } from '@tiptap/core';
 import { Plugin as ProseMirrorPlugin, PluginKey } from '@tiptap/pm/state'; // Use ProseMirror Plugin directly for decorations
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
-// Phase 1: Disable InlineProperty import { InlineProperty } from './InlineProperty.js'; // Import the new Node
+// Phase 1: Disable InlineProperty // import { InlineProperty } from './InlineProperty.js'; // Import the new Node
 import tippy from 'tippy.js'; // Import tippy
 import 'tippy.js/dist/tippy.css'; // Import tippy CSS
 
