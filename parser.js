@@ -160,19 +160,7 @@ export const SemanticParserPlugin = {
                         storeApi.dispatch({
                             type: 'PROPERTY_ADD',
                             payload: {
-                            noteId: noteId,
-                            propertyId: existingProp.id,
-                            changes: {value: suggestion.property.value, type: suggestion.property.type} // Update value and type
-                        }
-                    });
-                } else {
-                    // Dispatch PROPERTY_ADD if key is new
-                    storeApi.dispatch({
-                        type: 'PROPERTY_ADD',
-                        payload: {
-                            noteId: noteId,
-                            propertyData: suggestion.property // Contains key, value, type
-                        }
+                                noteId: noteId,
                                 propertyData: suggestion.property // Contains key, value, type
                             }
                         });
