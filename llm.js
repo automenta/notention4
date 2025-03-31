@@ -15,10 +15,9 @@ const render = window.litHtml.render ?? window.lit.render;
 export const LLMPlugin = {
     id: 'llm',
     name: 'Language Model Interface (LangChain)',
-    version: '1.2.1', // Incremented version
+    version: '1.2.1',
     dependencies: ['properties'],
-
-    _config: { // Default/initial config structure
+    _config: {
         apiKey: ' ',
         endpointUrl: 'http://localhost:11434/v1',
         modelName: 'llamablit',

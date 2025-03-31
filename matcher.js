@@ -466,7 +466,7 @@ export const MatcherPlugin = {
                         .related-notes-list { list-style: none; padding: 0; margin: 0; }
                         .related-note-item {
                             padding: 4px 0;
-                            border-bottom: 1px solid var(--vscode-editorWidget-border, var(--border-color));
+                            border-bottom: 1px solid var(--border-color);
                             display: flex;
                             justify-content: space-between;
                             align-items: center;
@@ -791,7 +791,7 @@ export const MatcherPlugin = {
             this.coreAPI.showGlobalStatus(`Matcher: Generating embedding for "${note.name}"...`, "info", 2500);
             const embeddingVector = await this.llmService.generateEmbeddings(textToEmbed);
 
-            if (!embeddingVector || !Array.isArray(embeddingVector) || embeddingVector.length === 0) {
+            if (!embeddingVector || !Array.isArray(embeddingVector) || embeddingVector.length === 0)
                 throw new Error("LLMService returned invalid embedding data.");
             // Dispatch success status
             this.coreAPI.dispatch({ type: 'MATCHER_EMBEDDING_SUCCESS', payload: { noteId: note.id } });
