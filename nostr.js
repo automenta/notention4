@@ -1173,12 +1173,6 @@ export const NostrPlugin = {
                         <h3>${plugin.name}</h3>
                         ${identitySectionHtml}
                         <hr>
-                        <h4>Relay Configuration</h4>
-                        <p>One wss:// URL per line.</p>
-                        <textarea id="nostr-relays-textarea" rows="5" .value=${currentRelays}></textarea>
-                        <button @click=${() => handleRelaySave(document.getElementById('nostr-relays-textarea').value)}>Save Relays (Legacy Note)</button>
-
-                        <hr>
                         <h4>Plugin Configuration</h4>
                         ${settingsNoteUI}
                         ${settingsNote ? Object.keys(settingsOntology).sort((a, b) => (settingsOntology[a].order || 99) - (settingsOntology[b].order || 99)).map(key => {
