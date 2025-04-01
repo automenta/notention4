@@ -680,7 +680,7 @@ class UIRenderer {
         }
     }
 
-    _handleOpenSettings = () => this._stateManager.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
+    _handleOpenSettings = () => this._stateManager.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalType: 'settings'}});
     _handleCloseModal = () => this._stateManager.dispatch({type: 'CORE_CLOSE_MODAL'});
     _handleAddNote = () => this._stateManager.dispatch({type: 'CORE_ADD_NOTE'});
     _handleSelectNote = (noteId) => this._stateManager.dispatch({type: 'CORE_SELECT_NOTE', payload: {noteId}});
@@ -1457,7 +1457,6 @@ const coreReducer = (draft, action) => {
         }
 
         case 'CORE_OPEN_MODAL': {
-            // draft.uiState.activeModal = action.payload.modalId; // REMOVE THIS LINE
             draft.uiState.modalType = action.payload.modalType; // Use modalType from payload
             draft.uiState.modalProps = action.payload.modalProps || null; // Store props if provided
             draft.uiState.propertyValidationErrors = {}; // Clear validation errors when opening a modal
@@ -1522,7 +1521,7 @@ const coreReducer = (draft, action) => {
                 type: 'warning',
                 duration: 0
             };
-            // Removed invalid propertyValidationErrors cleanup block here
+            draft.uiState.propertyValidationErrors = {}; // Clear validation errors on state clear
             break;
         }
 
