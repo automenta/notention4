@@ -40,7 +40,7 @@ const PLUGINS = [
 
 const {html, render} = window.litHtml;
 
-// Core State Manager (with Immer)
+// Core State Manager
 class StateManager {
     _state = {};
     _coreReducer = null;
@@ -98,7 +98,7 @@ class StateManager {
         );
     }
 
-    // Immer Integration in _baseDispatch
+    // Immer integration
     _baseDispatch(action) {
         if (this._isDispatching) {
             console.warn(`State: Concurrent dispatch detected for action [${action.type}]. Action ignored.`);
@@ -148,7 +148,7 @@ class StateManager {
         return this._dispatchChain(action);
     }
 
-    // Methods called by PluginManager
+    // Plugin methods
     registerReducer(pluginId, reducerFn) {
         if (typeof reducerFn !== 'function') {
             console.error(`State: Attempted to register non-function reducer for plugin [${pluginId}].`);
@@ -400,7 +400,7 @@ class UIRenderer {
         const {notes, noteOrder, uiState} = state;
         const {selectedNoteId, searchTerm, noteListSortMode = 'time'} = uiState;
 
-        // Enhanced Filtering Logic
+        // Enhanced Filtering
         const {textQuery, structuredFilters} = this._parseSearchQuery(searchTerm || '');
         const lowerTextQuery = textQuery.toLowerCase();
 
@@ -418,7 +418,7 @@ class UIRenderer {
 
             return textMatch && structuredMatch;
         });
-        // End Enhanced Filtering Logic
+        // End Enhanced Filtering
 
 
         // Sort filtered notes
@@ -495,7 +495,7 @@ class UIRenderer {
                             title="Delete Note" aria-label="Delete Note">Delete
                     </button>
                     ${this._renderSlot(state, SLOT_EDITOR_HEADER_ACTIONS, note.id)}
-                    <!-- LLM Action Buttons -->
+                    <!-- LLM Actions -->
                     <button class="editor-header-button llm-action-button"
                             @click=${() => this._handleLlmSummarize(note.id)} title="Summarize selection or note">
                         Summarize
@@ -746,7 +746,7 @@ class UIRenderer {
         }
     };
 
-    // Search Query Parsing Helper
+    // Search Query Parsing
     _parseSearchQuery(query) {
         const structuredFilters = [];
         const filterRegex = /(\w+)\s*(!?[:><]=?)\s*("([^"]*)"|'([^']*)'|(\S+))/g;
@@ -765,7 +765,7 @@ class UIRenderer {
         return {textQuery: textQuery.trim(), structuredFilters};
     }
 
-    // Structured Filter Evaluation Helper
+    // Structured Filter Evaluation
     _evaluateStructuredFilters(noteProperties, structuredFilters) {
         const ontologyService = this._getOntologyService();
 
@@ -847,7 +847,7 @@ class UIRenderer {
     }
 
 
-    // Centralized Modal Rendering Logic
+    // Centralized Modal Rendering
     _renderModal(state) {
         const {modalType, modalProps} = state.uiState;
         if (!modalType) return '';
@@ -1064,7 +1064,7 @@ class UIRenderer {
     }
 
 
-    // Method for plugins to register components
+    // Plugin component registration
     registerSlotComponent(pluginId, slotName, renderFn) {
         if (!this._slotRegistry.has(slotName)) {
             this._slotRegistry.set(slotName, []);
@@ -1074,7 +1074,7 @@ class UIRenderer {
         this._scheduleRender();
     }
 
-    // Scroll position saving/restoring
+    // Scroll position management
     _saveScrollPositions() {
         const noteList = this._rootElement?.querySelector('#note-list');
         if (noteList) this._scrollPositions.noteList = noteList.scrollTop;
@@ -1280,12 +1280,12 @@ class CoreAPI {
         Object.freeze(this.utils);
     }
 
-    // State API
+    // State access
     dispatch = (action) => this._stateManager.dispatch(action);
     getState = () => this._stateManager.getState();
     subscribe = (listener) => this._stateManager.subscribe(listener);
 
-    // State Selectors
+    // State selectors
     getNoteById = (noteId) => this.getState().notes[noteId] || null;
     getSelectedNote = () => {
         const state = this.getState();
@@ -1321,7 +1321,7 @@ class CoreAPI {
         this.dispatch({type: 'CORE_CLEAR_GLOBAL_STATUS', payload: {id}});
     };
 
-    // Service & Plugin API
+    // Plugin and Service access
     getService = (serviceName) => this._pluginManager.getService(serviceName);
     getPluginAPI = (pluginId) => this._pluginManager.getPluginAPI(pluginId);
 }
@@ -1550,7 +1550,7 @@ const coreReducer = (draft, action) => {
             break;
         }
 
-        // Property Validation Failure
+        // Property Validation
         case 'PROPERTY_VALIDATION_FAILURE': {
             const { noteId, propertyId, temporaryId, errorMessage } = action.payload;
             const idToUse = propertyId || temporaryId;
@@ -1582,7 +1582,7 @@ async function main() {
     let api = null;
 
     try {
-        // Initialize core services
+        // Initialize core
         const events = new EventBus();
         const state = new StateManager(initialAppState, coreReducer);
         const ui = new UIRenderer(state, 'app');

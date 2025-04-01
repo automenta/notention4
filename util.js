@@ -73,7 +73,7 @@ export const Utils = {
         const sorted = [];
         const queue = [];
 
-        // Build dependency graph and in-degrees
+        // Build graph and in-degrees for topological sort
         plugins.forEach((entry, pluginId) => {
             graph.set(pluginId, new Set());
             inDegree.set(pluginId, 0);
@@ -92,7 +92,7 @@ export const Utils = {
             });
         });
 
-        // Initialize queue with starting nodes
+        // Initialize queue with plugins with no dependencies
         inDegree.forEach((degree, pluginId) => {
             if (degree === 0)
                 queue.push(pluginId);
@@ -110,7 +110,7 @@ export const Utils = {
             });
         }
 
-        // Check for cycles
+        // Detect cycles
         if (sorted.length !== plugins.size)
             throw new Error(`Circular dependency detected involving plugins: ${Array.from(plugins.keys()).filter(id => !sorted.includes(id)).join(', ')}`);
 
