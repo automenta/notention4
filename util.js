@@ -1,3 +1,5 @@
+"use strict";
+
 import DOMPurify from 'dompurify';
 
 export const Utils = {
@@ -70,39 +72,39 @@ export const Utils = {
         const graph = new Map();
         const inDegree = new Map();
         const sorted = [];
-        const queue = [];
+        const q = [];
 
-        plugins.forEach((entry, pluginId) => {
-            graph.set(pluginId, new Set());
-            inDegree.set(pluginId, 0);
+        plugins.forEach((entry, plugin) => {
+            graph.set(plugin, new Set());
+            inDegree.set(plugin, 0);
         });
 
-        plugins.forEach((entry, pluginId) => {
+        plugins.forEach((entry, plugin) => {
             const dependencies = entry.definition.dependencies || [];
-            dependencies.forEach(depId => {
-                if (!plugins.has(depId))
-                    throw new Error(`Plugin [${pluginId}] has an unknown dependency: [${depId}]`);
+            dependencies.forEach(dep => {
+                if (!plugins.has(dep))
+                    throw new Error(`Plugin [${plugin}] has an unknown dependency: [${dep}]`);
 
-                if (graph.has(depId) && !graph.get(depId).has(pluginId)) {
-                    graph.get(depId).add(pluginId);
-                    inDegree.set(pluginId, (inDegree.get(pluginId) || 0) + 1);
+                if (graph.has(dep) && !graph.get(dep).has(plugin)) {
+                    graph.get(dep).add(plugin);
+                    inDegree.set(plugin, (inDegree.get(plugin) || 0) + 1);
                 }
             });
         });
 
-        inDegree.forEach((degree, pluginId) => {
+        inDegree.forEach((degree, plugin) => {
             if (degree === 0)
-                queue.push(pluginId);
+                q.push(plugin);
         });
 
-        while (queue.length > 0) {
-            const u = queue.shift();
+        while (q.length > 0) {
+            const u = q.shift();
             sorted.push(u);
 
             graph.get(u)?.forEach(v => {
                 inDegree.set(v, inDegree.get(v) - 1);
                 if (inDegree.get(v) === 0)
-                    queue.push(v);
+                    q.push(v);
             });
         }
 

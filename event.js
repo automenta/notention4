@@ -1,36 +1,40 @@
-// --- 2. Core Event Bus ---
-export class EventBus {
-    _listeners = new Map(); // Map<eventType, Set<handler>>
+"use strict";
 
-    subscribe(eventType, handler) {
+/** Event Bus */
+export class EventBus {
+    /** Map<eventType, Set<handler>> */
+    _listeners = new Map();
+
+    subscribe(event, handler) {
         if (typeof handler !== 'function') {
-            console.error(`EventBus: Listener for event [${eventType}] is not a function.`);
+            console.error(`EventBus: Listener for event [${event}] is not a function.`);
             return () => {
             }; // Return no-op unsubscribe
         }
-        if (!this._listeners.has(eventType))
-            this._listeners.set(eventType, new Set());
+        let l = this._listeners;
+        if (!l.has(event))
+            l.set(event, new Set());
 
-        this._listeners.get(eventType).add(handler);
+        l.get(event).add(handler);
         // Return unsubscribe function
         return () => {
-            if (this._listeners.has(eventType)) {
-                this._listeners.get(eventType).delete(handler);
-                if (this._listeners.get(eventType).size === 0)
-                    this._listeners.delete(eventType);
+            if (l.has(event)) {
+                l.get(event).delete(handler);
+                if (l.get(event).size === 0)
+                    l.delete(event);
             }
         };
     }
 
-    publish(eventType, payload) {
-        const handlers = this._listeners.get(eventType);
+    publish(event, x) {
+        const handlers = this._listeners.get(event);
         if (handlers && handlers.size > 0) {
             // Iterate over a copy in case a handler unsubscribes during the loop
             [...handlers].forEach(handler => {
                 try {
-                    handler(payload);
+                    handler(x);
                 } catch (error) {
-                    console.error(`EventBus: Error in listener for event [${eventType}]`, error);
+                    console.error(`EventBus: Error in listener for event [${event}]`, error);
                 }
             });
         }
