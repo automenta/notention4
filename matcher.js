@@ -11,7 +11,7 @@ export const MatcherPlugin = {
     name: 'Semantic Matcher',
     dependencies: ['ontology', 'properties'], // LLM is optional, checked dynamically
 
-    coreAPI: null,
+    _coreAPI: null,
     ontologyService: null,
     llmService: null, // May be null if LLMPlugin not active/configured
     propertiesPluginAPI: null, // To get properties, though reading state directly is fine
@@ -19,7 +19,7 @@ export const MatcherPlugin = {
     // --- Plugin Lifecycle ---
 
     init(coreAPI) {
-        this.coreAPI = coreAPI;
+        this._coreAPI = coreAPI;
         this.ontologyService = coreAPI.getService('OntologyService');
         this.propertiesPluginAPI = coreAPI.getPluginAPI('properties'); // May be null if properties not active
         try {
@@ -81,8 +81,8 @@ export const MatcherPlugin = {
                     }
 
                     // Use propertiesPluginAPI if available, otherwise access state directly (more robust)
-                    const propsA = this.coreAPI.getState().notes[noteA.id]?.pluginData?.properties?.properties || [];
-                    const propsB = this.coreAPI.getState().notes[noteB.id]?.pluginData?.properties?.properties || [];
+                    const propsA = this._coreAPI.getState().notes[noteA.id]?.pluginData?.properties?.properties || [];
+                    const propsB = this._coreAPI.getState().notes[noteB.id]?.pluginData?.properties?.properties || [];
 
 
                     // --- 1. Calculate Property Score ---
@@ -96,12 +96,12 @@ export const MatcherPlugin = {
                     let vectorAvailable = false;
                     if (this.llmService) {
                         try {
-                            this.coreAPI.showGlobalStatus(`Matcher: Calculating vector similarity for ${noteA.name} & ${noteB.name}...`, "info", 2000);
+                            this._coreAPI.showGlobalStatus(`Matcher: Calculating vector similarity for ${noteA.name} & ${noteB.name}...`, "info", 2000);
                             vectorScoreResult = await this._calculateVectorScore(noteA, noteB);
                             // Check if score is valid and embeddings were generated
                             if (typeof vectorScoreResult.score === 'number' && !isNaN(vectorScoreResult.score) && vectorScoreResult.score > 0 && !vectorScoreResult.explanation.includes("Failed") && !vectorScoreResult.explanation.includes("unavailable")) {
                                 vectorAvailable = true;
-                                this.coreAPI.showGlobalStatus(`Matcher: Vector similarity calculated.`, "success", 1500);
+                                this._coreAPI.showGlobalStatus(`Matcher: Vector similarity calculated.`, "success", 1500);
                             } else {
                                 // Keep score 0, refine explanation if needed
                                 if (!vectorScoreResult.explanation.includes("Failed") && !vectorScoreResult.explanation.includes("unavailable")) {
@@ -111,12 +111,12 @@ export const MatcherPlugin = {
                         } catch (error) {
                             console.error("MatcherPlugin: Error calculating vector score", error);
                             vectorScoreResult = {score: 0, explanation: `Vector matching error: ${error.message}`};
-                            this.coreAPI.showGlobalStatus(`Matcher: Vector similarity error.`, "error", 3000);
+                            this._coreAPI.showGlobalStatus(`Matcher: Vector similarity error.`, "error", 3000);
                         }
                     }
 
                     // --- 3. Combine Scores ---
-                    const settings = this.coreAPI.getPluginSettings(this.id);
+                    const settings = this._coreAPI.getPluginSettings(this.id);
                     const defaultOntology = this.getSettingsOntology(); // Get defaults defined in the plugin
                     const propWeight = settings?.propWeight ?? defaultOntology.propWeight.default ?? 0.7;
                     const vectorWeight = settings?.vectorWeight ?? defaultOntology.vectorWeight.default ?? 0.3; // Keep vector weight for future use
@@ -311,7 +311,7 @@ export const MatcherPlugin = {
             dispatch({type: 'MATCHER_FIND_RELATED_START', payload: {noteId}});
 
             try {
-                const matcherService = pluginInstance.coreAPI.getService('MatcherService');
+                const matcherService = pluginInstance._coreAPI.getService('MatcherService');
                 if (!matcherService) throw new Error("MatcherService not available.");
 
                 const allOtherNotes = state.noteOrder
@@ -331,7 +331,7 @@ export const MatcherPlugin = {
                 const results = (await Promise.all(similarityPromises)).filter(r => r !== null);
 
                 // Filter, sort, and limit results using configured settings
-                const settings = pluginInstance.coreAPI.getPluginSettings(pluginInstance.id);
+                const settings = pluginInstance._coreAPI.getPluginSettings(pluginInstance.id);
                 const defaultOntology = pluginInstance.getSettingsOntology(); // Get defaults defined in the plugin
                 const topN = settings?.topN ?? defaultOntology.topN.default ?? 5;
                 const scoreThreshold = settings?.scoreThreshold ?? defaultOntology.scoreThreshold.default ?? 0.3;
@@ -401,7 +401,7 @@ export const MatcherPlugin = {
     // --- UI Rendering ---
     registerUISlots() {
         const pluginId = this.id;
-        const coreAPI = this.coreAPI; // Capture coreAPI
+        const coreAPI = this._coreAPI; // Capture coreAPI
         const pluginInstance = this; // Capture plugin instance for handlers
 
         // --- Debounced Save Handler --- (Similar to LLMPlugin)
@@ -551,16 +551,16 @@ export const MatcherPlugin = {
                 const displayConfig = {...defaultValues, ...currentValues};
 
                 // --- Input Handlers ---
-                const handleInput = (key, value, schema) => {
-                    createDebouncedSaver(key, schema, currentProperties, settingsNote.id, dispatch)(value);
+                const handleInput = (key, value) => { // Removed schema parameter
+                    createDebouncedSaver(key, settingsOntology[key], currentProperties, settingsNote.id, dispatch)(value); // Schema is now retrieved inside createDebouncedSaver
                 };
                 const handleNumberInput = (key, value, schema) => {
                     const isFloat = schema.step && String(schema.step).includes('.');
                     const number = isFloat ? parseFloat(value) : parseInt(value, 10);
                     if (!isNaN(number)) {
-                        handleInput(key, number, schema);
+                        handleInput(key, number); // Schema not passed here either
                     } else if (value === '') {
-                        handleInput(key, null, schema); // Save null when field is cleared
+                        handleInput(key, null); // Schema not passed here either
                     }
                 };
 
@@ -600,7 +600,7 @@ export const MatcherPlugin = {
                     } else { // Default text (add more types if needed)
                         inputElement = html`<input type="text" id=${inputId} .value=${currentValue ?? ''}
                                                            placeholder=${schema.placeholder || ''}
-                                                           @input=${(e) => handleInput(key, e.target.value, schema)}>`;
+                                                           @input=${(e) => handleInput(key, e.target.value)}>`; // Schema not passed here
                     }
 
                     return html`
@@ -849,7 +849,7 @@ export const MatcherPlugin = {
      */
     async _calculateVectorScore(noteA, noteB) {
         // Check if LLM service is available AND configured with a model (needed for embeddings)
-        const llmConfig = this.llmService ? this.coreAPI.getService('LLMService')?.getCurrentConfig() : null;
+        const llmConfig = this.llmService ? this._coreAPI.getService('LLMService')?.getCurrentConfig() : null;
         const embeddingsPossible = !!(this.llmService && llmConfig?.modelName); // Assume embeddings need a model
 
         if (!embeddingsPossible) {
@@ -912,29 +912,29 @@ export const MatcherPlugin = {
      */
     async _getOrGenerateEmbedding(note) {
         // Check if LLM service is available AND configured (as embeddings might need specific models/keys)
-        const llmConfig = this.llmService ? this.coreAPI.getService('LLMService')?.getCurrentConfig() : null;
+        const llmConfig = this.llmService ? this._coreAPI.getService('LLMService')?.getCurrentConfig() : null;
         const embeddingsPossible = !!(this.llmService && llmConfig?.modelName); // Basic check, assumes main model implies embedding capability
 
         if (!embeddingsPossible) {
             // console.warn(`MatcherPlugin: Skipping embedding generation for note ${note.id}, LLM service/model unavailable or not configured.`);
             // Ensure status reflects this if it was pending
-            const currentStatus = this.coreAPI.getState().pluginRuntimeState?.[this.id]?.embeddingStatus?.[note.id];
+            const currentStatus = this._coreAPI.getState().pluginRuntimeState?.[this.id]?.embeddingStatus?.[note.id];
             if (currentStatus === 'pending') {
-                this.coreAPI.dispatch({type: 'MATCHER_EMBEDDING_FAILURE', payload: {noteId: note.id}});
+                this._coreAPI.dispatch({type: 'MATCHER_EMBEDDING_FAILURE', payload: {noteId: note.id}});
             }
             return null;
         }
 
         // Use updatedAt timestamp in cache key for automatic invalidation on note update
         const cacheKey = `matcher_embedding_${note.id}_${note.updatedAt}`;
-        const cachedEmbedding = this.coreAPI.getRuntimeCache(cacheKey);
+        const cachedEmbedding = this._coreAPI.getRuntimeCache(cacheKey);
 
         if (cachedEmbedding) {
             // console.log(`MatcherPlugin: Using cached embedding for note ${note.id} (updatedAt: ${note.updatedAt})`);
             // Ensure status is 'generated' if we found a cached version
-            const currentStatus = this.coreAPI.getState().pluginRuntimeState?.[this.id]?.embeddingStatus?.[note.id];
+            const currentStatus = this._coreAPI.getState().pluginRuntimeState?.[this.id]?.embeddingStatus?.[note.id];
             if (currentStatus !== 'generated') {
-                this.coreAPI.dispatch({type: 'MATCHER_EMBEDDING_SUCCESS', payload: {noteId: note.id}});
+                this._coreAPI.dispatch({type: 'MATCHER_EMBEDDING_SUCCESS', payload: {noteId: note.id}});
             }
             return cachedEmbedding;
         }
@@ -944,13 +944,13 @@ export const MatcherPlugin = {
 
         if (!textToEmbed) {
             // console.log(`MatcherPlugin: Note ${note.id} has no content to embed.`);
-            this.coreAPI.dispatch({type: 'MATCHER_EMBEDDING_FAILURE', payload: {noteId: note.id}}); // Mark as failed if no content
+            this._coreAPI.dispatch({type: 'MATCHER_EMBEDDING_failure', payload: {noteId: note.id}}); // Mark as failed if no content
             return null; // Cannot embed empty text
         }
 
         // Dispatch START action before async call
-        this.coreAPI.dispatch({type: 'MATCHER_EMBEDDING_START', payload: {noteId: note.id}});
-        this.coreAPI.showGlobalStatus(`Matcher: Generating embedding for "${note.name || note.id}"...`, "info", 2500); // User feedback
+        this._coreAPI.dispatch({type: 'MATCHER_EMBEDDING_START', payload: {noteId: note.id}});
+        this._coreAPI.showGlobalStatus(`Matcher: Generating embedding for "${note.name || note.id}"...`, "info", 2500); // User feedback
 
         try {
             // Call the LLM service
@@ -962,24 +962,24 @@ export const MatcherPlugin = {
             }
 
             // Dispatch SUCCESS action
-            this.coreAPI.dispatch({type: 'MATCHER_EMBEDDING_SUCCESS', payload: {noteId: note.id}});
+            this._coreAPI.dispatch({type: 'MATCHER_EMBEDDING_SUCCESS', payload: {noteId: note.id}});
 
             // Cache the successful result using CORE_SET_RUNTIME_CACHE action
-            this.coreAPI.dispatch({
+            this._coreAPI.dispatch({
                 type: 'CORE_SET_RUNTIME_CACHE',
                 payload: {key: cacheKey, value: embeddingVector}
             });
             // console.log(`MatcherPlugin: Embedding generated and cached for note ${note.id} with key ${cacheKey}`);
-            this.coreAPI.showGlobalStatus(`Matcher: Embedding generated for "${note.name || note.id}".`, "success", 1500);
+            this._coreAPI.showGlobalStatus(`Matcher: Embedding generated for "${note.name || note.id}".`, "success", 1500);
 
             return embeddingVector;
 
         } catch (error) {
             // Dispatch FAILURE action
             console.error(`MatcherPlugin: Failed to generate embedding for note ${note.id}`, error);
-            this.coreAPI.dispatch({type: 'MATCHER_EMBEDDING_FAILURE', payload: {noteId: note.id}});
+            this._coreAPI.dispatch({type: 'MATCHER_EMBEDDING_FAILURE', payload: {noteId: note.id}});
             // Show error status (LLMService might have already shown one, but this confirms the embedding context)
-            this.coreAPI.showGlobalStatus(`Matcher: Embedding failed for "${note.name || note.id}". Check LLM config/logs.`, "error", 4000);
+            this._coreAPI.showGlobalStatus(`Matcher: Embedding failed for "${note.name || note.id}". Check LLM config/logs.`, "error", 4000);
             return null; // Return null on failure
         }
     },

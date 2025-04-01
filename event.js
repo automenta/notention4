@@ -1,6 +1,6 @@
 // --- 2. Core Event Bus ---
 export class EventBus {
-    _listeners = new Map(); // Map<eventType, Set<handler>> //TODO WeakMap?
+    _listeners = new WeakMap(); // WeakMap<eventType, Set<handler>> //TODO WeakMap?
 
     subscribe(eventType, handler) {
         if (typeof handler !== 'function') {

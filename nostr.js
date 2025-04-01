@@ -937,7 +937,7 @@ export const NostrPlugin = {
                     };
                     nostrService.publishEvent(deletionEventTemplate)
                         .then(() => {
-                            console.log(`Kind 5 deletion published for event ${nostrData.eventId} (Unshare)`);
+                            console.log(`Kind 5 deletion published for event ${nostrDataBeforeDelete.eventId} (Unshare)`);
                             store.dispatch({
                                 type: 'NOSTR_UNSHARE_SUCCESS',
                                 payload: {noteId, eventId: nostrData.eventId}
@@ -945,7 +945,7 @@ export const NostrPlugin = {
                             coreAPI.showToast("Note unshared from Nostr.", "success");
                         })
                         .catch(err => {
-                            console.warn(`Failed to publish Kind 5 deletion for event ${nostrData.eventId} (Unshare): ${err.message}`);
+                            console.warn(`Failed to publish Kind 5 deletion for event ${nostrDataBeforeDelete.eventId} (Unshare): ${err.message}`);
                             store.dispatch({type: 'NOSTR_UNSHARE_FAILURE', payload: {noteId, error: err.message}});
                             coreAPI.showToast(`Failed to unshare note: ${err.message}`, "error");
                         });
