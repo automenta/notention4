@@ -60,10 +60,10 @@ export const InlineProperty = Node.create({
     addNodeView() {
         // The NodeView constructor will receive node, editor, getPos, decorations
         // We also need access to dispatch, ontologyService, and coreAPI passed via editor props
-        return (node, editor, getPos, decorations) => {
-            const {dispatch, ontologyService, coreAPI} = editor.options.editorProps; // Added coreAPI
-            if (!dispatch || !ontologyService || !coreAPI) { // Check coreAPI
-                console.error("InlineProperty NodeView: Missing dispatch, ontologyService, or coreAPI in editor props!");
+        return ({ node, editor, getPos, decorations }) => { // Use object destructuring for clarity
+            const {dispatch, ontologyService, coreAPI} = editor.options.editorProps;
+            if (!dispatch || !ontologyService || !coreAPI) {
+                console.error("InlineProperty NodeView: Missing dispatch, ontologyService, or coreAPI in editor props!", editor.options.editorProps);
                 // Fallback rendering
                 const span = document.createElement('span');
                 span.textContent = `[Error: Missing services for property ${node.attrs.key}]`;

@@ -120,14 +120,18 @@ class TiptapEditor extends AbstractEditorLibrary {
         try {
             this._tiptapInstance?.destroy(); // Ensure cleanup if re-initializing
 
-            // --- Pass dispatch and ontologyService to NodeViews via editorProps ---
+            // --- Pass dispatch, ontologyService, and coreAPI to NodeViews via editorProps ---
             const editorProps = {
                 // Pass custom props needed by NodeViews
                 dispatch: this._dispatch,
                 ontologyService: this._ontologyService,
+                coreAPI: config.coreAPI, // Pass coreAPI from config
                 // Include any existing editorProps if needed
                 ...(editorOptions.editorProps || {})
             };
+             if (!editorProps.coreAPI) {
+                 console.error("TiptapEditor: Missing coreAPI in config! NodeViews may fail.");
+             }
 
             this._tiptapInstance = new Editor({
                 element: this._element,
@@ -403,13 +407,15 @@ function SuggestionPlugin(dispatch) {
         confirmButton.className = 'suggestion-confirm';
         confirmButton.title = 'Confirm';
         confirmButton.textContent = '✓';
-        confirmButton.onclick = () => {
+        // Use mousedown to prevent editor blur before dispatch
+        confirmButton.onmousedown = (e) => {
+            e.preventDefault(); // Prevent editor blur
             dispatch({
                 type: 'PARSER_CONFIRM_SUGGESTION',
                 payload: {noteId: currentNoteId, suggestion}
             });
-            // Optionally hide popover immediately
-            tippyInstances.forEach(instance => instance.hide());
+            // Hide popover after dispatch
+            tippyInstances.find(inst => inst.reference === e.target.closest('.tippy-popper')?.previousSibling)?.hide();
         };
         actions.appendChild(confirmButton);
 
@@ -417,12 +423,14 @@ function SuggestionPlugin(dispatch) {
         ignoreButton.className = 'suggestion-ignore';
         ignoreButton.title = 'Ignore';
         ignoreButton.textContent = '✕';
-        ignoreButton.onclick = () => {
+        // Use mousedown to prevent editor blur before dispatch
+        ignoreButton.onmousedown = (e) => {
+             e.preventDefault(); // Prevent editor blur
             dispatch({
                 type: 'PARSER_IGNORE_SUGGESTION',
                 payload: {noteId: currentNoteId, suggestionId: suggestion.id}
             });
-            tippyInstances.forEach(instance => instance.hide());
+             tippyInstances.find(inst => inst.reference === e.target.closest('.tippy-popper')?.previousSibling)?.hide();
         };
         actions.appendChild(ignoreButton);
 
@@ -437,41 +445,48 @@ function SuggestionPlugin(dispatch) {
         // Plugin state definition
         state: {
             init(_, state) {
-                // Initialize plugin state with noteId (null initially) and empty decorations
-                // Try to get initial noteId from editor mount point if available
-                const editorMount = state.doc.attrs?.mountElement; // Assuming mount element is passed somehow or accessible
-                const initialNoteId = editorMount?.dataset?.noteId || null;
-                currentNoteId = initialNoteId;
-                // Handle meta transactions dispatched by the view update or external sources
-                const meta = tr.getMeta(suggestionPluginKey);
-                let nextPluginState = pluginState;
+                init(_, { doc, plugins }) {
+                    // Try to get initial noteId from editor mount point if available
+                    // This relies on the mount point having the data attribute set correctly.
+                    const editorMount = plugins.find(p => p.key === 'view$')?.spec?.view?.(null)?.dom?.parentElement; // Hacky way to find mount point?
+                    const initialNoteId = editorMount?.dataset?.noteId || null;
+                    currentNoteId = initialNoteId;
+                    // console.log(`SuggestionPlugin State Init: Initial Note ID: ${currentNoteId}`);
+                    return { noteId: currentNoteId, decorationSet: DecorationSet.empty };
+                },
+                // Apply changes from transactions (including meta)
+                apply(tr, pluginState, oldState, newState) {
+                    // Handle meta transactions dispatched by the view update or external sources
+                    const meta = tr.getMeta(suggestionPluginKey);
+                    let nextPluginState = pluginState;
 
-                if (meta) {
-                    // Update noteId if changed via meta
-                    if (meta.noteId !== undefined && meta.noteId !== nextPluginState.noteId) {
-                        nextPluginState = {...nextPluginState, noteId: meta.noteId};
-                        currentNoteId = meta.noteId; // Update local variable
-                        // console.log(`SuggestionPlugin State: Note ID updated to ${currentNoteId}`);
+                    if (meta) {
+                        // Update noteId if changed via meta
+                        if (meta.noteId !== undefined && meta.noteId !== nextPluginState.noteId) {
+                            nextPluginState = { ...nextPluginState, noteId: meta.noteId };
+                            currentNoteId = meta.noteId; // Update local variable
+                            // console.log(`SuggestionPlugin State Apply: Note ID updated via meta to ${currentNoteId}`);
+                        }
+                        // Update decorations if provided via meta
+                        if (meta.decorationSet !== undefined) {
+                            nextPluginState = { ...nextPluginState, decorationSet: meta.decorationSet };
+                            currentDecorationSet = meta.decorationSet; // Update local variable
+                            // console.log(`SuggestionPlugin State Apply: Decorations updated via meta`);
+                        }
                     }
-                    // Update decorations if provided via meta
-                    if (meta.decorationSet !== undefined) {
-                        nextPluginState = {...nextPluginState, decorationSet: meta.decorationSet};
-                        currentDecorationSet = meta.decorationSet; // Update local variable
-                        // console.log(`SuggestionPlugin State: Decorations updated via meta`);
+
+                    // Always map decorations through the transaction's mapping
+                    const mappedSet = nextPluginState.decorationSet.map(tr.mapping, tr.doc);
+                    if (mappedSet !== nextPluginState.decorationSet) {
+                        nextPluginState = { ...nextPluginState, decorationSet: mappedSet };
+                        currentDecorationSet = mappedSet; // Update local variable
+                        // console.log(`SuggestionPlugin State Apply: Decorations mapped`);
                     }
-                }
 
-                // Always map decorations through the transaction to adjust positions based on document changes
-                const mappedSet = nextPluginState.decorationSet.map(tr.mapping, tr.doc);
-                if (mappedSet !== nextPluginState.decorationSet) {
-                    nextPluginState = {...nextPluginState, decorationSet: mappedSet};
-                    currentDecorationSet = mappedSet; // Update local variable
-                }
-
-                return nextPluginState; // Return the potentially updated plugin state
+                    return nextPluginState; // Return the potentially updated plugin state
+                },
             },
-        },
-        // Plugin properties, including providing decorations to the editor view
+            // Plugin properties, including providing decorations to the editor view
         props: {
             decorations(state) {
                 // Return the current decoration set from this plugin's state
@@ -597,12 +612,14 @@ function SuggestionPlugin(dispatch) {
                 // Called whenever the editor's view or state updates
                 update(view, prevState) {
                     // Check if the note ID associated with the editor view has changed
-                    // We assume the noteId is stored as a data attribute on the editor's DOM element
-                    const newNoteId = view.dom.dataset.noteId || null;
-                    const pluginState = suggestionPluginKey.getState(view.state); // Get current plugin state
-                    const oldNoteId = pluginState?.noteId; // Get noteId from the current plugin state
+                    // Get noteId from the editor's parent element dataset (set by RichTextEditorPlugin)
+                    const editorDom = view.dom;
+                    const newNoteId = editorDom?.dataset?.noteId || null;
+                    const pluginState = suggestionPluginKey.getState(view.state);
+                    const oldNoteId = pluginState?.noteId;
 
                     if (newNoteId !== oldNoteId) {
+                        // console.log(`SuggestionPlugin View Update: Note ID changed from ${oldNoteId} to ${newNoteId}`);
                         // Note ID has changed, clear old popovers and dispatch a transaction
                         // to update the noteId in the plugin state and clear existing decorations.
                         destroyTippyInstances();
@@ -614,6 +631,7 @@ function SuggestionPlugin(dispatch) {
                         );
                         previousSuggestionsJson = null; // Reset suggestion cache for the new note
                     }
+                    // No need to manually map decorations here, the plugin state's apply method handles it.
                 }
             };
         }
@@ -632,15 +650,21 @@ function renderToolbarContent(editorInstance) {
     // Helper to generate button classes based on active state
     const btnClass = (name, attrs = {}) => `toolbar-button ${tiptap.isActive(name, attrs) ? 'is-active' : ''}`;
     // Helper to generate button disabled state based on 'can' checks
-    const btnDisabled = (name) => !tiptap.can(name);
+    // Helper to generate button disabled state based on 'can' checks
+    // Tiptap's `can()` method requires chaining, e.g., `tiptap._tiptapInstance.can().chain().toggleBold().run()`
+    // For simplicity in the template, we might need more specific checks or assume most are enabled.
+    // Let's refine the disable logic slightly.
+    const canUndo = tiptap._tiptapInstance?.can().undo();
+    const canRedo = tiptap._tiptapInstance?.can().redo();
+    // Add more specific 'can' checks if needed for other buttons
 
     // Template for the toolbar's inner content
     return html`
         <button title="Undo (Ctrl+Z)" class="toolbar-button"
-                @click=${() => tiptap.applyDecoration(null, {style: 'undo'})} .disabled=${btnDisabled('undo')}>↺
+                @click=${() => tiptap.applyDecoration(null, {style: 'undo'})} .disabled=${!canUndo}>↺
         </button>
         <button title="Redo (Ctrl+Y)" class="toolbar-button"
-                @click=${() => tiptap.applyDecoration(null, {style: 'redo'})} .disabled=${btnDisabled('redo')}>↻
+                @click=${() => tiptap.applyDecoration(null, {style: 'redo'})} .disabled=${!canRedo}>↻
         </button>
         <span class="toolbar-divider"></span>
         <button title="Bold (Ctrl+B)" class=${btnClass('bold')}
@@ -783,7 +807,10 @@ export const RichTextEditorPlugin = {
                     if (!this._editorInstance && note) {
                         try {
                             // Ensure any previous instance state is cleared
-                            this._destroyEditor();
+                            this._destroyEditor(); // Ensure cleanup
+
+                            // Set data-note-id *before* initializing Tiptap
+                            mountPoint.dataset.noteId = noteId;
 
                             this._editorInstance = new TiptapEditor(mountPoint, {
                                 content: note.content || '',
@@ -792,6 +819,7 @@ export const RichTextEditorPlugin = {
                                     if (!this._editorInstance || !this._currentNoteId || this._editorInstance._isUpdatingInternally) return;
                                     const currentEditorContent = this._editorInstance.getContent();
                                     const noteInState = this.coreAPI.getState().notes[this._currentNoteId];
+                                    // Check if note still exists in state before dispatching
                                     if (noteInState && currentEditorContent !== noteInState.content) {
                                         dispatch({
                                             type: 'CORE_UPDATE_NOTE',
@@ -802,16 +830,14 @@ export const RichTextEditorPlugin = {
                                         });
                                     }
                                 }, debounceTime),
-                                editorOptions: {},
+                                editorOptions: {}, // Pass any specific Tiptap options here
                                 // Pass services needed by NodeViews
                                 dispatch: dispatch,
                                 ontologyService: this.coreAPI.getService('OntologyService'),
                                 coreAPI: this.coreAPI // Pass the core API instance itself
                             });
                             this._currentNoteId = noteId;
-                            // Set data-note-id on the mount point for NodeViews to find
-                            mountPoint.dataset.noteId = noteId;
-                            this._updateToolbarUI();
+                            this._updateToolbarUI(); // Update toolbar after creation
                         } catch (error) {
                             console.error(`${this.name}: Failed to initialize Tiptap editor:`, error);
                             mountPoint.innerHTML = `<div style="color: red;">Error initializing editor.</div>`;
@@ -823,33 +849,46 @@ export const RichTextEditorPlugin = {
                         const editorHasFocus = this._editorInstance.hasFocus();
 
                         if (noteChanged) {
+                            // console.log(`${this.name}: Note changed to ${noteId}. Updating editor content.`);
+                            // Update data-note-id *before* setting content
+                            mountPoint.dataset.noteId = noteId;
                             this._editorInstance.setContent(note.content || '');
                             this._currentNoteId = noteId;
-                            mountPoint.dataset.noteId = noteId; // Update data-note-id
-                            this._updateToolbarUI();
+                            this._updateToolbarUI(); // Update toolbar for new note context
                         } else if (note) {
-                            // Ensure data-note-id is set even if note didn't change (e.g., on initial load)
+                            // Ensure data-note-id is correct even if note didn't change (e.g., on initial load/refresh)
                             if (mountPoint.dataset.noteId !== noteId) {
+                                // console.log(`${this.name}: Correcting data-note-id for ${noteId}.`);
                                 mountPoint.dataset.noteId = noteId;
                             }
-                            const externalContentChanged = note.content !== this._editorInstance.getContent();
-                            if (externalContentChanged && !editorHasFocus) {
-                                this._editorInstance.setContent(note.content || '');
-                            } else if (externalContentChanged && editorHasFocus) {
-                                // console.log(`${this.name}: Skipped external content update for note ${noteId} because editor has focus.`);
+                            // Check for external content changes (e.g., sync, other plugins)
+                            const currentEditorContent = this._editorInstance.getContent();
+                            if (note.content !== currentEditorContent) {
+                                if (!editorHasFocus) {
+                                    // console.log(`${this.name}: External content change detected for note ${noteId}. Updating editor.`);
+                                    this._editorInstance.setContent(note.content || '');
+                                } else {
+                                    // console.log(`${this.name}: Skipped external content update for note ${noteId} because editor has focus.`);
+                                    // Optionally show a notification that content changed externally?
+                                }
                             }
                         } else if (!note && this._currentNoteId) {
+                            // Note was deselected or deleted
+                            // console.log(`${this.name}: No note selected or note ${this._currentNoteId} deleted. Destroying editor.`);
                             this._destroyEditor();
                             this._currentNoteId = null;
-                            mountPoint.innerHTML = ''; // Clear mount point
-                            delete mountPoint.dataset.noteId; // Clear data-note-id
+                            mountPoint.innerHTML = ''; // Clear mount point explicitly
+                            delete mountPoint.dataset.noteId;
+                            this._updateToolbarUI(); // Update toolbar (should clear/disable buttons)
                         }
                     } else if (!note && !this._editorInstance) {
-                        // Clear mount point if no note and no editor instance
-                        if (!mountPoint.hasChildNodes() || mountPoint.textContent?.trim()) {
-                            mountPoint.innerHTML = ''; // Clear previous content like "Select note"
+                        // No note selected, and no editor instance exists (initial state or after destruction)
+                        if (mountPoint.innerHTML !== '') { // Only clear if not already empty
+                             mountPoint.innerHTML = '';
                         }
-                         delete mountPoint.dataset.noteId; // Clear data-note-id
+                        if (mountPoint.dataset.noteId) {
+                             delete mountPoint.dataset.noteId;
+                        }
                         this._updateToolbarUI(); // Ensure toolbar is cleared/updated
                     }
                 }); // End of requestAnimationFrame
@@ -1133,18 +1172,12 @@ export const RichTextEditorPlugin = {
                                 })
                                 .run(); // Execute the command chain
                         } catch (error) {
-                            console.error("EditorService.replaceTextWithInlineProperty Error:", error, {
-                                location,
-                                propData
-                            });
-                            this.coreAPI?.showGlobalStatus("Error replacing text with property.", "error");
+                            console.error("EditorService.replaceTextWithInlineProperty Error:", error, { location, propData });
+                            // Use coreAPI from the plugin instance
+                            pluginInstance.coreAPI?.showGlobalStatus("Error replacing text with property.", "error");
                         }
                     } else {
-                        console.warn("EditorService.replaceTextWithInlineProperty: Editor inactive or invalid arguments.", {
-                            editor: this._editorInstance,
-                            location,
-                            propData
-                        });
+                        console.warn("EditorService.replaceTextWithInlineProperty: Editor inactive or invalid arguments.", { editor: pluginInstance._editorInstance, location, propData });
                     }
                 },
                 // Avoid exposing the raw Tiptap instance directly if possible
@@ -1174,14 +1207,18 @@ export const RichTextEditorPlugin = {
         if (!this.coreAPI || !this._editorInstance || !this._currentNoteId || !selectedTemplate) return;
 
         const llmService = this.coreAPI.getService('LLMService');
-        const propertiesAPI = this.coreAPI.getPluginAPI('properties');
+        const propertiesAPI = this.coreAPI.getPluginAPI('properties'); // Get the API provided by the plugin
 
-        if (!llmService || !propertiesAPI) {
-            this.coreAPI.showGlobalStatus("Cannot generate content: Required services (LLM, Properties) not available.", "warning");
-            return;
+        if (!llmService) {
+             this.coreAPI.showGlobalStatus("Cannot generate content: LLM Service not available.", "warning");
+             return;
         }
+         if (!propertiesAPI) {
+             this.coreAPI.showGlobalStatus("Cannot generate content: Properties Plugin API not available.", "warning");
+             return;
+         }
 
-        const currentProperties = propertiesAPI.getPropertiesForNote(this._currentNoteId);
+        const currentProperties = propertiesAPI.getPropertiesForNote(this._currentNoteId); // Use the API method
         this.coreAPI.showGlobalStatus(`Generating content using template "${selectedTemplate.name}"...`, "info");
 
         try {
@@ -1205,11 +1242,15 @@ export const RichTextEditorPlugin = {
 
         const ontologyService = this.coreAPI.getService('OntologyService');
         const llmService = this.coreAPI.getService('LLMService');
-        const propertiesAPI = this.coreAPI.getPluginAPI('properties'); // Or get from state
+        // No need for propertiesAPI here, just ontology and LLM
 
-        if (!ontologyService || !llmService || !propertiesAPI) {
-            this.coreAPI.showGlobalStatus("Cannot generate content: Required services (Ontology, LLM, Properties) not available.", "warning");
-            return;
+        if (!ontologyService) {
+             this.coreAPI.showGlobalStatus("Cannot generate content: Ontology Service not available.", "warning");
+             return;
+        }
+        if (!llmService) {
+             this.coreAPI.showGlobalStatus("Cannot generate content: LLM Service not available.", "warning");
+             return;
         }
 
         const templates = ontologyService.getTemplates();

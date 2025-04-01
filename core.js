@@ -680,14 +680,18 @@ class UIRenderer {
         }
     }
 
-    _handleOpenSettings = () => this._stateManager.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalType: 'settings'}});
+    _handleOpenSettings = () => this._stateManager.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalType: 'settings'}}); // Fixed payload key
     _handleCloseModal = () => this._stateManager.dispatch({type: 'CORE_CLOSE_MODAL'});
     _handleAddNote = () => this._stateManager.dispatch({type: 'CORE_ADD_NOTE'});
     _handleSelectNote = (noteId) => this._stateManager.dispatch({type: 'CORE_SELECT_NOTE', payload: {noteId}});
     _handleArchiveNote = (noteId) => () => this._stateManager.dispatch({type: 'CORE_ARCHIVE_NOTE', payload: {noteId}});
     _handleDeleteNote = (noteId, noteName) => () => {
-        if (confirm(`Are you sure you want to permanently delete "${noteName || 'Untitled Note'}"?`)) {
-            this._stateManager.dispatch({type: 'CORE_DELETE_NOTE', payload: {noteId}});
+        // More specific confirmation message
+        if (confirm(`Permanently delete the note "${noteName || 'Untitled Note'}"?\n\nThis action cannot be undone.`)) {
+            // Snapshot plugin data *before* dispatching delete
+            const state = this._stateManager.getState();
+            const pluginDataSnapshot = state.notes[noteId]?.pluginData || {};
+            this._stateManager.dispatch({type: 'CORE_DELETE_NOTE', payload: {noteId, pluginDataSnapshot}});
         }
     };
     _handleCoreSettingChange = (e) => {
@@ -729,9 +733,10 @@ class UIRenderer {
         }
     };
     _handleClearState = () => {
-        if (confirm(`WARNING: This will delete ALL your notes and settings locally and cannot be undone. Are you absolutely sure?`)) {
-            if (confirm(`SECOND WARNING: Please confirm again that you want to erase everything.`)) {
-                window._clearState();
+        // Clearer confirmation messages
+        if (confirm(`DELETE ALL LOCAL DATA?\n\nThis will permanently erase all notes and settings stored in this browser.\n\nThis action CANNOT be undone.`)) {
+            if (confirm(`FINAL WARNING: Are you absolutely sure you want to delete everything?\n\nPress OK to proceed with deletion.`)) {
+                window._clearState(); // Assumes _clearState is exposed globally
             }
         }
     };
@@ -836,7 +841,7 @@ class UIRenderer {
 
 
     _renderModal(state) {
-        const {modalType, modalProps} = state.uiState;
+        const {modalType, modalProps} = state.uiState; // Use modalType consistently
         if (!modalType) return '';
 
         switch (modalType) {
@@ -939,9 +944,9 @@ class UIRenderer {
                     </div>
                     <div class="form-field">
                         <label for="prop-value-input">Value:</label>
-                        <input type="text" id="prop-value-input" name="value" required aria-describedby="prop-add-error">
-                        <div id="prop-add-error" class="validation-error">
-                            ${state.uiState.propertyValidationErrors?.[noteId]?.[`temp_${props.temporaryId}`] || ''}
+                        <input type="text" id="prop-value-input" name="value" required aria-describedby="prop-add-error-${props.temporaryId}">
+                        <div id="prop-add-error-${props.temporaryId}" class="validation-error">
+                            ${state.uiState.propertyValidationErrors?.[noteId]?.[props.temporaryId] || ''}
                         </div>
                     </div>
                     <div class="modal-actions">
@@ -1033,7 +1038,7 @@ class UIRenderer {
                         <input type="text" id="prop-edit-key" name="key" .value=${property.key} required>
                     </div>
                     <div class="form-field">
-                        <label for="prop-edit-value">Value (Type: ${property.type}):</label>
+                        <label for="prop-edit-value">Value (Type: ${property.type || 'text'}):</label> {/* Ensure type is shown */}
                         ${renderInput()}
                          <div id="prop-edit-error-${property.id}" class="validation-error">
                             ${state.uiState.propertyValidationErrors?.[noteId]?.[property.id] || ''}
@@ -1141,10 +1146,20 @@ class PluginManager {
             if (!entry || entry.status !== 'registered') return;
 
             const deps = entry.definition.dependencies || [];
-            const depsMet = deps.every(depId => this._pluginRegistry.get(depId)?.status === 'active');
+            let depsMet = true;
+            for (const depId of deps) {
+                const depEntry = this._pluginRegistry.get(depId);
+                // Check if dependency exists AND is already active
+                if (!depEntry || depEntry.status !== 'active') {
+                    entry.status = 'error';
+                    entry.error = new Error(`Dependency not met or not active: ${depId}`);
+                    console.error(`PluginManager: Activation Error - Dependency [${depId}] not met or not active for plugin [${pluginId}].`);
+                    this._eventBus.publish('PLUGIN_STATUS_CHANGED', { pluginId, status: 'error', error: entry.error.message });
+                    depsMet = false;
+                    break; // Stop checking dependencies for this plugin
+                }
+            }
             if (!depsMet) {
-                entry.status = 'error';
-                entry.error = new Error(`Dependency not met during activation phase (should not happen).`);
                 console.error(`Plugin: Activation Error - Dependency check failed just before activating [${pluginId}].`);
                 this._eventBus.publish('PLUGIN_STATUS_CHANGED', {
                     pluginId,
@@ -1286,9 +1301,11 @@ class CoreAPI {
 
     showGlobalStatus = (message, type = 'info', duration = 5000, id = null) => {
         this.dispatch({type: 'CORE_SET_GLOBAL_STATUS', payload: {message, type, duration, id}});
-        if (duration > 0 && duration !== Infinity) {
+        // Clear timeout only if duration is finite and positive
+        if (duration > 0 && Number.isFinite(duration)) {
             setTimeout(() => {
                 const currentState = this.getState();
+                // Check if the specific message is still the one being displayed
                 const currentStatus = id ? currentState.uiState.globalStatusMessages?.[id] : currentState.uiState.globalStatus;
                 if (currentStatus?.message === message && currentStatus?.type === type) {
                     this.dispatch({type: 'CORE_CLEAR_GLOBAL_STATUS', payload: {id}});
@@ -1331,37 +1348,51 @@ const coreReducer = (draft, action) => {
     switch (action.type) {
         case 'CORE_STATE_LOADED': {
             const loaded = action.payload.loadedState || {};
+            // Reset to initial state first
             Object.assign(draft, initialAppState);
+            // Carefully merge persisted data
             draft.notes = loaded.notes || {};
-            draft.noteOrder = Array.isArray(loaded.noteOrder) ? loaded.noteOrder.filter(id => draft.notes[id]) : [];
+            draft.noteOrder = Array.isArray(loaded.noteOrder) ? loaded.noteOrder.filter(id => draft.notes[id]) : []; // Filter out orphaned IDs
             draft.settings.core = {...initialAppState.settings.core, ...(loaded.settings?.core || {})};
+            draft.settings.plugins = loaded.settings?.plugins || {}; // Load plugin settings
             draft.runtimeCache = loaded.runtimeCache || {};
+            // Rebuild systemNoteIndex from loaded notes
             draft.systemNoteIndex = {};
             Object.values(draft.notes).forEach(note => {
-                if (note.systemType)
+                if (note?.systemType) { // Check if note and systemType exist
+                    if (draft.systemNoteIndex[note.systemType]) {
+                        console.warn(`CORE_STATE_LOADED: Duplicate system note type found: ${note.systemType}. Using note ID: ${note.id}`);
+                    }
                     draft.systemNoteIndex[note.systemType] = note.id;
+                }
             });
+            // Ensure transient state is reset
+            draft.uiState = {...initialAppState.uiState};
+            draft.pluginRuntimeState = {};
             break;
         }
 
         case 'CORE_ADD_NOTE': {
             const newNoteId = Utils.generateUUID();
             const now = Date.now();
-            const systemType = action.payload?.systemType || null;
+            const { name = 'New Note', content = '', systemType = null } = action.payload || {}; // Destructure payload safely
             draft.notes[newNoteId] = {
                 id: newNoteId,
-                name: action.payload?.name || 'New Note',
-                content: action.payload?.content || '',
+                name: name,
+                content: content,
                 createdAt: now,
                 updatedAt: now,
                 isArchived: false,
-                systemType: systemType,
+                systemType: systemType, // Use destructured value
+                // pluginData is initialized by plugin reducers reacting to this action
             };
             draft.noteOrder.unshift(newNoteId);
             draft.uiState.selectedNoteId = newNoteId;
-            draft.uiState.searchTerm = '';
+            draft.uiState.searchTerm = ''; // Clear search on add
             if (systemType) {
-                if (draft.systemNoteIndex[systemType]) console.warn(`CORE_ADD_NOTE: Overwriting system index for type ${systemType}`);
+                if (draft.systemNoteIndex[systemType]) {
+                     console.warn(`CORE_ADD_NOTE: Overwriting system index for type ${systemType} with new note ${newNoteId}`);
+                }
                 draft.systemNoteIndex[systemType] = newNoteId;
             }
             break;
@@ -1382,8 +1413,9 @@ const coreReducer = (draft, action) => {
 
             let coreFieldsChanged = false;
             const oldSystemType = note.systemType;
-            let newSystemType = oldSystemType;
+            let newSystemType = oldSystemType; // Assume no change initially
 
+            // Apply changes to core fields
             if (changes.hasOwnProperty('name') && note.name !== changes.name) {
                 note.name = changes.name;
                 coreFieldsChanged = true;
@@ -1397,27 +1429,36 @@ const coreReducer = (draft, action) => {
                 coreFieldsChanged = true;
             }
             if (changes.hasOwnProperty('systemType') && note.systemType !== changes.systemType) {
-                note.systemType = changes.systemType;
-                newSystemType = changes.systemType;
+                newSystemType = changes.systemType; // Store the intended new type
+                note.systemType = newSystemType; // Apply the change to the note
                 coreFieldsChanged = true;
             }
 
+            // Update timestamp and system index if core fields changed
             if (coreFieldsChanged) {
                 note.updatedAt = Date.now();
 
+                // Update systemNoteIndex if systemType changed
                 if (newSystemType !== oldSystemType) {
+                    // Remove old index entry if it pointed to this note
                     if (oldSystemType && draft.systemNoteIndex[oldSystemType] === noteId) {
                         delete draft.systemNoteIndex[oldSystemType];
                     }
+                    // Add new index entry, warning if overwriting
                     if (newSystemType) {
-                        if (draft.systemNoteIndex[newSystemType]) console.warn(`CORE_UPDATE_NOTE: Overwriting system index for type ${newSystemType}`);
+                        if (draft.systemNoteIndex[newSystemType] && draft.systemNoteIndex[newSystemType] !== noteId) {
+                             console.warn(`CORE_UPDATE_NOTE: Overwriting system index for type ${newSystemType} (was ${draft.systemNoteIndex[newSystemType]}, now ${noteId})`);
+                        }
                         draft.systemNoteIndex[newSystemType] = noteId;
                     }
                 }
+
+                // If the currently selected note is archived, deselect it
                 if (changes.isArchived === true && draft.uiState.selectedNoteId === noteId) {
                     draft.uiState.selectedNoteId = null;
                 }
             }
+            // Plugin data changes are handled by plugin reducers reacting to this action
             break;
         }
 
@@ -1436,13 +1477,16 @@ const coreReducer = (draft, action) => {
         case 'CORE_DELETE_NOTE': {
             const {noteId} = action.payload;
             const noteToDelete = draft.notes[noteId];
-            if (!noteToDelete) break;
+            if (!noteToDelete) break; // Exit if note doesn't exist
 
+            // Remove from systemNoteIndex if it was indexed
             if (noteToDelete.systemType && draft.systemNoteIndex[noteToDelete.systemType] === noteId) {
                 delete draft.systemNoteIndex[noteToDelete.systemType];
             }
 
+            // Remove from noteOrder
             draft.noteOrder = draft.noteOrder.filter(id => id !== noteId);
+            // Remove from notes object
             delete draft.notes[noteId];
 
             if (draft.uiState.selectedNoteId === noteId) {
@@ -1457,9 +1501,9 @@ const coreReducer = (draft, action) => {
         }
 
         case 'CORE_OPEN_MODAL': {
-            draft.uiState.modalType = action.payload.modalType; // Use modalType from payload
-            draft.uiState.modalProps = action.payload.modalProps || null; // Store props if provided
-            draft.uiState.propertyValidationErrors = {}; // Clear validation errors when opening a modal
+            draft.uiState.modalType = action.payload.modalType;
+            draft.uiState.modalProps = action.payload.modalProps || {}; // Use empty object as default
+            draft.uiState.propertyValidationErrors = {}; // Clear validation errors when opening *any* modal
             break;
         }
         case 'CORE_CLOSE_MODAL': {
@@ -1527,11 +1571,19 @@ const coreReducer = (draft, action) => {
 
         case 'PROPERTY_VALIDATION_FAILURE': {
             const { noteId, propertyId, temporaryId, errorMessage } = action.payload;
-            const idToUse = propertyId || temporaryId;
-            if (!idToUse) break;
+            const idToUse = propertyId || temporaryId; // Use propertyId if available, else temporaryId
+            if (!idToUse) {
+                console.warn("PROPERTY_VALIDATION_FAILURE: Missing propertyId or temporaryId in payload.");
+                break;
+            }
 
-            if (!draft.uiState.propertyValidationErrors) draft.uiState.propertyValidationErrors = {};
-            if (!draft.uiState.propertyValidationErrors[noteId]) draft.uiState.propertyValidationErrors[noteId] = {};
+            if (!draft.uiState.propertyValidationErrors) {
+                 draft.uiState.propertyValidationErrors = {};
+            }
+            if (!draft.uiState.propertyValidationErrors[noteId]) {
+                 draft.uiState.propertyValidationErrors[noteId] = {};
+            }
+            // Store the error message against the correct ID (property or temporary)
             draft.uiState.propertyValidationErrors[noteId][idToUse] = errorMessage;
             break;
         }
@@ -1601,14 +1653,21 @@ async function main() {
     } catch (error) {
         console.error("%cCRITICAL ERROR DURING INITIALIZATION:", "color: red; font-weight: bold;", error);
         const appRoot = document.getElementById('app');
+        // Display error in the UI
         if (appRoot) {
-            render(html`
-                <div class="error-display">
-                    <h1>Initialization Failed</h1>
-                    <p>The application could not start due to a critical error.</p>
-                    <pre>${Utils.sanitizeHTML(error.stack)}</pre>
-                    <p>Please check the console for more details or try clearing application data.</p>
-                </div>`, appRoot);
+            // Use basic text content as fallback if lit-html or sanitizeHTML fail
+            try {
+                render(html`
+                    <div class="error-display" style="padding: 20px; border: 2px solid red; background: #fff0f0; color: #333;">
+                        <h1>Initialization Failed</h1>
+                        <p>The application could not start due to a critical error.</p>
+                        <pre style="white-space: pre-wrap; word-wrap: break-word; border: 1px solid #ccc; padding: 10px; background: #f9f9f9;">${Utils.sanitizeHTML(error.stack || String(error))}</pre>
+                        <p>Please check the console for more details or try clearing application data (via browser developer tools).</p>
+                    </div>`, appRoot);
+            } catch (renderError) {
+                console.error("Error rendering initialization error message:", renderError);
+                appRoot.textContent = `CRITICAL INITIALIZATION ERROR: ${error.message}. Check console.`;
+            }
         }
     }
 }

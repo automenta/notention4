@@ -171,27 +171,29 @@ export const SemanticParserPlugin = {
                     }
                 } else if (location) {
                     console.warn(`Parser Middleware: Suggestion confirmed but no EditorService found. Property will be added/updated, but text not replaced.`);
-                    // Ensure propertyIdToUse is set even if editor insertion fails
-                    propertyIdToUse = existingProp ? existingProp.id : pluginInstance.coreAPI.utils.generateUUID();
-                } else {
-                    console.warn(`Parser Middleware: Suggestion confirmed but no location info provided. Property will be added/updated, but cannot replace text.`);
-                    // Ensure propertyIdToUse is set even if editor insertion fails
-                    propertyIdToUse = existingProp ? existingProp.id : pluginInstance.coreAPI.utils.generateUUID();
+                    // Ensure propertyIdToUse is set even if editor insertion fails or isn't possible
+                    if (!propertyIdToUse) {
+                         propertyIdToUse = existingProp ? existingProp.id : pluginInstance.coreAPI.utils.generateUUID();
+                    }
                 }
 
                 // --- Dispatch State Update (Add or Update Property) ---
                 if (existingProp) {
-                    // Dispatch PROPERTY_UPDATE using the existing ID
-                    storeApi.dispatch({
-                        type: 'PROPERTY_UPDATE',
-                        payload: {
-                            noteId: noteId,
-                            propertyId: existingProp.id, // Use the actual existing ID
-                            changes: {value: propData.value, type: propData.type}
-                        }
-                    });
+                    // Only dispatch update if value or type actually changed
+                    if (existingProp.value !== propData.value || existingProp.type !== propData.type) {
+                        storeApi.dispatch({
+                            type: 'PROPERTY_UPDATE',
+                            payload: {
+                                noteId: noteId,
+                                propertyId: existingProp.id, // Use the actual existing ID
+                                changes: {value: propData.value, type: propData.type} // Pass new value/type
+                            }
+                        });
+                    } else {
+                         console.log("Parser Middleware: Confirmed suggestion matches existing property value. No update dispatched.");
+                    }
                 } else {
-                    // Dispatch PROPERTY_ADD using the ID used for editor insertion (or newly generated if editor failed)
+                    // Dispatch PROPERTY_ADD using the ID used for editor insertion (or newly generated)
                     storeApi.dispatch({
                         type: 'PROPERTY_ADD',
                         payload: {
@@ -364,12 +366,13 @@ export const SemanticParserPlugin = {
 
         // Determine parsing strategy
         // Determine parsing strategy: Use LLM if service exists AND has a configured model name
-        const llmConfig = this.llmService ? this.coreAPI.getService('LLMService')?.getCurrentConfig() : null;
-        const useLLM = !!(this.llmService && llmConfig?.modelName);
+        const llmService = this.coreAPI.getService('LLMService'); // Get service instance
+        const llmConfig = llmService?.getCurrentConfig(); // Get config if service exists
+        const useLLM = !!(llmService && llmConfig?.modelName); // Check service AND model name
         const parseFn = useLLM ? this._parseWithLLM.bind(this) : this._parseWithHeuristics.bind(this);
         const source = useLLM ? 'LLM' : 'Heuristic';
 
-        console.log(`Parser: Triggering ${source} parse for note ${noteId} (LLM available: ${!!this.llmService}, LLM configured: ${!!llmConfig?.modelName})`);
+        console.log(`Parser: Triggering ${source} parse for note ${noteId} (LLM available: ${!!llmService}, LLM configured: ${!!llmConfig?.modelName})`);
 
         try {
             const suggestions = await parseFn(content, noteId);
@@ -428,6 +431,7 @@ export const SemanticParserPlugin = {
         const lines = content.split('\n');
         const ontologyRules = this.ontologyService.getRawData()?.rules || [];
         const processedIndices = new Set(); // Track indices processed by rules to avoid duplicates
+        const contentLower = content.toLowerCase(); // For case-insensitive keyword matching
 
         // 1. Apply Ontology Rules first (more specific)
         ontologyRules.forEach(rule => {
@@ -438,12 +442,19 @@ export const SemanticParserPlugin = {
                 const regex = new RegExp(rule.pattern, rule.caseSensitive ? 'g' : 'gi');
                 let match;
                 while ((match = regex.exec(content)) !== null) {
-                    // Avoid processing the same match index multiple times if rules overlap
-                    if (processedIndices.has(match.index)) continue;
+                    // Check if the *entire* match range is already processed
+                    let alreadyProcessed = false;
+                    for (let i = match.index; i < match.index + match[0].length; i++) {
+                        if (processedIndices.has(i)) {
+                            alreadyProcessed = true;
+                            break;
+                        }
+                    }
+                    if (alreadyProcessed) continue;
 
                     const matchedValue = match[0]; // The full matched string
                     // Try to infer a key based on context (e.g., preceding words) - very basic example
-                    const contextStart = Math.max(0, match.index - 30);
+                    const contextStart = Math.max(0, match.index - 40); // Increase context slightly
                     const context = content.substring(contextStart, match.index);
                     const keyMatch = context.match(/([a-zA-Z0-9\s_-]+?)\s*[:\-]\s*$/); // Look for "Key:" before match
                     const key = keyMatch ? keyMatch[1].trim() : rule.type; // Use rule type as fallback key
@@ -501,60 +512,51 @@ export const SemanticParserPlugin = {
 
 
         // 3. Apply Simple Key: Value pattern (less specific, avoid processed indices)
-        const keyValueRegex = /^\s*(?<key>[a-zA-Z0-9\s_-]+?)\s*:\s*(?<value>.*)$/;
-        lines.forEach((line, lineIndex) => {
-            // Find start index (approximate if line repeats). Need a more robust way if lines repeat often.
-            // This simple indexOf might pick the wrong line if identical lines exist.
-            // A more complex approach would involve tracking line numbers and offsets.
-            let lineStartOffset = -1;
-            let searchFromIndex = 0;
-            while (lineStartOffset === -1 && searchFromIndex < content.length) {
-                const potentialOffset = content.indexOf(line, searchFromIndex);
-                if (potentialOffset === -1) break; // Line not found
-                // Basic check: ensure this offset hasn't been fully processed already
-                let isProcessed = true;
-                for (let i = 0; i < line.length; i++) {
-                    if (!processedIndices.has(potentialOffset + i)) {
-                        isProcessed = false;
-                        break;
-                    }
-                }
-                if (!isProcessed) {
-                    lineStartOffset = potentialOffset;
-                }
-                searchFromIndex = potentialOffset + 1; // Start next search after this potential match
-            }
-            if (lineStartOffset === -1) return; // Skip if line couldn't be reliably located or was fully processed
+        // Improved regex to handle potential spaces around colon and capture key/value better
+        const keyValueRegex = /^\s*(?<key>[a-zA-Z][a-zA-Z0-9\s_-]*?)\s*:\s*(?<value>.*)$/;
+        let currentOffset = 0;
+        lines.forEach((line) => {
+            const lineLength = line.length + 1; // +1 for newline character
             const match = line.match(keyValueRegex);
 
             if (match && match.groups.key && match.groups.value) {
                 const key = match.groups.key.trim();
                 const value = match.groups.value.trim();
-                const valueStartIndex = line.indexOf(value); // Index within the line
-                const absoluteStartIndex = lineStartOffset + valueStartIndex;
+                const valueStartIndexInLine = line.indexOf(match.groups.value); // Find where the raw value starts
+                const absoluteStartIndex = currentOffset + valueStartIndexInLine;
+                const absoluteEndIndex = absoluteStartIndex + value.length;
 
-                // Check if the start of the value has already been processed by a rule
-                if (value && !processedIndices.has(absoluteStartIndex)) {
+                // Check if the *entire* value range overlaps with already processed indices
+                let alreadyProcessed = false;
+                for (let i = absoluteStartIndex; i < absoluteEndIndex; i++) {
+                    if (processedIndices.has(i)) {
+                        alreadyProcessed = true;
+                        break;
+                    }
+                }
+
+                if (value && !alreadyProcessed) {
                     const inferredType = this.ontologyService.inferType(value, key);
                     const location = {
                         start: absoluteStartIndex,
-                        end: absoluteStartIndex + value.length
+                        end: absoluteEndIndex
                     };
 
-                    if (typeof location.start === 'number' && typeof location.end === 'number') {
-                        suggestions.push({
-                            id: utils.generateUUID(),
-                            source: 'heuristic (kv)',
-                            property: {key, value, type: inferredType},
-                            status: 'pending',
-                            location: location,
-                            confidence: 0.4 // Lower confidence for generic key-value
-                        });
-                    } else {
-                        console.warn(`Parser: Invalid location generated by key-value heuristic`, {key, value, line});
+                    suggestions.push({
+                        id: utils.generateUUID(),
+                        source: 'heuristic (kv)',
+                        property: {key, value, type: inferredType},
+                        status: 'pending',
+                        location: location,
+                        confidence: 0.4 // Lower confidence for generic key-value
+                    });
+                    // Mark indices as processed
+                    for (let i = location.start; i < location.end; i++) {
+                        processedIndices.add(i);
                     }
                 }
             }
+            currentOffset += lineLength; // Move offset to the start of the next line
         });
 
         // console.log(`Parser: Heuristics found ${suggestions.length} potential suggestions.`);
@@ -571,7 +573,8 @@ export const SemanticParserPlugin = {
     async _parseWithLLM(content, noteId) {
         // console.log(`Parser: Running LLM parsing for note ${noteId}`);
         // Check required services again within the function
-        if (!content || !this.llMService || !this.ontologyService || !this.coreAPI) {
+        // Fix typo: llMService -> llmService
+        if (!content || !this.llmService || !this.ontologyService || !this.coreAPI) {
             console.warn("Parser: LLM parsing skipped, content or LLMService/OntologyService/CoreAPI missing.");
             this.coreAPI?.showGlobalStatus("Cannot parse with AI: Services missing.", "warning");
             return [];
@@ -632,7 +635,8 @@ JSON Output:
             this.coreAPI.showGlobalStatus("Parsing with AI...", "info", 3000); // Show temp status
 
             // Call LLM Service - this might throw errors (e.g., config, network)
-            let responsePayload = await this.llMService.prompt(prompt); // Use correct service name
+            // Fix typo: llMService -> llmService
+            let responsePayload = await this.llmService.prompt(prompt);
 
             // --- Parse LLM Response ---
             if (!responsePayload?.choices?.[0]?.message?.content) {
@@ -642,36 +646,32 @@ JSON Output:
             }
             this.coreAPI.showGlobalStatus("AI Parsing complete.", "success", 1500); // Update status only on success
 
-            let response = responsePayload.choices[0].message.content;
+            let responseText = responsePayload.choices[0].message.content;
 
-            // Attempt to extract JSON from the response (might be wrapped in markdown etc.)
-            const jsonMatch = response.match(/```(?:json)?\s*([\s\S]*?)\s*```|(\[.*\]|\{.*\})/);
+            // Attempt to extract JSON from the response (more robustly)
             let parsedJson;
-            if (jsonMatch) {
-                const jsonString = jsonMatch[1] || jsonMatch[2];
-                try {
-                    parsedJson = JSON.parse(jsonString);
-                } catch (jsonError) {
-                    console.error("Parser: Failed to parse JSON extracted from LLM response.", {jsonString, jsonError});
-                    throw new Error(`LLM response contained invalid JSON: ${jsonError.message}`);
-                }
-            } else {
-                // Try parsing the whole response as JSON as a fallback ONLY if it looks like JSON
-                const trimmedResponse = response.trim();
-                if (trimmedResponse.startsWith('[') && trimmedResponse.endsWith(']') || trimmedResponse.startsWith('{') && trimmedResponse.endsWith('}')) {
-                    try {
-                        parsedJson = JSON.parse(trimmedResponse);
-                    } catch (jsonError) {
-                        console.error("Parser: Failed to parse entire LLM response as JSON, even though it looked like JSON.", {
-                            response: trimmedResponse,
-                            jsonError
-                        });
-                        throw new Error(`LLM response was not valid JSON: ${jsonError.message}`);
-                    }
+            try {
+                // 1. Look for JSON within markdown code blocks
+                const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+                if (jsonMatch && jsonMatch[1]) {
+                    parsedJson = JSON.parse(jsonMatch[1]);
                 } else {
-                    console.error("Parser: LLM response did not contain a recognizable JSON block or structure.", {response: trimmedResponse});
-                    throw new Error("LLM response did not contain valid JSON output.");
+                    // 2. If no code block, try parsing the whole response (trimmed)
+                    const trimmedResponse = responseText.trim();
+                    // Basic check if it looks like JSON before attempting parse
+                    if ((trimmedResponse.startsWith('[') && trimmedResponse.endsWith(']')) || (trimmedResponse.startsWith('{') && trimmedResponse.endsWith('}'))) {
+                        parsedJson = JSON.parse(trimmedResponse);
+                    } else {
+                         // 3. Handle cases where LLM might just output the JSON without brackets/braces if it's a single object (less common for arrays)
+                         // This is less reliable, might need more specific LLM instructions.
+                         // For now, assume array output is standard.
+                         console.warn("Parser: LLM response did not contain a JSON code block or a direct JSON array/object structure.", { response: trimmedResponse });
+                         throw new Error("LLM response did not contain recognizable JSON output.");
+                    }
                 }
+            } catch (jsonError) {
+                 console.error("Parser: Failed to parse JSON from LLM response.", { responseText, jsonError });
+                 throw new Error(`LLM response contained invalid JSON: ${jsonError.message}`);
             }
 
 
@@ -759,10 +759,12 @@ JSON Output:
             const currentProperties = this.propertiesAPI.getPropertiesForNote(noteId);
             // Ensure currentProperties is an array before calling find
             if (!Array.isArray(currentProperties)) {
-                console.warn(`ParserPlugin._findExistingProperty: propertiesAPI.getPropertiesForNote did not return an array for note ${noteId}.`);
+                // This might happen if the note or pluginData doesn't exist yet, which is valid.
+                // console.warn(`ParserPlugin._findExistingProperty: propertiesAPI.getPropertiesForNote did not return an array for note ${noteId}.`);
                 return null;
             }
-            return currentProperties.find(prop => prop && prop.key && prop.key.toLowerCase() === key.toLowerCase()) || null;
+            // Find property matching key (case-insensitive)
+            return currentProperties.find(prop => prop?.key?.toLowerCase() === key.toLowerCase()) || null;
         } catch (e) {
             console.error("ParserPlugin: Error calling propertiesAPI.getPropertiesForNote", {noteId, key, error: e});
             this.coreAPI?.showGlobalStatus("Error checking existing properties.", "error");

@@ -3,11 +3,15 @@
  * Handles rendering the property pill and the editing input.
  */
 export class InlinePropertyNodeView {
-    constructor(node, view, getPos, dispatch, ontologyService, coreAPI) { // Added coreAPI
+    constructor(node, view, getPos, dispatch, ontologyService, coreAPI) {
+        if (!coreAPI) {
+             console.error("InlinePropertyNodeView FATAL: coreAPI not provided!");
+             // Cannot function without coreAPI, maybe throw?
+        }
         this.node = node;
         this.view = view;
         this.getPos = getPos;
-        this.dispatch = dispatch;
+        this.dispatch = dispatch; // Redux dispatch
         this.ontologyService = ontologyService;
         this.coreAPI = coreAPI; // Store coreAPI
 
@@ -237,18 +241,20 @@ export class InlinePropertyNodeView {
             // Normalize the *new* value based on the property's type before comparing/saving
             const newValueNormalized = this._normalizeValue(newValueRaw, type);
 
-            // Only dispatch if value actually changed
-            // --- Validation ---
-            const propertiesAPI = this.coreAPI?.getPluginAPI('properties');
-            let validationResult = { isValid: true, message: null };
-            if (propertiesAPI?._validateValue) {
-                validationResult = propertiesAPI._validateValue(key, newValueNormalized, type);
-            } else {
-                console.warn("InlinePropertyNodeView: Properties API or _validateValue not available for validation.");
-            }
+            // Only proceed if value actually changed
+            if (String(originalValue) !== String(newValueNormalized)) {
+                // --- Validation ---
+                const propertiesAPI = this.coreAPI?.getPluginAPI('properties');
+                let validationResult = { isValid: true, message: null };
+                if (propertiesAPI?._validateValue) {
+                    // Validate the *normalized* new value
+                    validationResult = propertiesAPI._validateValue(key, newValueNormalized, type);
+                } else {
+                    console.warn("InlinePropertyNodeView: Properties API or _validateValue not available for validation.");
+                }
 
-            if (!validationResult.isValid) {
-                console.warn(`InlinePropertyNodeView: Validation failed for ${key}: ${validationResult.message}`);
+                if (!validationResult.isValid) {
+                    console.warn(`InlinePropertyNodeView: Validation failed for ${key}: ${validationResult.message}`);
                 // Add error style and prevent saving/closing
                 inputElement.classList.add('validation-error-inline');
                 inputElement.title = validationResult.message; // Show error on hover
@@ -260,30 +266,41 @@ export class InlinePropertyNodeView {
             }
             // --- End Validation ---
 
-            // Validation passed, remove error style if present
-            inputElement.classList.remove('validation-error-inline');
-            inputElement.title = ''; // Clear error tooltip
+                // Validation passed, remove error style if present
+                inputElement.classList.remove('validation-error-inline');
+                inputElement.title = ''; // Clear error tooltip
 
-            // Only dispatch if value actually changed
-            if (String(originalValue) !== String(newValueNormalized)) {
-                console.log(`InlinePropertyNodeView: Saving changes for ${key}: ${originalValue} -> ${newValueNormalized}`);
-                this.dispatch({
-                    type: 'PROPERTY_UPDATE',
-                    payload: {
-                        noteId: this._findNoteId(),
-                        propertyId: propId,
-                        changes: { value: newValueNormalized }
-                    }
-                });
-                // Optimistically update node attribute for smoother UI transition
-                this.node.attrs.value = newValueNormalized;
+                // Dispatch the update action
+                const noteId = this._findNoteId();
+                if (noteId) {
+                    console.log(`InlinePropertyNodeView: Saving changes for ${key} in note ${noteId}: ${originalValue} -> ${newValueNormalized}`);
+                    this.dispatch({ // Use the dispatch passed during construction
+                        type: 'PROPERTY_UPDATE',
+                        payload: {
+                            noteId: noteId,
+                            propertyId: propId,
+                            changes: { value: newValueNormalized } // Only sending value changes from here
+                        }
+                    });
+                    // Optimistically update node attribute for smoother UI transition
+                    // This might be overwritten if the state update comes back quickly, but helps perceived responsiveness.
+                    this.node.attrs.value = newValueNormalized;
+                } else {
+                     console.error("InlinePropertyNodeView: Could not find noteId to save property update.");
+                     this.coreAPI?.showGlobalStatus("Error saving property: Could not identify note.", "error");
+                     // Revert to display without saving if noteId is missing
+                     saveChanges = false;
+                }
+            } else {
+                 // Value didn't change, no need to dispatch or show errors
+                 // console.log(`InlinePropertyNodeView: Value unchanged for ${key}.`);
             }
-            // Removed console logs for no changes/cancellation
-        }
+        } // End if (saveChanges)
 
         // Revert to display mode ONLY if validation passed or saveChanges was false
+        // If validation failed, we already returned earlier.
         this.renderDisplay();
-        // isEditing is set to false within renderDisplay
+        // isEditing is set to false within renderDisplay()
     }
 
     handleBlur(event) {
@@ -320,12 +337,9 @@ export class InlinePropertyNodeView {
     // A better way might be to store noteId as a node attribute if possible,
     // or pass it down through editor props more explicitly.
     _findNoteId() {
-        // Find the closest ancestor element with a data-note-id attribute
-        let currentElement = this._outerDOM;
-        while (currentElement && !currentElement.dataset.noteId) {
-            currentElement = currentElement.parentElement;
-        }
-        return currentElement?.dataset.noteId || null;
+        // Find the closest ancestor editor content container with a data-note-id attribute
+        const editorContentElement = this._outerDOM.closest('.tiptap-editor-content');
+        return editorContentElement?.dataset.noteId || null;
     }
 
     // --- Formatting/Normalization Helpers (copied/adapted from PropertiesPlugin) ---

@@ -84,12 +84,12 @@ export const PropertiesPlugin = {
                     const validationResult = this._validateValue(key, normalizedValue, type);
                     if (!validationResult.isValid) {
                         console.warn(`PropertiesPlugin: PROPERTY_ADD - Validation failed for key '${key}' with value '${normalizedValue}': ${validationResult.message}`);
-                        // Dispatch validation failure action instead of stopping
-                        dispatch({
+                        // Dispatch validation failure action using the temporary ID from the original action
+                        coreAPI.dispatch({ // Use coreAPI.dispatch directly as we are inside the reducer
                             type: 'PROPERTY_VALIDATION_FAILURE',
                             payload: {
                                 noteId: noteId,
-                                temporaryId: action.payload.temporaryId, // Pass temporary ID
+                                temporaryId: action.payload.temporaryId, // Pass temporary ID from original action
                                 errorMessage: validationResult.message
                             }
                         });
@@ -171,12 +171,12 @@ export const PropertiesPlugin = {
 
                         if (!validationResult.isValid) {
                             console.warn(`PropertiesPlugin: PROPERTY_UPDATE - Validation failed for key '${updatedProp.key}' with value '${validatedValue}': ${validationResult.message}`);
-                            // Dispatch validation failure action
-                            dispatch({
+                            // Dispatch validation failure action using the property ID
+                            coreAPI.dispatch({ // Use coreAPI.dispatch directly
                                 type: 'PROPERTY_VALIDATION_FAILURE',
                                 payload: {
                                     noteId: noteId,
-                                    propertyId: propertyId,
+                                    propertyId: propertyId, // Use the actual property ID
                                     errorMessage: validationResult.message
                                 }
                             });
@@ -248,32 +248,10 @@ export const PropertiesPlugin = {
 
     // --- Middleware to handle modal confirmation actions ---
     registerMiddleware() {
-        const pluginInstance = this;
+        // No middleware needed here anymore, modal actions directly dispatch PROPERTY_ADD/UPDATE/DELETE
         return storeApi => next => action => {
-            const { dispatch } = storeApi;
-            const { noteId } = action.payload || {};
-
-            if (action.type === 'PROPERTY_ADD_CONFIRMED') {
-                const { key, value } = action.payload;
-                dispatch({
-                    type: 'PROPERTY_ADD',
-                    payload: { noteId, propertyData: { key, value } }
-                });
-            } else if (action.type === 'PROPERTY_UPDATE_CONFIRMED') {
-                const { propertyId, changes } = action.payload;
-                 dispatch({
-                    type: 'PROPERTY_UPDATE',
-                    payload: { noteId, propertyId, changes }
-                });
-            } else if (action.type === 'PROPERTY_DELETE_CONFIRMED') {
-                 const { propertyId } = action.payload;
-                 dispatch({
-                    type: 'PROPERTY_DELETE',
-                    payload: { noteId, propertyId }
-                });
-            }
-
-            return next(action); // Pass along the original action or others
+            // Simply pass the action along
+            return next(action);
         };
     },
 
@@ -299,17 +277,19 @@ export const PropertiesPlugin = {
                     let possibleKeys = ontologyService?.getCommonProperties() || [];
                     if (!possibleKeys.includes('priority')) possibleKeys.push('priority'); // Ensure priority is there
                     // Add keys from hints?
-                    // possibleKeys = [...new Set([...possibleKeys, ...Object.keys(ontologyService?.getHints() || {})])]; // Keep for modal
+                    // possibleKeys = [...new Set([...possibleKeys, ...Object.keys(ontologyService?.getHints() || {})])];
 
                     // Dispatch action to open the property add modal
                     dispatch({
                         type: 'CORE_OPEN_MODAL',
                         payload: {
-                            modalType: 'propertyAdd',
+                            modalType: 'propertyAdd', // Use correct modal type
                             modalProps: {
                                 noteId: noteId,
                                 possibleKeys: possibleKeys,
-                                onAddActionType: 'PROPERTY_ADD_CONFIRMED' // Action dispatched by modal
+                                // Modal now directly dispatches PROPERTY_ADD
+                                // onAddActionType: 'PROPERTY_ADD_CONFIRMED' // Removed
+                                temporaryId: coreAPI.utils.generateUUID() // Generate temporary ID for validation feedback
                             }
                         }
                     });
@@ -320,12 +300,13 @@ export const PropertiesPlugin = {
                      dispatch({
                         type: 'CORE_OPEN_MODAL',
                         payload: {
-                            modalType: 'propertyEdit',
+                            modalType: 'propertyEdit', // Use correct modal type
                             modalProps: {
                                 noteId: noteId,
                                 property: prop, // Pass the whole property object
-                                onUpdateActionType: 'PROPERTY_UPDATE_CONFIRMED',
-                                onDeleteActionType: 'PROPERTY_DELETE_CONFIRMED'
+                                // Modal now directly dispatches PROPERTY_UPDATE / PROPERTY_DELETE
+                                // onUpdateActionType: 'PROPERTY_UPDATE_CONFIRMED', // Removed
+                                // onDeleteActionType: 'PROPERTY_DELETE_CONFIRMED' // Removed
                             }
                         }
                     });
@@ -334,15 +315,19 @@ export const PropertiesPlugin = {
                 // --- Added for Enhancement #2 ---
                 const handlePriorityChange = coreAPI.utils.debounce((newValue) => {
                     const value = parseInt(newValue, 10) || 5; // Default to 5 if invalid
+                    const temporaryId = coreAPI.utils.generateUUID(); // Generate ID for potential add
                     if (priorityProp) { // Update existing
-                        dispatch({
-                            type: 'PROPERTY_UPDATE',
-                            payload: {noteId: noteId, propertyId: priorityProp.id, changes: {value: value}}
-                        });
+                        // Only dispatch if value changed
+                        if (priorityProp.value !== value) {
+                            dispatch({
+                                type: 'PROPERTY_UPDATE',
+                                payload: {noteId: noteId, propertyId: priorityProp.id, changes: {value: value}}
+                            });
+                        }
                     } else { // Add new
                         dispatch({
                             type: 'PROPERTY_ADD',
-                            payload: {noteId: noteId, propertyData: {key: 'priority', value: value, type: 'number'}}
+                            payload: {noteId: noteId, temporaryId: temporaryId, propertyData: {key: 'priority', value: value, type: 'number'}}
                         });
                     }
                 }, 500); // Debounce slider changes
@@ -456,16 +441,28 @@ export const PropertiesPlugin = {
                 }
                 // TODO: Add 'next week', 'last month', etc. using a date library
                 // TODO: Attempt parsing various date formats (e.g., MM/DD/YYYY) -> ISO string?
-                // Fallback: return original value if no specific parsing matches
+                // Attempt to parse if it's a string that looks like a date, otherwise return original
+                if (typeof value === 'string') {
+                    const parsedDate = new Date(value);
+                    if (!isNaN(parsedDate.getTime())) {
+                        // Return in YYYY-MM-DD format for consistency if it's a valid date string
+                        return parsedDate.toISOString().split('T')[0];
+                    }
+                }
+                // Fallback: return original value if not a recognized relative term or valid date string
                 return value;
             }
             case 'list':
-                // If it's a string, try splitting by comma.
+                // If it's a string, split by comma. Ensure items are trimmed and non-empty.
                 if (typeof value === 'string') {
-                    return value.split(',').map(s => s.trim()).filter(s => s);
+                    return value.split(',').map(s => s.trim()).filter(Boolean); // Filter out empty strings
                 }
-                // If already an array, keep it. Otherwise, wrap it?
-                return Array.isArray(value) ? value : [value];
+                // If already an array, ensure items are strings and trimmed (or handle other types if needed)
+                if (Array.isArray(value)) {
+                    return value.map(item => String(item).trim()).filter(Boolean);
+                }
+                // If not string or array, convert to string, wrap in array (unless null/undefined)
+                return value !== null && value !== undefined ? [String(value).trim()].filter(Boolean) : [];
             // Add normalization for 'url', 'location', 'reference' if needed
             case 'text':
             default:
@@ -488,15 +485,18 @@ export const PropertiesPlugin = {
             case 'boolean':
                 return value ? 'Yes' : 'No'; // Or use icons ✔️ / ❌ ?
             case 'date':
-                // Use formatDate utility if available and value is valid date representation
+                // Use toLocaleDateString for simpler date display
                 try {
                     const date = new Date(value);
+                    // Check if it's a valid date object or string representation
                     if (!isNaN(date.getTime())) {
-                        return this.coreAPI.utils.formatDate(date.getTime());
+                        // Use locale-specific date format without time
+                        return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
                     }
                 } catch (e) { /* Ignore formatting error */ }
-                return String(value); // Fallback
+                return String(value); // Fallback to string representation
             case 'list':
+                // Ensure it's an array before joining
                 return Array.isArray(value) ? value.join(', ') : String(value);
             case 'number':
             case 'text':
@@ -564,11 +564,12 @@ export const PropertiesPlugin = {
             try {
                 const regex = new RegExp(rules.pattern);
                 if (!regex.test(value)) {
-                    return { isValid: false, message: `Value does not match required pattern: ${rules.patternDescription || rules.pattern}` };
+                    return { isValid: false, message: `Value does not match required pattern${rules.patternDescription ? ': ' + rules.patternDescription : ''}.` };
                 }
             } catch (e) {
-                console.warn(`PropertiesPlugin: Invalid regex pattern in ontology validation rule for key '${key}': ${rules.pattern}`, e);
-                // Don't block saving due to bad rule, but log it.
+                console.error(`PropertiesPlugin: Invalid regex pattern in ontology validation rule for key '${key}': ${rules.pattern}`, e);
+                // Block saving if the regex itself is invalid, as it indicates a config error
+                return { isValid: false, message: `Invalid validation pattern configured for this property.` };
             }
         }
 

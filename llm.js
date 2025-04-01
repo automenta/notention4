@@ -83,15 +83,20 @@ export const LLMPlugin = {
         const mergedConfig = {
             ...this._config,
             ...(this._getDefaultSettings()),
-            ...(noteSettings || {}),
+            ...(noteSettings || {}), // Note settings override defaults
         };
 
+        // Ensure types are correct after merging
         this._config = {
-            apiKey: mergedConfig.apiKey || null,
-            endpointUrl: mergedConfig.endpointUrl || null,
-            modelName: mergedConfig.modelName || null,
-            defaultTemperature: mergedConfig.defaultTemperature ?? 0.7,
-            defaultMaxTokens: mergedConfig.defaultMaxTokens ? parseInt(mergedConfig.defaultMaxTokens, 10) : 1024,
+            apiKey: mergedConfig.apiKey || null, // Keep null if empty/missing
+            endpointUrl: mergedConfig.endpointUrl || null, // Keep null if empty/missing
+            modelName: mergedConfig.modelName || null, // Keep null if empty/missing
+            defaultTemperature: typeof mergedConfig.defaultTemperature === 'number' ? mergedConfig.defaultTemperature : (this._getDefaultSettings().defaultTemperature ?? 0.7),
+            defaultMaxTokens: typeof mergedConfig.defaultMaxTokens === 'number' ? mergedConfig.defaultMaxTokens : (this._getDefaultSettings().defaultMaxTokens ?? 1024),
+            // Add embedding-specific config loading
+            embeddingModelName: mergedConfig.embeddingModelName || null,
+            embeddingApiKey: mergedConfig.embeddingApiKey || null, // Fallback handled in _getEmbeddingsInstance
+            embeddingEndpointUrl: mergedConfig.embeddingEndpointUrl || null, // Fallback handled in _getEmbeddingsInstance
         };
 
         const logConfig = {...this._config};
@@ -143,15 +148,22 @@ export const LLMPlugin = {
             this._coreAPI.clearGlobalStatus(`${this.id}-config-modelName`); // Use the new method
         }
 
-        // Check for API Key if using a non-local endpoint
-        if (!this._config.apiKey && this._config.endpointUrl && !this._isLocalhostEndpoint(this._config.endpointUrl)) {
-            console.warn("LLMPlugin: API Key might be required for the configured remote endpoint.");
-            // Consider a less critical, timed warning for this
+        // Check for API Key if using a non-local endpoint AND the endpoint isn't known to be key-less (like some local models)
+        const endpoint = this._config.endpointUrl;
+        const isLikelyLocal = endpoint && this._isLocalhostEndpoint(endpoint);
+        // Add more sophisticated check? Maybe based on URL pattern? For now, just check localhost.
+        if (!this._config.apiKey && endpoint && !isLikelyLocal) {
+            console.warn("LLMPlugin: API Key might be required for the configured remote endpoint:", endpoint);
+            // Show persistent warning if key is missing for non-local endpoint
             this._coreAPI.showGlobalStatus(
-                `LLMPlugin: API Key might be needed for ${this._config.endpointUrl}`,
+                `LLMPlugin: API Key may be required for endpoint ${endpoint}. Configure in settings.`,
                 "warning",
-                10000 // Show for 10 seconds
+                0, // Persistent
+                `${this.id}-config-apiKey` // Unique ID
             );
+        } else {
+             // Clear the warning if API key is present or endpoint is local/missing
+             this._coreAPI.clearGlobalStatus(`${this.id}-config-apiKey`);
         }
     },
 
@@ -182,15 +194,20 @@ export const LLMPlugin = {
             model: modelName,
             temperature: temperature,
             maxTokens: maxTokens,
+            // Pass apiKey only if it has a value, otherwise let Langchain handle defaults/env vars
             apiKey: apiKey || undefined,
             streaming: callOptions.stream || false,
+            // Pass configuration only if baseURL is set
+            ...(baseURL && { configuration: { baseURL: baseURL } })
         };
 
+        // Log which base URL is being used
         if (baseURL) {
-            modelConfig.configuration = {baseURL: baseURL};
-            console.log("LLMPlugin: Using custom baseURL for ChatModel:", baseURL);
+             console.log("LLMPlugin: Using custom baseURL for ChatModel:", baseURL);
+        } else if (apiKey) {
+             console.log("LLMPlugin: Using default OpenAI baseURL (or Langchain default) for ChatModel with API key.");
         } else {
-            console.log("LLMPlugin: Using default OpenAI baseURL for ChatModel.");
+             console.warn("LLMPlugin: Attempting ChatModel call without explicit baseURL or API key. May fail or use environment variables.");
         }
 
         try {
@@ -204,20 +221,31 @@ export const LLMPlugin = {
 
     _getEmbeddingsInstance(callOptions = {}) {
         // Use specific embedding config keys if they exist, otherwise fallback to main LLM config
-        const modelName = callOptions.model || this._config.embeddingModelName || "text-embedding-ada-002"; // Default to OpenAI's ada-002 if not specified
-        const apiKey = this._config.embeddingApiKey || this._config.apiKey;
-        const baseURL = this._config.embeddingEndpointUrl || this._config.endpointUrl;
+        // Use specific embedding config keys if they exist, otherwise fallback to main LLM config
+        const modelName = callOptions.model || this._config.embeddingModelName || this._config.modelName; // Fallback to main model if embedding model not set
+        const apiKey = this._config.embeddingApiKey || this._config.apiKey; // Fallback to main API key
+        const baseURL = this._config.embeddingEndpointUrl || this._config.endpointUrl; // Fallback to main endpoint
+
+        if (!modelName) {
+             this._coreAPI.showGlobalStatus("Embeddings Error: Model Name required (embeddingModelName or modelName).", "error", 5000);
+             throw new Error("LLM Config Error: Model Name is required for embeddings.");
+        }
 
         const embeddingsConfig = {
             model: modelName,
+            // Pass apiKey only if it has a value
             apiKey: apiKey || undefined,
+             // Pass configuration only if baseURL is set
+            ...(baseURL && { configuration: { baseURL: baseURL } })
         };
 
+         // Log which base URL is being used
         if (baseURL) {
-            embeddingsConfig.configuration = {baseURL: baseURL};
-            console.log("LLMPlugin: Using custom baseURL for Embeddings:", baseURL);
+             console.log("LLMPlugin: Using custom baseURL for Embeddings:", baseURL);
+        } else if (apiKey) {
+             console.log("LLMPlugin: Using default OpenAI baseURL (or Langchain default) for Embeddings with API key.");
         } else {
-            console.log("LLMPlugin: Using default OpenAI baseURL for Embeddings.");
+             console.warn("LLMPlugin: Attempting Embeddings call without explicit baseURL or API key. May fail or use environment variables.");
         }
 
         try {
@@ -342,7 +370,7 @@ export const LLMPlugin = {
                     } catch (error) {
                         console.error("LLMPlugin: Error during LangChain call.", error);
                         // Use pluginInstance here. Avoid duplicating the "model name not configured" message.
-                        const errorMsg = error.message === "LLM model name is not configured."
+                        const errorMsg = error.message.includes("LLM Config Error") || error.message.includes("Model Name is required")
                             ? error.message // Use the specific config error message
                             : `LLM Call Error: ${error.message}`; // Generic error
                         pluginInstance._coreAPI.showGlobalStatus(errorMsg, "error", 8000);
@@ -365,8 +393,10 @@ export const LLMPlugin = {
                         const response = await pluginInstance.providesServices().LLMService.prompt(prompt, summaryOptions);
                         const summary = response?.choices?.[0]?.message?.content?.trim();
                         if (!summary) {
-                            console.error("LLMPlugin: Could not extract summary from LLM response.");
-                            throw new Error("LLM did not return a valid summary.");
+                            // Don't throw, just return null and maybe log/show status
+                            console.warn("LLMPlugin: LLM did not return a valid summary.");
+                            pluginInstance._coreAPI.showGlobalStatus("AI did not provide a summary.", "info", 3000);
+                            return null;
                         }
                         return summary;
                     } catch (error) {
@@ -395,14 +425,14 @@ export const LLMPlugin = {
                         const response = await pluginInstance.providesServices().LLMService.prompt(prompt, actionOptions);
                         const actionsText = response?.choices?.[0]?.message?.content?.trim();
                         if (!actionsText || actionsText.toLowerCase() === 'none' || actionsText.toLowerCase().startsWith("the answer is not found")) {
-                            pluginInstance._coreAPI.showGlobalStatus("No specific actions suggested by AI.", "info", 3000);
+                            // Return empty array, status message handled by caller or here
+                            // pluginInstance._coreAPI.showGlobalStatus("No specific actions suggested by AI.", "info", 3000);
                             return [];
                         }
-                        // Basic parsing of numbered list
+                        // Basic parsing of numbered/bulleted list
                         return actionsText.split('\n')
-                            .map(line => line.replace(/^\d+\.\s*/, '').trim()) // Remove numbering
-                            .map(line => line.replace(/^\d+[.)]?\s*/, '').trim()) // Remove numbering (more robust)
-                            .filter(action => action.length > 0);
+                            .map(line => line.replace(/^[\d.*-]+\s*/, '').trim()) // Remove numbering/bullets
+                            .filter(action => action.length > 2); // Filter very short lines
                     } catch (error) {
                         console.error("LLMPlugin: Action generation failed.", error);
                         if (!error.message.includes("LLM Error") && !error.message.includes("LLM Call Error")) {
@@ -431,7 +461,10 @@ export const LLMPlugin = {
                         const response = await pluginInstance.providesServices().LLMService.prompt(prompt, answerOptions);
                         const answer = response?.choices?.[0]?.message?.content?.trim();
                         if (!answer) {
-                            throw new Error("LLM did not return a valid answer.");
+                            // Don't throw, return null or specific message
+                            console.warn("LLMPlugin: LLM did not return a valid answer for the question.");
+                             pluginInstance._coreAPI.showGlobalStatus("AI did not provide an answer.", "info", 3000);
+                            return null; // Or return "Could not determine answer." ?
                         }
                         return answer;
                     } catch (error) {
@@ -500,7 +533,10 @@ Generated Note Content:
                         const response = await pluginInstance.providesServices().LLMService.prompt(prompt, generateOptions);
                         const generatedContent = response?.choices?.[0]?.message?.content?.trim();
                         if (!generatedContent) {
-                            throw new Error("LLM did not return valid content for generation.");
+                            // Don't throw, return null
+                             console.warn("LLMPlugin: LLM did not return valid content for generation.");
+                             pluginInstance._coreAPI.showGlobalStatus("AI content generation returned empty.", "warning", 4000);
+                            return null;
                         }
                         return generatedContent;
                     } catch (error) {
@@ -528,12 +564,12 @@ Generated Note Content:
                         const embeddingVector = await embeddingsModel.embedQuery(text);
 
                         if (!Array.isArray(embeddingVector) || embeddingVector.length === 0) {
-                            console.error("LLMPlugin: Embeddings model returned invalid result (not an array or empty).", embeddingVector);
-                            throw new Error("Embeddings model returned invalid result.");
+                            console.error("LLMPlugin: Embeddings model returned invalid result (not an array or empty).");
+                            throw new Error("Embeddings model returned invalid result."); // Throw specific error
                         }
 
-                        console.log(`LLMPlugin: Embeddings generated (vector length: ${embeddingVector.length}).`);
-                        pluginInstance._coreAPI.showGlobalStatus("Embeddings generated.", "success", 2000);
+                        // console.log(`LLMPlugin: Embeddings generated (vector length: ${embeddingVector.length}).`); // Reduce logging noise
+                        // pluginInstance._coreAPI.showGlobalStatus("Embeddings generated.", "success", 2000); // Status shown by caller (Matcher)
                         return embeddingVector;
 
                     } catch (error) {
@@ -553,7 +589,7 @@ Generated Note Content:
         return {
             'apiKey': {
                 type: 'password', label: 'API Key', order: 2,
-                description: 'Required for most cloud services (OpenAI, Anthropic, etc.). Leave empty if the endpoint does not require a key (e.g., local Ollama).'
+                description: 'Required for most cloud services (OpenAI, Anthropic, etc.). Leave empty if the endpoint does not require a key (e.g., local Ollama). Stored securely if possible.'
             },
             'endpointUrl': {
                 type: 'url', label: 'Base URL (Endpoint)', order: 1,
@@ -561,8 +597,8 @@ Generated Note Content:
                 description: 'For OpenAI & compatible APIs (Ollama, LM Studio, etc.). Leave empty ONLY if Langchain defaults work for you (rarely).'
             },
             'modelName': {
-                type: 'text', label: 'Model Name', required: true, order: 3,
-                placeholder: 'e.g., gpt-4o, ollama/llama3, claude-3-haiku-20240307',
+                type: 'text', label: 'Chat/Completion Model', required: true, order: 3,
+                placeholder: 'e.g., gpt-4o, llama3, claude-3-haiku-20240307',
                 description: 'Required. Must match a model available at your endpoint/service.'
             },
             'defaultTemperature': {
@@ -572,7 +608,22 @@ Generated Note Content:
             'defaultMaxTokens': {
                 type: 'number', label: 'Default Max Tokens', min: 1, step: 1, default: 1024, order: 5,
                 placeholder: 'e.g., 1024', description: 'Max completion length. Default: 1024. Check model limits.'
-            }
+            },
+            // --- Embedding Specific Settings ---
+             'embeddingModelName': {
+                type: 'text', label: 'Embedding Model', order: 6,
+                placeholder: 'e.g., text-embedding-ada-002, ollama/nomic-embed-text',
+                description: 'Model for generating text embeddings. If empty, uses Chat Model (may not work).'
+            },
+             'embeddingEndpointUrl': {
+                type: 'url', label: 'Embedding Base URL', order: 7,
+                placeholder: 'Leave empty to use main Base URL',
+                description: 'Optional: Use a different endpoint for embeddings.'
+            },
+             'embeddingApiKey': {
+                type: 'password', label: 'Embedding API Key', order: 8,
+                description: 'Optional: Use a different API key for embeddings. If empty, uses main API Key.'
+            },
         };
     },
 
@@ -648,18 +699,21 @@ Generated Note Content:
                                 dispatch({type: actionType, payload: payload});
                             }
 
-                            // Update UI status - REMOVED requestRender
+                            // Update UI status - Use a simple flag, rely on Lit's reactivity
                             clearTimeout(this._saveStatusTimeout);
                             this._uiSaveStatus = 'saved';
-                            // Need to manually trigger re-render as dispatch doesn't guarantee immediate prop update reflection
-                            //this._coreAPI.requestRender();
+                            // Trigger a re-render of the settings panel specifically if needed,
+                            // but Lit should handle it if _uiSaveStatus is used in the template.
+                            // Forcing a full app render is too heavy.
+                            // We might need a way to signal just this component to update.
+                            // For now, rely on Lit's detection or a short timeout visual cue.
 
                             this._saveStatusTimeout = setTimeout(() => {
                                 this._uiSaveStatus = 'idle';
-                                //this._coreAPI.requestRender(); // Hide "Saved" message
+                                // Trigger re-render again if needed
                             }, 2000);
 
-                        }, 750);
+                        }, 750); // Debounce time
                     }
                     return this._debouncedSaveFunctions[key];
                 };

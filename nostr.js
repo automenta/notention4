@@ -194,7 +194,10 @@ export const NostrPlugin = {
 
         // Load relays from settings property, fallback to default
         const relaysString = currentSettings.relays ?? defaultSettings.relays ?? '';
-        const relaysList = relaysString.split('\n').map(r => r.trim()).filter(r => r.startsWith('ws'));
+        // Ensure relaysString is treated as a string before splitting
+        const relaysList = String(relaysString).split('\n')
+            .map(r => r.trim())
+            .filter(r => r.startsWith('wss://') || r.startsWith('ws://')); // Allow ws:// too, but wss:// preferred
         this._config.relays = [...new Set(relaysList)]; // Ensure unique and valid format
 
         // Warn if no relays are configured after loading
@@ -302,24 +305,30 @@ export const NostrPlugin = {
             // --- Success ---
             this._decryptedNsec = bytesToNsec(decryptedPrivateKeyBytes);
             this._decryptedHexPrivKey = hexPrivKey;
+            this._decryptedNsec = bytesToNsec(decryptedPrivateKeyBytes);
+            this._decryptedHexPrivKey = hexPrivKey;
             this._identityStatus = 'unlocked';
             this._identityError = null;
-            this._updateIdentityStatus('unlocked', {pubkey: pubkey});
-            this.coreAPI.showToast("Nostr identity unlocked.", "success");
+            this._updateIdentityStatus('unlocked', {pubkey: pubkey}); // Dispatch state update
+            this.coreAPI.showToast("Nostr identity unlocked.", "success"); // Use coreAPI directly
 
             this._startAutoLockTimer(); // Start auto-lock timer on successful unlock
-            this.getNostrService()?.connect();
+            this.getNostrService()?.connect(); // Attempt connection after unlock
             return true;
 
         } catch (error) {
             // ... (Error handling remains the same) ...
             console.error("NostrPlugin: Identity unlock failed:", error);
-            this._identityStatus = 'locked';
-            this._identityError = error.message || 'Incorrect passphrase or corrupted data.';
+            console.error("NostrPlugin: Identity unlock failed:", error);
+            this._identityStatus = 'locked'; // Remain locked
+            this._identityError = error.message.includes("Public key mismatch")
+                ? "Incorrect passphrase or corrupted data."
+                : `Unlock failed: ${error.message}`; // More specific error if possible
             this._decryptedHexPrivKey = null;
             this._decryptedNsec = null;
+            // Dispatch error status, keeping the pubkey if available
             this._updateIdentityStatus('error', {error: this._identityError, pubkey: pubkey});
-            this.coreAPI.showToast(`Error: ${this._identityError}`, "error");
+            this.coreAPI.showToast(`Unlock Error: ${this._identityError}`, "error"); // Use coreAPI directly
             return false;
         } finally {
             passphrase = null;
@@ -339,7 +348,8 @@ export const NostrPlugin = {
             const confirmMsg = strength.score === 0
                 ? "Saving without a passphrase is INSECURE. Anyone accessing browser data could use your key. Proceed?"
                 : `Passphrase is VERY WEAK (${strength.message}). Strongly recommend a better one. Continue anyway?`;
-            const confirmedInsecure = await this.coreAPI.showConfirmationDialog({ // Use coreAPI directly
+            // Use coreAPI directly for confirmation dialog
+            const confirmedInsecure = await this.coreAPI.utils.showConfirmationDialog({ // Assuming confirmation dialog is under utils or coreAPI directly
                 title: "Security Warning", message: confirmMsg,
                 confirmText: "Yes, Continue (Insecure)", cancelText: "Cancel"
             });
@@ -378,22 +388,25 @@ export const NostrPlugin = {
             // --- Success ---
             this._decryptedNsec = nsec;
             this._decryptedHexPrivKey = hexPrivKey;
+            this._decryptedNsec = nsec; // Store in memory
+            this._decryptedHexPrivKey = hexPrivKey; // Store in memory
             this._identityStatus = 'unlocked';
             this._identityError = null;
-            this._updateIdentityStatus('unlocked', {pubkey: pubkey});
+            this._updateIdentityStatus('unlocked', {pubkey: pubkey}); // Dispatch state update
             this.coreAPI.showToast("Nostr identity saved and unlocked.", "success"); // Use coreAPI directly
 
             this._startAutoLockTimer(); // Start auto-lock timer after setup
-            this.getNostrService()?.connect();
+            this.getNostrService()?.connect(); // Attempt connection after setup
             return true;
         } catch (error) {
             // ... (Error handling remains the same) ...
             console.error("NostrPlugin: Failed to store Nostr identity:", error);
-            this._identityStatus = 'error';
+            console.error("NostrPlugin: Failed to store Nostr identity:", error);
+            this._identityStatus = 'error'; // Set error status
             this._identityError = `Failed to encrypt or save identity: ${error.message}`;
             this._decryptedNsec = null;
             this._decryptedHexPrivKey = null;
-            this._updateIdentityStatus('error', {error: this._identityError});
+            this._updateIdentityStatus('error', {error: this._identityError}); // Dispatch error status
             this.coreAPI.showToast("Error: Failed to save identity.", "error"); // Use coreAPI directly
             return false;
         } finally {
@@ -412,48 +425,50 @@ export const NostrPlugin = {
 
         if (clearStorage) {
             try {
-                // ... (Confirmation logic remains the same) ...
-                const confirmed = await this.coreAPI.showConfirmationDialog({ // Use coreAPI directly
+                // Use coreAPI directly for confirmation dialog
+                const confirmed = await this.coreAPI.utils.showConfirmationDialog({ // Assuming confirmation dialog is under utils or coreAPI directly
                     title: "Confirm Clear Identity",
-                    message: "Permanently remove your Nostr identity?",
-                    confirmText: "Yes, Clear",
+                    message: "Permanently remove your Nostr identity from this browser? This cannot be undone.",
+                    confirmText: "Yes, Clear Identity",
                     cancelText: "Cancel"
                 });
-                if (!confirmed) { /* ... (Revert state logic unchanged) ... */
-                    const noteCheck = this.coreAPI.getSystemNoteByType('config/nostr/identity'); // Use coreAPI directly
+                if (!confirmed) {
+                    // If cancelled, revert internal status based on whether identity *was* stored
+                    const noteCheck = this.coreAPI.getSystemNoteByType('config/nostr/identity');
                     if (noteCheck?.content?.encryptedNsec) {
-                        this._identityStatus = 'locked';
-                        this._updateIdentityStatus('locked', {pubkey: noteCheck.content.pubkey});
+                        this._identityStatus = 'locked'; // Revert to locked if it existed
+                        // No need to dispatch here, as no state change occurred yet
                     } else {
-                        this._identityStatus = 'no_identity';
-                        this._updateIdentityStatus('no_identity');
+                        this._identityStatus = 'no_identity'; // Revert to no_identity if it didn't exist
                     }
-                    return;
+                    return; // Stop the process
                 }
 
-                await this.coreAPI.saveSystemNote('config/nostr/identity', null); // Use coreAPI directly
+                // Proceed with clearing
+                await this.coreAPI.saveSystemNote('config/nostr/identity', null); // Clear note content
                 this._identityStatus = 'no_identity';
                 this._identityError = null;
-                this._updateIdentityStatus('no_identity');
+                this._updateIdentityStatus('no_identity'); // Dispatch state update
                 this.coreAPI.showToast("Nostr identity cleared from storage.", "info"); // Use coreAPI directly
             } catch (error) {
                 console.error("NostrPlugin: Failed to clear identity:", error);
                 this.coreAPI.showToast("Error clearing identity.", "error"); // Use coreAPI directly
-                this._identityStatus = 'error';
+                this._identityStatus = 'error'; // Set error status
                 this._identityError = "Failed to clear identity.";
-                this._updateIdentityStatus('error', {error: this._identityError});
+                this._updateIdentityStatus('error', {error: this._identityError}); // Dispatch error status
             }
-        } else { // Just locking
-            const identityNote = this.coreAPI.getSystemNoteByType('config/nostr/identity'); // Use coreAPI directly
+        } else { // Just locking (no storage change)
+            const identityNote = this.coreAPI.getSystemNoteByType('config/nostr/identity');
             if (identityNote?.content?.encryptedNsec) {
                 this._identityStatus = 'locked';
                 this._identityError = null;
-                this._updateIdentityStatus('locked', {pubkey: identityNote.content.pubkey});
+                this._updateIdentityStatus('locked', {pubkey: identityNote.content.pubkey}); // Dispatch state update
                 this.coreAPI.showToast("Nostr identity locked.", "info"); // Use coreAPI directly
             } else {
+                // If trying to lock but no identity exists, ensure status is correct
                 this._identityStatus = 'no_identity';
                 this._identityError = null;
-                this._updateIdentityStatus('no_identity');
+                this._updateIdentityStatus('no_identity'); // Dispatch state update
             }
         }
     },
@@ -554,10 +569,22 @@ export const NostrPlugin = {
                 if (NostrPlugin._identityStatus !== 'unlocked' || !NostrPlugin._decryptedHexPrivKey) throw new Error("Nostr identity locked.");
                 if (!eventTemplate || typeof eventTemplate.kind !== 'number') throw new Error("Invalid event template.");
                 try {
+                    // Ensure nostrTools functions are available
+                    if (typeof NostrTools?.finalizeEvent !== 'function') {
+                         throw new Error("Nostr library function 'finalizeEvent' not available.");
+                    }
                     eventTemplate.tags = eventTemplate.tags || [];
                     eventTemplate.created_at = eventTemplate.created_at || Math.floor(Date.now() / 1000);
-                    const signedEvent = finalizeEvent(eventTemplate, NostrPlugin._decryptedHexPrivKey);
-                    NostrPlugin._startAutoLockTimer();
+                    // Add pubkey if missing (required by finalizeEvent)
+                    if (!eventTemplate.pubkey) {
+                        eventTemplate.pubkey = NostrPlugin.getNostrService().getPublicKey();
+                    }
+                    if (!eventTemplate.pubkey) {
+                         throw new Error("Cannot sign event: Public key unavailable.");
+                    }
+
+                    const signedEvent = NostrTools.finalizeEvent(eventTemplate, NostrPlugin._decryptedHexPrivKey);
+                    NostrPlugin._startAutoLockTimer(); // Reset timer on successful signing
                     return signedEvent;
                 } catch (error) {
                     console.error("NostrService: Error signing:", error);
@@ -573,10 +600,15 @@ export const NostrPlugin = {
 
                 console.log(`NostrService: Publishing kind ${signedEvent.kind} event:`, signedEvent.id);
                 try {
+                    // Ensure nostrTools SimplePool is available
+                    if (!NostrPlugin._relayPool || typeof NostrPlugin._relayPool.publish !== 'function') {
+                         throw new Error("Nostr relay pool is not initialized or publish function is missing.");
+                    }
                     const pubs = NostrPlugin._relayPool.publish(NostrPlugin._config.relays, signedEvent);
                     // Wait for pubs, potentially log success/failure per relay later
-                    await Promise.allSettled(pubs); // Use allSettled to avoid stopping on first failure
-                    console.log(`NostrService: Publish attempt finished for event ${signedEvent.id}.`);
+                    const results = await Promise.allSettled(pubs);
+                    console.log(`NostrService: Publish attempt finished for event ${signedEvent.id}. Results:`, results);
+                    // Check if any succeeded? For now, just return the event.
                     return signedEvent;
                 } catch (error) {
                     console.error("NostrService: Error publishing event:", signedEvent.id, error);
@@ -740,10 +772,7 @@ export const NostrPlugin = {
                             pd.publishedAt = action.payload.publishedAt;
                             pd.isShared = true;
                             pd.isDeletedOnNostr = false; // Explicitly set on successful publish
-                            // Calculate and store hash for sync check
-                            // Needs access to async sha256, cannot do directly in reducer
-                            // Must be done in middleware before dispatching success, or store content here and hash later.
-                            // Let's assume middleware calculates hash and includes it in payload.
+                            // Hash is calculated and added to payload by middleware
                             pd.lastSyncHash = action.payload.contentHash || null;
                         }
                     }
@@ -803,18 +832,20 @@ export const NostrPlugin = {
                             for (const noteId in draft.notes) {
                                 const note = draft.notes[noteId];
                                 const noteEventId = note?.pluginData?.[pluginId]?.eventId;
-                                if (noteEventId && deletedEventIds.includes(noteEventId)) {
-                                    if (!note.pluginData[pluginId].isDeletedOnNostr) {
-                                        console.log(`NostrPlugin: Marking local note ${noteId} (Event ${noteEventId}) as deleted on Nostr.`);
-                                        note.pluginData[pluginId].isDeletedOnNostr = true;
-                                        note.pluginData[pluginId].isShared = false; // Can't be shared if deleted
+                                const notePluginData = note?.pluginData?.[pluginId];
+                                if (notePluginData?.eventId && deletedEventIds.includes(notePluginData.eventId)) {
+                                    if (!notePluginData.isDeletedOnNostr) {
+                                        console.log(`NostrPlugin: Marking local note ${noteId} (Event ${notePluginData.eventId}) as deleted on Nostr.`);
+                                        notePluginData.isDeletedOnNostr = true;
+                                        notePluginData.isShared = false; // Can't be shared if deleted
                                         // Optional: Archive the local note automatically?
                                         // note.isArchived = true;
                                         notesMarked++;
                                     }
                                 }
                             }
-                            if (notesMarked > 0) {
+                            // Show toast outside the loop if any notes were marked
+                            if (notesMarked > 0 && NostrPlugin.coreAPI) { // Check if coreAPI is available
                                 NostrPlugin.coreAPI.showToast(`${notesMarked} note(s) marked as deleted on Nostr.`, "info");
                             }
                         }
@@ -879,37 +910,30 @@ export const NostrPlugin = {
                         kind: 1, content: note.content, created_at: Math.floor(Date.now() / 1000),
                         tags: [...(prevEventId ? [['e', prevEventId, hintRelay, '']] : [])] // Add 'e' tag if editing
                     };
-                    // Calculate hash before publishing
-                    sha256(note.content).then(contentHash => {
-                        nostrService.publishEvent(eventTemplate)
-                            .then(publishedEvent => {
-                                store.dispatch({
-                                    type: 'NOSTR_PUBLISH_SUCCESS',
-                                    payload: {
-                                        noteId,
-                                        eventId: publishedEvent.id,
-                                        publishedAt: publishedEvent.created_at,
-                                        contentHash
-                                    }
-                                });
-                            })
-                            .catch(error => {
-                                console.error(`Nostr Middleware: Failed publish note ${noteId}:`, error);
-                                store.dispatch({
-                                    type: 'NOSTR_PUBLISH_FAILURE',
-                                    payload: {noteId, error: error.message}
-                                });
-                                coreAPI.showToast(`Failed to share note: ${error.message}`, "error");
+                    // Calculate hash *before* publishing
+                    (async () => { // Use async IIFE to handle await for sha256
+                        try {
+                            const contentHash = await sha256(note.content);
+                            const publishedEvent = await nostrService.publishEvent(eventTemplate);
+                            store.dispatch({
+                                type: 'NOSTR_PUBLISH_SUCCESS',
+                                payload: {
+                                    noteId,
+                                    eventId: publishedEvent.id,
+                                    publishedAt: publishedEvent.created_at,
+                                    contentHash // Include the calculated hash
+                                }
                             });
-                    }).catch(hashError => {
-                        console.error(`Nostr Middleware: Failed to hash content for note ${noteId}:`, hashError);
-                        store.dispatch({
-                            type: 'NOSTR_PUBLISH_FAILURE',
-                            payload: {noteId, error: "Content hashing failed"}
-                        });
-                        coreAPI.showToast(`Failed to share note: Content hashing failed`, "error");
-                    });
-
+                            coreAPI.showToast(`Note "${note.name || 'Untitled'}" shared.`, "success");
+                        } catch (error) {
+                            console.error(`Nostr Middleware: Failed publish note ${noteId}:`, error);
+                            store.dispatch({
+                                type: 'NOSTR_PUBLISH_FAILURE',
+                                payload: {noteId, error: error.message}
+                            });
+                            coreAPI.showToast(`Failed to share note: ${error.message}`, "error");
+                        }
+                    })();
                 } else {
                     console.warn(`Nostr Middleware: Publish request for note ${noteId} skipped (not ready/unlocked/connected).`);
                     store.dispatch({
@@ -929,20 +953,21 @@ export const NostrPlugin = {
                     const deletionEventTemplate = {
                         kind: 5,
                         tags: [['e', nostrData.eventId]],
-                        content: `Unshared note previously identified by event ${nostrData.eventId}`,
+                        content: `Deleted note previously identified by event ${nostrData.eventId}`, // Standard deletion message
                         created_at: Math.floor(Date.now() / 1000),
                     };
                     nostrService.publishEvent(deletionEventTemplate)
-                        .then(() => {
-                            console.log(`Kind 5 deletion published for event ${nostrDataBeforeDelete.eventId} (Unshare)`);
+                        .then((publishedDeletionEvent) => {
+                            console.log(`Kind 5 deletion published (Event ID: ${publishedDeletionEvent.id}) for original event ${nostrData.eventId} (Unshare)`);
                             store.dispatch({
                                 type: 'NOSTR_UNSHARE_SUCCESS',
-                                payload: {noteId, eventId: nostrData.eventId}
+                                payload: {noteId, eventId: nostrData.eventId} // Pass original event ID
                             });
                             coreAPI.showToast("Note unshared from Nostr.", "success");
                         })
                         .catch(err => {
-                            console.warn(`Failed to publish Kind 5 deletion for event ${nostrDataBeforeDelete.eventId} (Unshare): ${err.message}`);
+                            // Use nostrData which is available in this scope
+                            console.warn(`Failed to publish Kind 5 deletion for event ${nostrData.eventId} (Unshare): ${err.message}`);
                             store.dispatch({type: 'NOSTR_UNSHARE_FAILURE', payload: {noteId, error: err.message}});
                             coreAPI.showToast(`Failed to unshare note: ${err.message}`, "error");
                         });
@@ -1030,22 +1055,27 @@ export const NostrPlugin = {
             }
             // Handle Deletion Event Publishing (Kind 5) when local note is deleted
             else if (action.type === 'CORE_DELETE_NOTE') {
-                const {noteId, pluginDataSnapshot} = action.payload; // Expect snapshot in payload
-                const nostrDataBeforeDelete = pluginDataSnapshot?.[pluginId]; // Use snapshot
+                const {noteId, pluginDataSnapshot} = action.payload; // Use snapshot passed in payload
+                const nostrDataBeforeDelete = pluginDataSnapshot?.[pluginId];
                 const nostrService = plugin.getNostrService();
-                const nostrState = nextState.pluginRuntimeState[pluginId]; // Use nextState for current status
+                // Check connection status from *nextState* because the action has already passed through reducers
+                const nostrState = nextState.pluginRuntimeState?.[pluginId];
 
+                // Check if the note *was* shared, had an event ID, and we are currently unlocked and connected
                 if (nostrDataBeforeDelete?.isShared && nostrDataBeforeDelete.eventId && nostrService?.isUnlocked() && nostrState?.connectionStatus === 'connected') {
-                    console.log(`Nostr Middleware: Publishing deletion (Kind 5) for event ${nostrDataBeforeDelete.eventId} (Note ${noteId} deleted)`);
+                    console.log(`Nostr Middleware: Publishing deletion (Kind 5) for event ${nostrDataBeforeDelete.eventId} (Note ${noteId} deleted locally)`);
                     const deletionEventTemplate = {
                         kind: 5,
                         tags: [['e', nostrDataBeforeDelete.eventId]],
-                        content: `Deleted note ${noteId}`,
+                        content: `Deleted note previously identified by event ${nostrDataBeforeDelete.eventId}`, // Standard message
                         created_at: Math.floor(Date.now() / 1000)
                     };
+                    // Publish deletion event, log success or failure
                     nostrService.publishEvent(deletionEventTemplate)
-                        .then(() => console.log(`Kind 5 deletion published for event ${nostrDataBeforeDelete.eventId}`))
+                        .then((publishedDeletionEvent) => console.log(`Kind 5 deletion published (Event ID: ${publishedDeletionEvent.id}) for original event ${nostrDataBeforeDelete.eventId}`))
                         .catch(err => console.warn(`Failed to publish Kind 5 deletion for event ${nostrDataBeforeDelete.eventId}: ${err.message}`));
+                } else {
+                     // console.log(`Nostr Middleware: Skipping Kind 5 publication for deleted note ${noteId} (was not shared, no eventId, or not connected/unlocked).`);
                 }
             }
 
@@ -1282,17 +1312,17 @@ export const NostrPlugin = {
                     statusIcon = html`<span title="Nostr Identity Locked" style="color: var(--warning-color); margin-right: 4px;">🔒</span>`;
                     statusText += 'Locked';
                     titleText = `Nostr Locked (${displayPubkeyShort}). Click to open Settings and unlock.`;
-                    action = () => coreAPI.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
+                    action = () => coreAPI.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalType: 'settings'}}); // Use modalType
                 } else if (identityStatus === 'no_identity') {
                     statusIcon = html`<span title="Nostr Identity Not Setup" style="color: var(--secondary-text-color); margin-right: 4px;">⚠️</span>`;
                     statusText += 'Setup Needed';
                     titleText = 'Nostr identity not configured. Click to open Settings and set up.';
-                    action = () => coreAPI.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
+                    action = () => coreAPI.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalType: 'settings'}}); // Use modalType
                 } else if (identityStatus === 'error') {
                     statusIcon = html`<span title="Nostr Identity Error" style="color: var(--danger-color); margin-right: 4px;">❌</span>`;
                     statusText += 'Identity Error';
                     titleText = `Nostr Identity Error: ${nostrState.identityError || 'Unknown'}. Click to open Settings.`;
-                    action = () => coreAPI.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
+                    action = () => coreAPI.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalType: 'settings'}}); // Use modalType
                 } else {
                     statusText += 'Loading...';
                 }
@@ -1329,8 +1359,10 @@ export const NostrPlugin = {
                 if (nostrState.identityStatus !== 'unlocked') return '';
 
                 const {isShared = false, isDeletedOnNostr = false} = nostrNoteData || {};
-                const {pendingPublish: isPending, connectionStatus: isConnected} = nostrState;
-                const isPendingPublish = isPending?.[noteId];
+                // Use connectionStatus directly from nostrState
+                const {pendingPublish, connectionStatus} = nostrState;
+                const isPendingPublish = pendingPublish?.[noteId];
+                const isConnected = connectionStatus === 'connected';
 
                 const handleShare = () => {
                     coreAPI.showToast("Sharing note on Nostr...", "info");
@@ -1344,10 +1376,10 @@ export const NostrPlugin = {
                 };
 
                 let buttonHtml;
-                if (isDeletedRemotely) {
+                if (isDeletedOnNostr) { // Use correct variable name
                     buttonHtml = html`
                         <button class="editor-header-button nostr-status-deleted" disabled
-                                title="This note was deleted on Nostr">🗑️ Deleted
+                                title="This note was marked as deleted on Nostr">🗑️ Deleted
                         </button>`;
                 } else if (isShared) {
                     buttonHtml = html`

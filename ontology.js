@@ -185,16 +185,33 @@ export const OntologyPlugin = {
                     throw new Error("Parsed content is not a valid object.");
                 }
 
-                this._ontologyData = parsedData;
+                // Deep merge with default ontology to ensure all expected structures exist
+                // This prevents errors if the config note is missing sections.
+                // A proper deep merge utility might be better, but this handles top levels.
+                const mergedData = {
+                    properties: {...ONTOLOGY.properties, ...(parsedData.properties || {})},
+                    rules: [...(ONTOLOGY.rules || []), ...(parsedData.rules || [])], // Combine rules? Or override? Let's override for now.
+                    templates: [...(ONTOLOGY.templates || []), ...(parsedData.templates || [])], // Combine templates
+                    uiHints: {...ONTOLOGY.uiHints, ...(parsedData.uiHints || {})},
+                    keywords: { // Merge keywords carefully
+                        categories: [...new Set([...(ONTOLOGY.keywords?.categories || []), ...(parsedData.keywords?.categories || [])])],
+                        tags: [...new Set([...(ONTOLOGY.keywords?.tags || []), ...(parsedData.keywords?.tags || [])])],
+                    }
+                };
+                // Ensure nested structures within uiHints and properties are objects
+                for (const key in mergedData.uiHints) {
+                    if (typeof mergedData.uiHints[key] !== 'object' || mergedData.uiHints[key] === null) mergedData.uiHints[key] = {};
+                }
+                 for (const key in mergedData.properties) {
+                    if (typeof mergedData.properties[key] !== 'object' || mergedData.properties[key] === null) mergedData.properties[key] = {};
+                    if (typeof mergedData.properties[key].validation !== 'object' || mergedData.properties[key].validation === null) mergedData.properties[key].validation = {};
+                }
+
+
+                this._ontologyData = mergedData;
                 this._configNoteId = configNote.id;
                 this._configNoteLastUpdate = configNote.updatedAt; // Store the timestamp
                 console.log("OntologyPlugin: Ontology data loaded/reloaded successfully.");
-                // Provide defaults for core structures if missing
-                this._ontologyData.hints = this._ontologyData.hints || {};
-                this._ontologyData.rules = this._ontologyData.rules || [];
-                this._ontologyData.templates = this._ontologyData.templates || [];
-                this._ontologyData.uiHints = this._ontologyData.uiHints || {};
-                this._ontologyData.keywords = this._ontologyData.keywords || {};
                 // Publish event *after* successful load and processing
                 this.coreAPI.publishEvent('ONTOLOGY_LOADED', this._ontologyData);
 
@@ -276,8 +293,8 @@ export const OntologyPlugin = {
                         }
                     }
 
-                    // 3. Basic typeof checks as fallback
-                    if (typeof value === 'number') return 'number';
+                    // 3. Basic typeof checks as fallback (after rules)
+                    if (typeof value === 'number' && !isNaN(value)) return 'number'; // Ensure it's not NaN
                     if (typeof value === 'boolean') return 'boolean';
 
                     // 4. Default fallback
@@ -298,18 +315,23 @@ export const OntologyPlugin = {
                     if (!propertyKey || !this._ontologyData) return defaultHint;
 
                     // 1. Check for hint specific to the property key
-                    const keyHint = this._ontologyData.uiHints?.[propertyKey] || this._ontologyData.uiHints?.[propertyKey.toLowerCase()];
+                    const uiHints = this._ontologyData?.uiHints || {};
+                    const properties = this._ontologyData?.properties || {};
+
+                    // 1. Check for hint specific to the property key (case-insensitive)
+                    const lowerKey = propertyKey.toLowerCase();
+                    const keyHint = uiHints[propertyKey] || uiHints[lowerKey];
                     if (keyHint) return {...defaultHint, ...keyHint}; // Merge with default
 
-                    // 2. Check for hint based on the property's defined type
-                    const propertyDefinition = this._ontologyData.properties?.[propertyKey] || this._ontologyData.properties?.[propertyKey.toLowerCase()];
+                    // 2. Check for hint based on the property's defined type (case-insensitive key lookup)
+                    const propertyDefinition = properties[propertyKey] || properties[lowerKey];
                     const type = propertyDefinition?.type;
                     if (type) {
-                        const typeHint = this._ontologyData.uiHints?.[type];
+                        const typeHint = uiHints[type];
                         if (typeHint) return {...defaultHint, ...typeHint}; // Merge with default
                     }
 
-                    // 3. Fallback to default
+                    // 3. Fallback to the default hint object itself
                     return defaultHint;
                 },
 
@@ -523,22 +545,33 @@ export const OntologyPlugin = {
     },
 
     _handleAddOntologyItem(sectionKey, ontologyData, noteId, dispatch) {
-        const newItemKey = prompt(`Enter new key for ${sectionKey} (or leave blank for array items):`);
-        if (newItemKey === null) return; // User cancelled
-
-        const updatedOntology = {...ontologyData}; // Shallow copy
-
-        if (Array.isArray(updatedOntology[sectionKey])) {
-            updatedOntology[sectionKey] = [...updatedOntology[sectionKey], {}]; // Add empty object for arrays (rules, templates)
-        } else {
-            if (!newItemKey || updatedOntology[sectionKey]?.[newItemKey]) {
-                // alert(`Invalid or duplicate key: "${newItemKey}"`); // Use coreAPI status instead
+        const isArraySection = Array.isArray(ontologyData[sectionKey]);
+        let newItemKey = '';
+        if (!isArraySection) {
+            newItemKey = prompt(`Enter new key for ${sectionKey}:`);
+            if (newItemKey === null) return; // User cancelled
+            newItemKey = newItemKey.trim();
+            if (!newItemKey || ontologyData[sectionKey]?.[newItemKey]) {
                 this.coreAPI.showGlobalStatus(`Invalid or duplicate key: "${newItemKey}"`, "warning");
                 return;
             }
-            updatedOntology[sectionKey] = {...(updatedOntology[sectionKey] || {}), [newItemKey]: {}}; // Add empty object for maps (properties, uiHints)
         }
 
+        // Use deep copy to avoid mutation issues before saving
+        const updatedOntology = JSON.parse(JSON.stringify(ontologyData));
+
+        if (!updatedOntology[sectionKey]) {
+             // Initialize section if it doesn't exist
+             updatedOntology[sectionKey] = isArraySection ? [] : {};
+        }
+
+        if (isArraySection) {
+            updatedOntology[sectionKey].push({}); // Add empty object for arrays (rules, templates)
+        } else {
+            updatedOntology[sectionKey][newItemKey] = {}; // Add empty object for maps (properties, uiHints)
+        }
+
+        // Save immediately to reflect the new item in the UI
         this._handleSaveOntology(updatedOntology, noteId, dispatch);
     },
 
@@ -572,55 +605,71 @@ export const OntologyPlugin = {
 
         // Attempt to parse JSON for specific fields
         // Attempt to parse JSON for specific fields, handle errors gracefully
+        let parsedValue = value; // Use a temporary variable for parsed value
+        let parseError = false;
         if (['validation', 'options'].includes(fieldKey)) {
             try {
-                // Allow empty string for empty object/array
-                const trimmedValue = value.trim();
+                const trimmedValue = String(value).trim(); // Ensure it's a string before trimming
                 if (trimmedValue === '') {
-                    value = fieldKey === 'options' ? [] : {}; // Default empty based on field
+                    parsedValue = fieldKey === 'options' ? [] : {}; // Default empty based on field
                 } else {
-                    value = JSON.parse(trimmedValue);
+                    parsedValue = JSON.parse(trimmedValue);
                 }
                 input.style.borderColor = ''; // Clear error indicator on success
+                input.title = ''; // Clear error tooltip
             } catch (e) {
                 console.warn(`Invalid JSON for ${sectionKey}[${itemKey}].${fieldKey}:`, value, e.message);
                 input.style.borderColor = 'red'; // Indicate error
+                input.title = `Invalid JSON: ${e.message}`; // Show error on hover
+                parseError = true;
                 // Do not proceed with saving if JSON is invalid
-                // Clear any pending debounced save for this field to prevent saving bad data
                 this.coreAPI.showGlobalStatus(`Invalid JSON for ${sectionKey}[${itemKey}].${fieldKey}`, "error", 4000);
-                if (this._debouncedSaveOntology.cancel) {
-                    this._debouncedSaveOntology.cancel();
-                }
-                return;
+                // Cancel any pending save to prevent saving bad data
+                this._debouncedSaveOntology.cancel?.(); // Use optional chaining for cancel
+                // Keep the invalid text in the input, don't return yet
+            }
+        } else if (input.type === 'number') {
+            // Convert number fields, allowing null for empty
+            parsedValue = value === '' ? null : Number(value);
+            if (value !== '' && isNaN(parsedValue)) {
+                 console.warn(`Invalid number input for ${sectionKey}[${itemKey}].${fieldKey}:`, value);
+                 input.style.borderColor = 'red';
+                 input.title = 'Invalid number';
+                 parseError = true;
+                 this._debouncedSaveOntology.cancel?.();
+            } else {
+                 input.style.borderColor = '';
+                 input.title = '';
             }
         }
-        // Convert number fields, allowing null for empty
-        if (input.type === 'number') {
-            value = value === '' ? null : Number(value);
+
+        // If there was a parse error, stop here and don't update the state/trigger save
+        if (parseError) {
+            return;
         }
 
-
-        // Use Immer-like update pattern (manual for now)
+        // Use Immer-like update pattern (manual deep copy for now)
         const updatedOntology = JSON.parse(JSON.stringify(ontologyData)); // Deep copy for safety
 
         try {
             if (Array.isArray(updatedOntology[sectionKey])) {
                 const index = parseInt(itemKey, 10);
-                if (updatedOntology[sectionKey][index]) {
-                    updatedOntology[sectionKey][index][fieldKey] = value;
+                if (updatedOntology[sectionKey]?.[index]) {
+                    updatedOntology[sectionKey][index][fieldKey] = parsedValue; // Use parsed value
                 }
             } else {
-                if (updatedOntology[sectionKey]?.[itemKey]) {
-                    updatedOntology[sectionKey][itemKey][fieldKey] = value;
-                }
+                // Ensure the section and item key exist before assigning
+                if (!updatedOntology[sectionKey]) updatedOntology[sectionKey] = {};
+                if (!updatedOntology[sectionKey][itemKey]) updatedOntology[sectionKey][itemKey] = {};
+                updatedOntology[sectionKey][itemKey][fieldKey] = parsedValue; // Use parsed value
             }
         } catch (e) {
             console.error("Error updating ontology structure:", e);
+            this.coreAPI.showGlobalStatus("Internal error updating ontology structure.", "error");
             return; // Don't save if structure is wrong
         }
 
-
-        // Debounce saving
+        // Debounce saving the updated structure
         this._debouncedSaveOntology(updatedOntology, noteId, dispatch);
     },
 
@@ -631,15 +680,17 @@ export const OntologyPlugin = {
 
     _handleSaveOntology(updatedOntology, noteId, dispatch) {
         try {
-            // Clean up empty keywords before saving
-            if (updatedOntology.keywords) {
-                if (updatedOntology.keywords.categories) {
-                    updatedOntology.keywords.categories = updatedOntology.keywords.categories.map(c => c.trim()).filter(Boolean);
-                }
-                if (updatedOntology.keywords.tags) {
-                    updatedOntology.keywords.tags = updatedOntology.keywords.tags.map(t => t.trim()).filter(Boolean);
-                }
+            // Ensure keywords section exists before cleaning
+            if (!updatedOntology.keywords) {
+                updatedOntology.keywords = { categories: [], tags: [] };
             }
+            // Clean up empty keywords before saving
+            updatedOntology.keywords.categories = (updatedOntology.keywords.categories || [])
+                .map(c => String(c).trim()) // Ensure string and trim
+                .filter(Boolean); // Remove empty strings
+            updatedOntology.keywords.tags = (updatedOntology.keywords.tags || [])
+                .map(t => String(t).trim()) // Ensure string and trim
+                .filter(Boolean); // Remove empty strings
 
             const ontologyString = JSON.stringify(updatedOntology, null, 2);
             dispatch({

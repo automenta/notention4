@@ -239,14 +239,25 @@ export const MatcherPlugin = {
 
                 case 'CORE_DELETE_NOTE': {
                     const {noteId} = action.payload;
+                    // Also clear related notes state for deleted note
+                    if (matcherState.relatedNotes[noteId]) {
+                        delete matcherState.relatedNotes[noteId];
+                    }
+                    // Also clear embedding status
+                    if (matcherState.embeddingStatus[noteId]) {
+                         delete matcherState.embeddingStatus[noteId];
+                    }
                     // Find and remove cache keys associated with this noteId.
-                    const cacheKeysToDelete = Object.keys(draft.runtimeCache)
-                        .filter(key => key.startsWith(`matcher_embedding_${noteId}_`));
+                    // Ensure runtimeCache exists before accessing keys
+                    if (draft.runtimeCache) {
+                        const cacheKeysToDelete = Object.keys(draft.runtimeCache)
+                            .filter(key => key.startsWith(`matcher_embedding_${noteId}_`));
 
-                    if (cacheKeysToDelete.length > 0) {
-                        cacheKeysToDelete.forEach(key => {
-                            delete draft.runtimeCache[key]; // Immer handles mutation
-                        });
+                        if (cacheKeysToDelete.length > 0) {
+                            cacheKeysToDelete.forEach(key => {
+                                delete draft.runtimeCache[key]; // Immer handles mutation
+                            });
+                        }
                     }
                     break;
                 }
@@ -370,19 +381,24 @@ export const MatcherPlugin = {
                 if (action.type === 'CORE_UPDATE_NOTE' && !action.payload.changes?.content) {
                     // If only name changed, maybe don't re-trigger? For now, let it re-trigger matching.
                 }
-                debouncedTriggerMatching(noteId, state, storeApi.dispatch);
+                // Pass the updated state to the debounced function
+                debouncedTriggerMatching(noteId, storeApi.getState(), storeApi.dispatch);
 
                 // Also trigger background embedding if content changed
                 if (action.type === 'CORE_UPDATE_NOTE' && action.payload.changes?.content) {
-                    debouncedTriggerEmbedding(noteId, state, storeApi.dispatch);
+                    // Pass the updated state
+                    debouncedTriggerEmbedding(noteId, storeApi.getState(), storeApi.dispatch);
                 }
             }
 
             // Trigger background embedding for newly added notes
             if (action.type === 'CORE_ADD_NOTE') {
-                const newNoteId = state.noteOrder[0]; // Assuming core adds to the start
+                // Get state *after* the note was added
+                const postAddState = storeApi.getState();
+                const newNoteId = postAddState.noteOrder[0]; // Assuming core adds to the start
                 if (newNoteId) {
-                    debouncedTriggerEmbedding(newNoteId, state, storeApi.dispatch);
+                    // Pass the updated state
+                    debouncedTriggerEmbedding(newNoteId, postAddState, storeApi.dispatch);
                 }
             }
 
@@ -545,16 +561,18 @@ export const MatcherPlugin = {
                 const displayConfig = {...defaultValues, ...currentValues};
 
                 // --- Input Handlers ---
-                const handleInput = (key, value) => { // Removed schema parameter
-                    createDebouncedSaver(key, settingsOntology[key], currentProperties, settingsNote.id, dispatch)(value); // Schema is now retrieved inside createDebouncedSaver
+                const handleInput = (key, value, schema) => { // Added schema back for createDebouncedSaver
+                    createDebouncedSaver(key, schema, currentProperties, settingsNote.id, dispatch)(value);
                 };
                 const handleNumberInput = (key, value, schema) => {
                     const isFloat = schema.step && String(schema.step).includes('.');
                     const number = isFloat ? parseFloat(value) : parseInt(value, 10);
                     if (!isNaN(number)) {
-                        handleInput(key, number); // Schema not passed here either
+                        // Pass schema to handleInput
+                        handleInput(key, number, schema);
                     } else if (value === '') {
-                        handleInput(key, null); // Schema not passed here either
+                         // Pass schema to handleInput when clearing
+                        handleInput(key, null, schema);
                     }
                 };
 
@@ -594,7 +612,7 @@ export const MatcherPlugin = {
                     } else { // Default text (add more types if needed)
                         inputElement = html`<input type="text" id=${inputId} .value=${currentValue ?? ''}
                                                            placeholder=${schema.placeholder || ''}
-                                                           @input=${(e) => handleInput(key, e.target.value)}>`; // Schema not passed here
+                                                           @input=${(e) => handleInput(key, e.target.value, schema)}>`; // Pass schema here
                     }
 
                     return html`
@@ -936,7 +954,8 @@ export const MatcherPlugin = {
 
         if (!textToEmbed) {
             // console.log(`MatcherPlugin: Note ${note.id} has no content to embed.`);
-            this._coreAPI.dispatch({type: 'MATCHER_EMBEDDING_failure', payload: {noteId: note.id}}); // Mark as failed if no content
+            // Fix typo: failure -> FAILURE
+            this._coreAPI.dispatch({type: 'MATCHER_EMBEDDING_FAILURE', payload: {noteId: note.id}}); // Mark as failed if no content
             return null; // Cannot embed empty text
         }
 
