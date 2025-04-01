@@ -1457,7 +1457,10 @@ const coreReducer = (draft, action) => {
         }
 
         case 'CORE_OPEN_MODAL': {
-            draft.uiState.activeModal = action.payload.modalId;
+            // draft.uiState.activeModal = action.payload.modalId; // REMOVE THIS LINE
+            draft.uiState.modalType = action.payload.modalType; // Use modalType from payload
+            draft.uiState.modalProps = action.payload.modalProps || null; // Store props if provided
+            draft.uiState.propertyValidationErrors = {}; // Clear validation errors when opening a modal
             break;
         }
         case 'CORE_CLOSE_MODAL': {
@@ -1519,12 +1522,7 @@ const coreReducer = (draft, action) => {
                 type: 'warning',
                 duration: 0
             };
-            if (draft.uiState.propertyValidationErrors?.[noteId]?.[propertyId]) {
-                delete draft.uiState.propertyValidationErrors[noteId][propertyId];
-                if (Object.keys(draft.uiState.propertyValidationErrors[noteId]).length === 0) {
-                    delete draft.uiState.propertyValidationErrors[noteId];
-                }
-            }
+            // Removed invalid propertyValidationErrors cleanup block here
             break;
         }
 

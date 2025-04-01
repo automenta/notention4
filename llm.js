@@ -621,7 +621,7 @@ Generated Note Content:
                 const createDebouncedSaver = (key, schema) => {
                     if (!this._debouncedSaveFunctions[key]) {
                         this._debouncedSaveFunctions[key] = this._coreAPI.utils.debounce((value) => {
-                            console.log(`LLMPlugin: Saving setting ${key} =`, typeof value === 'string' && value.length > 50 ? value.substring(0, 50) + '...' : value); // Avoid logging long values like keys
+                            // console.log(`LLMPlugin: Saving setting ${key} =`, typeof value === 'string' && value.length > 50 ? value.substring(0, 50) + '...' : value); // Avoid logging long values like keys
 
                             const existingProp = currentProperties.find(p => p.key === key);
                             let actionType = 'PROPERTY_ADD';

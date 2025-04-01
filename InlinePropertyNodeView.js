@@ -255,6 +255,7 @@ export class InlinePropertyNodeView {
                 // Do NOT switch back to display mode
                 // Ensure isEditing remains true
                 this.isEditing = true;
+                this.coreAPI?.showGlobalStatus(`Invalid value for ${key}: ${validationResult.message}`, "warning", 3000); // Show status message
                 return; // Stop processing here
             }
             // --- End Validation ---
@@ -276,11 +277,8 @@ export class InlinePropertyNodeView {
                 });
                 // Optimistically update node attribute for smoother UI transition
                 this.node.attrs.value = newValueNormalized;
-            } else {
-                console.log(`InlinePropertyNodeView: No changes detected for ${key}.`);
             }
-        } else {
-            console.log(`InlinePropertyNodeView: Editing cancelled for ${key}.`);
+            // Removed console logs for no changes/cancellation
         }
 
         // Revert to display mode ONLY if validation passed or saveChanges was false

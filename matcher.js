@@ -244,7 +244,6 @@ export const MatcherPlugin = {
                         .filter(key => key.startsWith(`matcher_embedding_${noteId}_`));
 
                     if (cacheKeysToDelete.length > 0) {
-                        // console.log(`MatcherPlugin Reducer: Deleting ${cacheKeysToDelete.length} embedding cache entries for deleted note ${noteId}`);
                         cacheKeysToDelete.forEach(key => {
                             delete draft.runtimeCache[key]; // Immer handles mutation
                         });
@@ -283,7 +282,6 @@ export const MatcherPlugin = {
             const cachedEmbedding = state.runtimeCache[cacheKey];
 
             if (cachedEmbedding || currentStatus === 'pending') {
-                // console.log(`Matcher Middleware: Skipping background embedding for ${noteId} (cached or pending).`);
                 return;
             }
 
@@ -336,14 +334,10 @@ export const MatcherPlugin = {
                 const topN = settings?.topN ?? defaultOntology.topN.default ?? 5;
                 const scoreThreshold = settings?.scoreThreshold ?? defaultOntology.scoreThreshold.default ?? 0.3;
 
-                // console.log(`Matcher Middleware: Filtering ${results.length} results with threshold ${scoreThreshold}, limiting to ${topN}`);
-
                 const topMatches = results
                     .filter(r => r.score >= scoreThreshold) // Apply threshold
                     .sort((a, b) => b.score - a.score)     // Sort descending by score
                     .slice(0, topN);                       // Limit to top N
-
-                // console.log(`Matcher Middleware: Found ${topMatches.length} matches above threshold.`);
 
                 dispatch({type: 'MATCHER_FIND_RELATED_SUCCESS', payload: {noteId, matches: topMatches}});
 
@@ -409,7 +403,7 @@ export const MatcherPlugin = {
         const createDebouncedSaver = (key, schema, currentProperties, settingsNoteId, dispatch) => {
             if (!debouncedSaveFunctions[key]) {
                 debouncedSaveFunctions[key] = coreAPI.utils.debounce((value) => {
-                    console.log(`MatcherPlugin: Saving setting ${key} =`, value);
+                    // console.log(`MatcherPlugin: Saving setting ${key} =`, value);
                     const existingProp = currentProperties.find(p => p.key === key);
                     let actionType = 'PROPERTY_ADD';
                     let payload = {
@@ -930,7 +924,6 @@ export const MatcherPlugin = {
         const cachedEmbedding = this._coreAPI.getRuntimeCache(cacheKey);
 
         if (cachedEmbedding) {
-            // console.log(`MatcherPlugin: Using cached embedding for note ${note.id} (updatedAt: ${note.updatedAt})`);
             // Ensure status is 'generated' if we found a cached version
             const currentStatus = this._coreAPI.getState().pluginRuntimeState?.[this.id]?.embeddingStatus?.[note.id];
             if (currentStatus !== 'generated') {
@@ -939,7 +932,6 @@ export const MatcherPlugin = {
             return cachedEmbedding;
         }
 
-        // console.log(`MatcherPlugin: Generating embedding for note ${note.id} (updatedAt: ${note.updatedAt})`);
         const textToEmbed = `${note.name || ''}\n\n${note.content || ''}`.trim();
 
         if (!textToEmbed) {
@@ -1009,7 +1001,6 @@ export const MatcherPlugin = {
         magB = Math.sqrt(magB);
 
         if (magA === 0 || magB === 0) {
-            // console.log("MatcherPlugin: Zero magnitude vector in cosineSimilarity.");
             // If both vectors are zero vectors, are they similar (1) or dissimilar (0)? Let's say 0.
             return 0;
         }

@@ -174,7 +174,6 @@ export const OntologyPlugin = {
         if (configNote && configNote.content) {
             // Check if we already loaded this version
             if (configNote.id === this._configNoteId && configNote.updatedAt === this._configNoteLastUpdate) {
-                // console.log("OntologyPlugin: Skipping reload, note unchanged.");
                 return;
             }
 
@@ -221,8 +220,6 @@ export const OntologyPlugin = {
                 this._configNoteId = null;
                 this._configNoteLastUpdate = 0;
                 this.coreAPI.publishEvent('ONTOLOGY_UNLOADED', {}); // Notify unloaded state
-            } else {
-                // console.log("OntologyPlugin: No config note found, ontology remains empty.");
             }
         }
     },
@@ -535,7 +532,8 @@ export const OntologyPlugin = {
             updatedOntology[sectionKey] = [...updatedOntology[sectionKey], {}]; // Add empty object for arrays (rules, templates)
         } else {
             if (!newItemKey || updatedOntology[sectionKey]?.[newItemKey]) {
-                alert(`Invalid or duplicate key: "${newItemKey}"`);
+                // alert(`Invalid or duplicate key: "${newItemKey}"`); // Use coreAPI status instead
+                this.coreAPI.showGlobalStatus(`Invalid or duplicate key: "${newItemKey}"`, "warning");
                 return;
             }
             updatedOntology[sectionKey] = {...(updatedOntology[sectionKey] || {}), [newItemKey]: {}}; // Add empty object for maps (properties, uiHints)
@@ -589,6 +587,7 @@ export const OntologyPlugin = {
                 input.style.borderColor = 'red'; // Indicate error
                 // Do not proceed with saving if JSON is invalid
                 // Clear any pending debounced save for this field to prevent saving bad data
+                this.coreAPI.showGlobalStatus(`Invalid JSON for ${sectionKey}[${itemKey}].${fieldKey}`, "error", 4000);
                 if (this._debouncedSaveOntology.cancel) {
                     this._debouncedSaveOntology.cancel();
                 }

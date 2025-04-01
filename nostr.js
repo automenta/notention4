@@ -261,7 +261,6 @@ export const NostrPlugin = {
         if (this._autoLockTimer) {
             clearTimeout(this._autoLockTimer);
             this._autoLockTimer = null;
-            // console.log("NostrPlugin: Auto-lock timer cleared.");
         }
     },
 
@@ -828,8 +827,6 @@ export const NostrPlugin = {
                     if (nostrState.activeSubscriptions[subscriptionId]) {
                         nostrState.activeSubscriptions[subscriptionId].status = 'eose_received';
                     }
-                    // Can trigger UI updates based on EOSE if needed
-                    // console.log(`EOSE received for subscription: ${subscriptionId}`);
                     break;
 
                 // --- Core Event Handling ---
@@ -1132,7 +1129,7 @@ export const NostrPlugin = {
                         coreAPI.showToast("New key generated.", "success");
                     } catch (e) {
                         console.error("Keygen fail:", e);
-                        coreAPI.showToast(`Keygen fail: ${e.message}`, "error");
+                        coreAPI.showGlobalStatus(`Key generation failed: ${e.message}`, "error"); // Use showGlobalStatus
                     }
                 };
                 // --- Render Logic (HTML structure largely unchanged, uses displayPubkey) ---

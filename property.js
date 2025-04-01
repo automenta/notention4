@@ -119,7 +119,6 @@ export const PropertiesPlugin = {
                     };
                     propsArray.push(newProp);
                     note.updatedAt = Date.now(); // Mark note as updated
-                    // console.log(`PropertiesPlugin: Added property to note ${noteId}:`, newProp);
                     break;
                 }
 
@@ -211,9 +210,6 @@ export const PropertiesPlugin = {
                         updatedProp.updatedAt = Date.now();
                         propsArray[propIndex] = updatedProp;
                         note.updatedAt = Date.now(); // Mark note as updated
-                        // console.log(`PropertiesPlugin: Updated property ${propertyId} on note ${noteId}:`, changes);
-                    } else {
-                        // console.log(`PropertiesPlugin: PROPERTY_UPDATE - No effective changes detected for property ${propertyId}`);
                     }
                     break;
                 }
@@ -234,9 +230,6 @@ export const PropertiesPlugin = {
                     if (filteredProps.length !== initialLength) {
                         note.pluginData[pluginId].properties = filteredProps;
                         note.updatedAt = Date.now(); // Mark note as updated only if something was deleted
-                        // console.log(`PropertiesPlugin: Deleted property ${propertyId} from note ${noteId}`);
-                    } else {
-                        // console.warn(`PropertiesPlugin: PROPERTY_DELETE - Property not found to delete: ${propertyId} on note ${noteId}`);
                     }
                     break;
                 }

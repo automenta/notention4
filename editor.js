@@ -466,7 +466,6 @@ function SuggestionPlugin(dispatch) {
                 if (mappedSet !== nextPluginState.decorationSet) {
                     nextPluginState = {...nextPluginState, decorationSet: mappedSet};
                     currentDecorationSet = mappedSet; // Update local variable
-                    // console.log(`SuggestionPlugin State: Decorations mapped`);
                 }
 
                 return nextPluginState; // Return the potentially updated plugin state
@@ -527,7 +526,6 @@ function SuggestionPlugin(dispatch) {
 
                 // Only update decorations if the relevant suggestions have actually changed
                 if (currentSuggestionsJson !== previousSuggestionsJson) {
-                    // console.log(`SuggestionPlugin: Suggestions changed for note ${noteId}, updating decorations.`);
                     previousSuggestionsJson = currentSuggestionsJson; // Update cache
                     destroyTippyInstances(); // Clear old popovers before creating new decorations
 
@@ -605,7 +603,6 @@ function SuggestionPlugin(dispatch) {
                     const oldNoteId = pluginState?.noteId; // Get noteId from the current plugin state
 
                     if (newNoteId !== oldNoteId) {
-                        // console.log(`SuggestionPlugin: Note ID changed from ${oldNoteId} to ${newNoteId}. Updating plugin state.`);
                         // Note ID has changed, clear old popovers and dispatch a transaction
                         // to update the noteId in the plugin state and clear existing decorations.
                         destroyTippyInstances();
@@ -1115,7 +1112,6 @@ export const RichTextEditorPlugin = {
                 },
                 insertContentAtCursor: (content) => {
                     if (this._editorInstance && !this._editorInstance.inactive()) {
-                        // console.log("EditorService: Inserting content at cursor:", content.substring(0, 50) + "...");
                         this._editorInstance._tiptapInstance?.chain().focus().insertContent(content).run();
                     }
                 },
