@@ -19,7 +19,6 @@ import {
 } from './ui.js';
 
 
-// Plugins
 import {PropertiesPlugin} from './property.js';
 import {OntologyPlugin} from './ontology.js';
 import {SemanticParserPlugin} from "./parser.js";
@@ -98,7 +97,6 @@ class StateManager {
         );
     }
 
-    // Immer integration
     _baseDispatch(action) {
         if (this._isDispatching) {
             console.warn(`State: Concurrent dispatch detected for action [${action.type}]. Action ignored.`);
@@ -148,7 +146,6 @@ class StateManager {
         return this._dispatchChain(action);
     }
 
-    // Plugin methods
     registerReducer(pluginId, reducerFn) {
         if (typeof reducerFn !== 'function') {
             console.error(`State: Attempted to register non-function reducer for plugin [${pluginId}].`);
@@ -291,7 +288,6 @@ class UIRenderer {
         console.log("UIRenderer initialized with lit-html.");
     }
 
-    // Lazy getter for Ontology Service
     _getOntologyService() {
         if (!this._ontologyService) {
             this._ontologyService = window.realityNotebookCore?.getService('OntologyService');
@@ -400,7 +396,6 @@ class UIRenderer {
         const {notes, noteOrder, uiState} = state;
         const {selectedNoteId, searchTerm, noteListSortMode = 'time'} = uiState;
 
-        // Enhanced Filtering
         const {textQuery, structuredFilters} = this._parseSearchQuery(searchTerm || '');
         const lowerTextQuery = textQuery.toLowerCase();
 
@@ -418,10 +413,8 @@ class UIRenderer {
 
             return textMatch && structuredMatch;
         });
-        // End Enhanced Filtering
 
 
-        // Sort filtered notes
         const getPriority = (noteId) => {
             const note = notes[noteId];
             const props = note?.pluginData?.properties?.properties || [];
@@ -495,7 +488,6 @@ class UIRenderer {
                             title="Delete Note" aria-label="Delete Note">Delete
                     </button>
                     ${this._renderSlot(state, SLOT_EDITOR_HEADER_ACTIONS, note.id)}
-                    <!-- LLM Actions -->
                     <button class="editor-header-button llm-action-button"
                             @click=${() => this._handleLlmSummarize(note.id)} title="Summarize selection or note">
                         Summarize
@@ -606,7 +598,6 @@ class UIRenderer {
         });
     }
 
-    // LLM Action Handlers
     async _handleLlmSummarize(noteId) {
         const coreAPI = window.realityNotebookCore;
         const editorService = coreAPI?.getService('EditorService');
@@ -689,7 +680,6 @@ class UIRenderer {
         }
     }
 
-    // UI Event Handlers
     _handleOpenSettings = () => this._stateManager.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
     _handleCloseModal = () => this._stateManager.dispatch({type: 'CORE_CLOSE_MODAL'});
     _handleAddNote = () => this._stateManager.dispatch({type: 'CORE_ADD_NOTE'});
@@ -746,7 +736,6 @@ class UIRenderer {
         }
     };
 
-    // Search Query Parsing
     _parseSearchQuery(query) {
         const structuredFilters = [];
         const filterRegex = /(\w+)\s*(!?[:><]=?)\s*("([^"]*)"|'([^']*)'|(\S+))/g;
@@ -765,7 +754,6 @@ class UIRenderer {
         return {textQuery: textQuery.trim(), structuredFilters};
     }
 
-    // Structured Filter Evaluation
     _evaluateStructuredFilters(noteProperties, structuredFilters) {
         const ontologyService = this._getOntologyService();
 
@@ -847,7 +835,6 @@ class UIRenderer {
     }
 
 
-    // Centralized Modal Rendering
     _renderModal(state) {
         const {modalType, modalProps} = state.uiState;
         if (!modalType) return '';
@@ -867,7 +854,6 @@ class UIRenderer {
         }
     }
 
-    // Specific Modal Renderers
 
     _renderTemplateSelectorModal(state, props) {
         const {templates = [], context = 'insert', onSelectActionType = 'TEMPLATE_SELECTED'} = props;
@@ -1064,7 +1050,6 @@ class UIRenderer {
     }
 
 
-    // Plugin component registration
     registerSlotComponent(pluginId, slotName, renderFn) {
         if (!this._slotRegistry.has(slotName)) {
             this._slotRegistry.set(slotName, []);
@@ -1074,7 +1059,6 @@ class UIRenderer {
         this._scheduleRender();
     }
 
-    // Scroll position management
     _saveScrollPositions() {
         const noteList = this._rootElement?.querySelector('#note-list');
         if (noteList) this._scrollPositions.noteList = noteList.scrollTop;
@@ -1280,12 +1264,10 @@ class CoreAPI {
         Object.freeze(this.utils);
     }
 
-    // State access
     dispatch = (action) => this._stateManager.dispatch(action);
     getState = () => this._stateManager.getState();
     subscribe = (listener) => this._stateManager.subscribe(listener);
 
-    // State selectors
     getNoteById = (noteId) => this.getState().notes[noteId] || null;
     getSelectedNote = () => {
         const state = this.getState();
@@ -1299,11 +1281,9 @@ class CoreAPI {
     getPluginSettings = (pluginId) => this.getState().settings.plugins[pluginId] || {};
     getRuntimeCache = (key) => this.getState().runtimeCache[key];
 
-    // Event API
     publishEvent = (eventType, payload) => this._eventBus.publish(eventType, payload);
     subscribeToEvent = (eventType, handler) => this._eventBus.subscribe(eventType, handler);
 
-    // UI API
     showGlobalStatus = (message, type = 'info', duration = 5000, id = null) => {
         this.dispatch({type: 'CORE_SET_GLOBAL_STATUS', payload: {message, type, duration, id}});
         if (duration > 0 && duration !== Infinity) {
@@ -1321,12 +1301,10 @@ class CoreAPI {
         this.dispatch({type: 'CORE_CLEAR_GLOBAL_STATUS', payload: {id}});
     };
 
-    // Plugin and Service access
     getService = (serviceName) => this._pluginManager.getService(serviceName);
     getPluginAPI = (pluginId) => this._pluginManager.getPluginAPI(pluginId);
 }
 
-// Core Data Model & Initial State
 const initialAppState = {
     notes: {},
     noteOrder: [],
@@ -1550,7 +1528,6 @@ const coreReducer = (draft, action) => {
             break;
         }
 
-        // Property Validation
         case 'PROPERTY_VALIDATION_FAILURE': {
             const { noteId, propertyId, temporaryId, errorMessage } = action.payload;
             const idToUse = propertyId || temporaryId;
@@ -1582,7 +1559,6 @@ async function main() {
     let api = null;
 
     try {
-        // Initialize core
         const events = new EventBus();
         const state = new StateManager(initialAppState, coreReducer);
         const ui = new UIRenderer(state, 'app');
@@ -1591,13 +1567,11 @@ async function main() {
 
         api = plugins._coreAPI;
 
-        // Expose debug globals
         window.realityNotebookCore = api;
         window._getState = state.getState.bind(state);
         window._dispatch = state.dispatch.bind(state);
         window._clearState = persistence.clearState.bind(persistence);
 
-        // Load initial state
         api.showGlobalStatus("Loading saved data...", "info");
         let loadedState = null;
         try {
@@ -1614,7 +1588,6 @@ async function main() {
             api.showGlobalStatus("Error loading data. Starting with default state.", "error", 5000);
         }
 
-        // Register and activate plugins
         plugins.registerPlugins(PLUGINS);
         api.showGlobalStatus("Initializing plugins...", "info");
         try {

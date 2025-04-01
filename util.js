@@ -1,6 +1,5 @@
 import DOMPurify from 'dompurify';
 
-// Core Utilities
 export const Utils = {
     generateUUID: () => {
         if (typeof crypto !== 'undefined' && crypto.randomUUID)
@@ -73,7 +72,6 @@ export const Utils = {
         const sorted = [];
         const queue = [];
 
-        // Build graph and in-degrees for topological sort
         plugins.forEach((entry, pluginId) => {
             graph.set(pluginId, new Set());
             inDegree.set(pluginId, 0);
@@ -92,13 +90,11 @@ export const Utils = {
             });
         });
 
-        // Initialize queue with plugins with no dependencies
         inDegree.forEach((degree, pluginId) => {
             if (degree === 0)
                 queue.push(pluginId);
         });
 
-        // Kahn's algorithm for topological sort
         while (queue.length > 0) {
             const u = queue.shift();
             sorted.push(u);
@@ -110,7 +106,6 @@ export const Utils = {
             });
         }
 
-        // Detect cycles
         if (sorted.length !== plugins.size)
             throw new Error(`Circular dependency detected involving plugins: ${Array.from(plugins.keys()).filter(id => !sorted.includes(id)).join(', ')}`);
 
