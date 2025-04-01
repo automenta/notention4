@@ -19,14 +19,14 @@ import {
 } from './ui.js';
 
 
-//Plugins
+// Plugins
 import {PropertiesPlugin} from './property.js';
 import {OntologyPlugin} from './ontology.js';
 import {SemanticParserPlugin} from "./parser.js";
 import {RichTextEditorPlugin} from "./editor.js";
 import {NostrPlugin} from "./nostr.js";
 import {LLMPlugin} from "./llm.js";
-import {MatcherPlugin} from "./matcher.js"; // Import MatcherPlugin
+import {MatcherPlugin} from "./matcher.js";
 const PLUGINS = [
     PropertiesPlugin,
     OntologyPlugin,
@@ -34,24 +34,24 @@ const PLUGINS = [
     RichTextEditorPlugin,
     NostrPlugin,
     LLMPlugin,
-    MatcherPlugin // Add MatcherPlugin to the list
+    MatcherPlugin
 ];
 
 
 const {html, render} = window.litHtml;
 
-// --- 3. Core State Manager (with Immer) ---
+// Core State Manager (with Immer)
 class StateManager {
     _state = {};
-    _coreReducer = null; // Single core reducer function
-    _pluginReducers = new Map(); // Map<pluginId, reducerFn>
+    _coreReducer = null;
+    _pluginReducers = new Map();
     _middleware = [];
     _listeners = new Set();
     _dispatchChain = null;
-    _isDispatching = false; // Prevent re-entrant dispatches
+    _isDispatching = false;
 
     constructor(initialState, coreReducer) {
-        this._state = initialState; // Assume initialState is already structured correctly
+        this._state = initialState;
         if (typeof coreReducer !== 'function')
             throw new Error("State: coreReducer must be a function.");
 
@@ -61,7 +61,6 @@ class StateManager {
     }
 
     getState() {
-        // Return the current state. Convention is to treat it as immutable outside reducers.
         return this._state;
     }
 
@@ -88,19 +87,18 @@ class StateManager {
     getStoreApi() {
         return {
             getState: () => this.getState(),
-            dispatch: (action) => this._dispatchChain(action), // Use the composed chain
+            dispatch: (action) => this._dispatchChain(action),
         };
     }
 
     _buildDispatchChain() {
-        // console.log(`State: Rebuilding dispatch chain with ${this._middleware.length} middleware.`);
         return this._middleware.reduceRight(
             (next, mw) => mw(this.getStoreApi())(next),
             this._baseDispatch.bind(this)
         );
     }
 
-    // --- Immer Integration in _baseDispatch ---
+    // Immer Integration in _baseDispatch
     _baseDispatch(action) {
         if (this._isDispatching) {
             console.warn(`State: Concurrent dispatch detected for action [${action.type}]. Action ignored.`);
@@ -112,17 +110,13 @@ class StateManager {
         let nextState = oldState;
 
         try {
-            // Use Immer's produce to handle immutable updates
             nextState = produce(oldState, draft => {
-                // Apply core reducer (mutates draft)
                 try {
                     this._coreReducer(draft, action);
                 } catch (error) {
                     console.error(`State: Error in core reducer for action [${action.type}]`, error, action);
-                    // Optionally revert draft changes or dispatch error? Immer handles draft consistency.
                 }
 
-                // Apply all plugin reducers (mutates draft)
                 this._pluginReducers.forEach((reducerFn, pluginId) => {
                     try {
                         reducerFn(draft, action);
@@ -130,33 +124,31 @@ class StateManager {
                         console.error(`State: Error in plugin reducer for [${pluginId}] on action [${action.type}]`, error, action);
                     }
                 });
-            }); // Immer returns the new state if changes were made, or oldState if not
+            });
 
         } catch (error) {
             console.error("State: Error during Immer produce or reducer execution.", error, action);
-            // If produce itself fails, nextState remains oldState
             nextState = oldState;
         } finally {
             this._isDispatching = false;
         }
 
-        // Only update and notify if the state object reference has changed
         if (nextState !== oldState) {
             this._state = nextState;
             this._notifyListeners(oldState);
         }
-        return action; // Return the action (standard middleware pattern)
+        return action;
     }
 
     dispatch(action) {
         if (!action || typeof action.type !== 'string') {
             console.error("State: Invalid action dispatched. Action must be an object with a 'type' property.", action);
-            return undefined; // Indicate failure or do nothing
+            return undefined;
         }
         return this._dispatchChain(action);
     }
 
-    // --- Methods called by PluginManager ---
+    // Methods called by PluginManager
     registerReducer(pluginId, reducerFn) {
         if (typeof reducerFn !== 'function') {
             console.error(`State: Attempted to register non-function reducer for plugin [${pluginId}].`);
@@ -175,16 +167,16 @@ class StateManager {
             return;
         }
         this._middleware.push(middlewareFn);
-        this._dispatchChain = this._buildDispatchChain(); // Rebuild chain immediately
+        this._dispatchChain = this._buildDispatchChain();
         console.log(`State: Registered middleware from plugin [${pluginId}]`);
     }
 }
 
-// --- 4. Core Persistence Service ---
+// Core Persistence Service
 class PersistenceService {
     _stateManager = null;
     _isSaving = false;
-    _storageKey = 'realityNotebookAppState_v10.1_core'; // Unique key
+    _storageKey = 'realityNotebookAppState_v10.1_core';
     _localForage = null;
 
     constructor(stateManager) {
@@ -192,7 +184,6 @@ class PersistenceService {
         if (typeof localforage === 'undefined') {
             console.error("PersistenceService Error: localforage library not found. Persistence is disabled.");
             this._localForage = null;
-            // Optionally show a persistent error to the user via state
             stateManager.dispatch({
                 type: 'CORE_SET_GLOBAL_STATUS',
                 payload: {message: "Error: Cannot save data (Storage library missing).", type: 'error', duration: 0}
@@ -201,51 +192,48 @@ class PersistenceService {
             this._localForage = localforage;
             this._localForage.config({
                 name: 'RealityNotebook',
-                storeName: 'appState_v10_1', // Specific store name
+                storeName: 'appState_v10_1',
                 description: 'Stores Netention application state'
             });
-            // Debounced subscription to state changes for saving
             this._stateManager.subscribe(Utils.debounce(this._handleStateChange.bind(this), 1200));
             console.log("PersistenceService initialized with localForage.");
         }
     }
 
     async loadState() {
-        if (!this._localForage) return Promise.resolve(null); // Return null if no storage
+        if (!this._localForage) return Promise.resolve(null);
         try {
             console.log(`PersistenceService: Loading state '${this._storageKey}'...`);
             const savedState = await this._localForage.getItem(this._storageKey);
             if (savedState) {
                 console.log('PersistenceService: State loaded successfully.');
-                // TODO: Implement state migration logic here if versions differ significantly
             } else {
                 console.log('PersistenceService: No saved state found.');
             }
-            return savedState || null; // Return null if nothing found
+            return savedState || null;
         } catch (error) {
             console.error('PersistenceService: Error loading state', error);
             this._stateManager.dispatch({
                 type: 'CORE_SET_GLOBAL_STATUS',
                 payload: {message: "Error loading saved data.", type: 'error', duration: 10000}
             });
-            return null; // Return null on error
+            return null;
         }
     }
 
     async _handleStateChange(newState) {
-        if (!this._localForage) return; // Don't save if storage isn't available
+        if (!this._localForage) return;
         await this.saveState(newState);
     }
 
     async saveState(state) {
         if (!this._localForage) return;
-        if (this._isSaving) return; // Avoid concurrent saves
+        if (this._isSaving) return;
 
         this._isSaving = true;
         try {
             const stateToSave = this.filterStateForSaving(state);
             await this._localForage.setItem(this._storageKey, stateToSave);
-            // console.log('PersistenceService: State saved successfully.'); // Can be noisy
         } catch (error) {
             console.error('PersistenceService: Error saving state', error);
             this._stateManager.dispatch({
@@ -258,14 +246,11 @@ class PersistenceService {
     }
 
     filterStateForSaving(state) {
-        // Explicitly exclude transient state slices using destructuring
         const {
-            uiState,             // Exclude all transient UI state
-            pluginRuntimeState,  // Exclude all plugin runtime state
-            ...stateToSave        // Keep the rest (notes, noteOrder, settings, runtimeCache, systemNoteIndex)
+            uiState,
+            pluginRuntimeState,
+            ...stateToSave
         } = state;
-        // No deep cloning needed here as Immer ensures upstream immutability,
-        // and localForage handles serialization.
         return stateToSave;
     }
 
@@ -278,8 +263,7 @@ class PersistenceService {
         try {
             await this._localForage.removeItem(this._storageKey);
             console.log("PersistenceService: Application state cleared from localForage.");
-            // Optionally dispatch an action or reload
-            this._stateManager.dispatch({type: 'CORE_STATE_CLEARED'}); // Inform the app
+            this._stateManager.dispatch({type: 'CORE_STATE_CLEARED'});
         } catch (error) {
             console.error("PersistenceService: Error clearing state.", error);
             this._stateManager.dispatch({
@@ -295,7 +279,7 @@ class UIRenderer {
     _rootElement = null;
     _slotRegistry = new Map();
     _scrollPositions = {};
-    _ontologyService = null; // Cache ontology service
+    _ontologyService = null;
 
     constructor(stateManager, rootElementId = 'app') {
         this._stateManager = stateManager;
@@ -303,11 +287,7 @@ class UIRenderer {
         if (!this._rootElement) {
             throw new Error(`UIRenderer Critical Error: Root element with ID '${rootElementId}' not found!`);
         }
-        // Subscribe to state changes to trigger re-renders
         this._stateManager.subscribe(this._scheduleRender.bind(this));
-        // Cache ontology service on init
-        // Note: CoreAPI might not be fully ready here. Better to get it lazily.
-        // this._ontologyService = window.realityNotebookCore?.getService('OntologyService');
         console.log("UIRenderer initialized with lit-html.");
     }
 
@@ -321,20 +301,16 @@ class UIRenderer {
 
 
     _scheduleRender(newState) {
-        // Use requestAnimationFrame to batch renders for performance
         requestAnimationFrame(() => this.renderApp(newState));
     }
 
     renderApp(state = this._stateManager.getState()) {
-        // console.time("renderApp"); // Performance profiling
-        this._saveScrollPositions(); // Save scroll before potentially changing DOM structure
+        this._saveScrollPositions();
 
         try {
-            // Render the main VDOM tree using lit-html's render function
             render(this._renderMainVdomTree(state), this._rootElement);
         } catch (error) {
             console.error("UIRenderer: CRITICAL ERROR during renderApp!", error);
-            // Render an error message directly using lit-html
             render(html`
                 <div class="error-display">
                     <h1>Application Render Error</h1>
@@ -343,13 +319,11 @@ class UIRenderer {
                     <p>Please check the console for details. You may need to reload or clear application data.</p>
                 </div>`, this._rootElement);
         } finally {
-            this._restoreScrollPositions(); // Restore scroll after DOM updates
-            // console.timeEnd("renderApp");
+            this._restoreScrollPositions();
         }
     }
 
     _renderMainVdomTree(state) {
-        // Apply theme data attribute directly here
         document.documentElement.setAttribute('data-theme', state.settings.core.theme || 'light');
 
         const selectedNote = state.uiState.selectedNoteId ? state.notes[state.uiState.selectedNoteId] : null;
@@ -365,20 +339,17 @@ class UIRenderer {
                         <input type="search" id="core-search" placeholder="Search..."
                                .value=${state.uiState.searchTerm || ''} @input=${this._handleSearchInput}
                                aria-label="Search Notes">
-                        <!-- Slot for plugin buttons -->
                         <div data-slot="${SLOT_SIDEBAR_HEADER}">${this._renderSlot(state, SLOT_SIDEBAR_HEADER)}
                         </div>
                     </div>
                     <div class="sidebar-actions">
                         <button id="core-add-note" title="Add New Note" @click=${this._handleAddNote}>➕ Add Note
                         </button>
-                        <!-- Sort Control -->
                         <select id="core-note-sort" title="Sort Notes By" @change=${this._handleSortChange}
                                 .value=${state.uiState.noteListSortMode || 'time'}>
                             <option value="time">Sort: Time</option>
                             <option value="priority">Sort: Priority</option>
                         </select>
-                        <!-- Slot for actions below Add Note -->
                         <div data-slot="${SLOT_SIDEBAR_NOTE_LIST_ACTIONS}">
                             ${this._renderSlot(state, SLOT_SIDEBAR_NOTE_LIST_ACTIONS)}
                         </div>
@@ -429,51 +400,43 @@ class UIRenderer {
         const {notes, noteOrder, uiState} = state;
         const {selectedNoteId, searchTerm, noteListSortMode = 'time'} = uiState;
 
-        // --- Enhanced Filtering Logic ---
+        // Enhanced Filtering Logic
         const {textQuery, structuredFilters} = this._parseSearchQuery(searchTerm || '');
         const lowerTextQuery = textQuery.toLowerCase();
 
-        // 1. Filter notes based on text and structured queries
         let filteredNoteIds = noteOrder.filter(id => {
             const note = notes[id];
             if (!note || note.isArchived) return false;
 
-            // Text search match (if text query exists)
             const textMatch = !lowerTextQuery ||
                 (note.name.toLowerCase().includes(lowerTextQuery) ||
                     note.content.toLowerCase().includes(lowerTextQuery));
 
-            // Structured filter match (if filters exist)
             const properties = note.pluginData?.properties?.properties || [];
             const structuredMatch = structuredFilters.length === 0 ||
                 this._evaluateStructuredFilters(properties, structuredFilters);
 
-            // Must match both (if they exist)
             return textMatch && structuredMatch;
         });
-        // --- End Enhanced Filtering Logic ---
+        // End Enhanced Filtering Logic
 
 
-        // 2. Sort filtered notes
+        // Sort filtered notes
         const getPriority = (noteId) => {
             const note = notes[noteId];
             const props = note?.pluginData?.properties?.properties || [];
             const priorityProp = props.find(p => p.key?.toLowerCase() === 'priority');
-            // Default to a mid-range priority (e.g., 5) if not found or invalid
             return priorityProp ? (parseInt(priorityProp.value, 10) || 5) : 5;
         };
 
         filteredNoteIds.sort((a, b) => {
             if (noteListSortMode === 'priority') {
-                // Sort by priority descending (higher first)
                 return getPriority(b) - getPriority(a);
             } else { // Default to 'time'
-                // Sort by updatedAt descending (newer first)
                 return (notes[b]?.updatedAt || 0) - (notes[a]?.updatedAt || 0);
             }
         });
 
-        // 3. Render sorted list
         if (filteredNoteIds.length === 0) {
             return html`
                 <li style="padding: 1rem; color: var(--secondary-text-color);">
@@ -607,12 +570,6 @@ class UIRenderer {
                     </select>
                 </div>
                 <div class="settings-plugins">
-                    <!-- Settings Generation Enhancement (#0) -->
-                    <!-- Core provides the slot, but individual plugins now render -->
-                    <!-- their own forms based on their getSettingsOntology() -->
-                    <!-- and reading properties from their config System Note -->
-                    <!-- This section title remains, but the rendering logic -->
-                    <!-- inside the slot functions (e.g., in llm.js, nostr.js) changes -->
                     <h3>Plugin Settings</h3>
                     <div data-slot="${SLOT_SETTINGS_PANEL_SECTION}">
                         ${this._renderSlot(state, SLOT_SETTINGS_PANEL_SECTION)}
@@ -636,11 +593,10 @@ class UIRenderer {
                 const props = {
                     state,
                     dispatch: this._stateManager.dispatch.bind(this._stateManager),
-                    coreAPI: window.realityNotebookCore, // Provide Core API
+                    coreAPI: window.realityNotebookCore,
                     noteId: noteId || state.uiState.selectedNoteId || null,
-                    html, // Pass lit-html tag function if needed by plugin
+                    html,
                 };
-                // Assuming renderFn returns a lit-html TemplateResult
                 return renderFn(props);
             } catch (error) {
                 console.error(`UIRenderer: Error rendering slot [${slotName}] by plugin [${pluginId}]`, error);
@@ -650,7 +606,7 @@ class UIRenderer {
         });
     }
 
-    // --- LLM Action Handlers ---
+    // LLM Action Handlers
     async _handleLlmSummarize(noteId) {
         const coreAPI = window.realityNotebookCore;
         const editorService = coreAPI?.getService('EditorService');
@@ -658,7 +614,7 @@ class UIRenderer {
         if (!editorService || !llmService) return coreAPI?.showGlobalStatus("LLM/Editor service not ready.", "warning");
 
         const selectedText = editorService.getSelectedText();
-        const textToSummarize = selectedText || editorService.getContent(); // Summarize selection or whole note
+        const textToSummarize = selectedText || editorService.getContent();
 
         if (!textToSummarize || textToSummarize.trim().length < 20) {
             return coreAPI.showGlobalStatus("Not enough text selected/available to summarize.", "info");
@@ -668,19 +624,12 @@ class UIRenderer {
         try {
             const summary = await llmService.summarizeText(textToSummarize);
             if (summary) {
-                // Insert summary below current content or replace selection? Let's insert below.
-                const currentContent = editorService.getContent();
                 const summaryBlock = `\n\n---\n**AI Summary:**\n${summary}\n---`;
-                // If text was selected, maybe replace it instead? For now, always append.
-                // editorService.setContent(currentContent + summaryBlock); // Append
-                editorService.insertContentAtCursor(summaryBlock); // Insert at cursor
+                editorService.insertContentAtCursor(summaryBlock);
                 coreAPI.showGlobalStatus("Summary generated.", "success", 3000);
-            } else {
-                // Error/null handled within summarizeText
             }
         } catch (e) {
             console.error("Summarize action failed:", e);
-            // Error shown by LLMService
         }
     }
 
@@ -702,16 +651,12 @@ class UIRenderer {
         try {
             const answer = await llmService.answerQuestion(contextText, question);
             if (answer) {
-                // Insert answer into the editor
                 const answerBlock = `\n\n---\n**Q:** ${question}\n**A:** ${answer}\n---`;
                 editorService.insertContentAtCursor(answerBlock);
                 coreAPI.showGlobalStatus("Answer inserted into note.", "success", 3000);
-            } else {
-                // Error/null handled within answerQuestion, status message shown there
             }
         } catch (e) {
             console.error("Ask Question action failed:", e);
-            // Error shown by LLMService
         }
     }
 
@@ -732,36 +677,32 @@ class UIRenderer {
             if (actions === null) {
                 // Error handled within getActions, status message shown there
             } else if (actions.length > 0) {
-                // Insert actions as a list into the editor
                 const actionsList = actions.map(a => `<li>${a}</li>`).join('');
                 const actionsBlock = `\n\n---\n**Suggested Actions:**\n<ul>${actionsList}</ul>\n---`;
                 editorService.insertContentAtCursor(actionsBlock);
                 coreAPI.showGlobalStatus("Suggested actions inserted into note.", "success", 3000);
             } else {
-                coreAPI.showGlobalStatus("No specific actions suggested by AI.", "info", 3000); // Keep info message
+                coreAPI.showGlobalStatus("No specific actions suggested by AI.", "info", 3000);
             }
         } catch (e) {
             console.error("Get Actions action failed:", e);
-            // Error shown by LLMService
         }
     }
 
-    // --- End LLM Action Handlers ---
-
-    // --- UI Event Handlers (Bound using arrow functions) ---
+    // UI Event Handlers
     _handleOpenSettings = () => this._stateManager.dispatch({type: 'CORE_OPEN_MODAL', payload: {modalId: 'settings'}});
     _handleCloseModal = () => this._stateManager.dispatch({type: 'CORE_CLOSE_MODAL'});
     _handleAddNote = () => this._stateManager.dispatch({type: 'CORE_ADD_NOTE'});
     _handleSelectNote = (noteId) => this._stateManager.dispatch({type: 'CORE_SELECT_NOTE', payload: {noteId}});
-    _handleArchiveNote = (noteId) => () => this._stateManager.dispatch({type: 'CORE_ARCHIVE_NOTE', payload: {noteId}}); // Wrap if needed for direct use
-    _handleDeleteNote = (noteId, noteName) => () => { // Wrap if needed for direct use
+    _handleArchiveNote = (noteId) => () => this._stateManager.dispatch({type: 'CORE_ARCHIVE_NOTE', payload: {noteId}});
+    _handleDeleteNote = (noteId, noteName) => () => {
         if (confirm(`Are you sure you want to permanently delete "${noteName || 'Untitled Note'}"?`)) {
             this._stateManager.dispatch({type: 'CORE_DELETE_NOTE', payload: {noteId}});
         }
     };
     _handleCoreSettingChange = (e) => {
         const key = e.target.dataset.settingKey;
-        const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value; // Handle checkbox
+        const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
         if (key) {
             this._stateManager.dispatch({type: 'CORE_SET_CORE_SETTING', payload: {key, value}});
         }
@@ -774,32 +715,21 @@ class UIRenderer {
         type: 'CORE_SET_NOTE_LIST_SORT_MODE',
         payload: e.target.value
     });
-    _handleTitleInput = (noteId) => (e) => { // Debounced update for title
+    _handleTitleInput = (noteId) => (e) => {
         const newValue = e.target.value;
-        // Use a debounced function if desired, or dispatch directly
-        // For simplicity, dispatching directly here. Consider debouncing if performance is an issue.
         this._stateManager.dispatch({type: 'CORE_UPDATE_NOTE', payload: {noteId, changes: {name: newValue}}});
     };
-    _handleContentInput = (noteId) => (e) => { // Debounced update for core textarea content
+    _handleContentInput = (noteId) => (e) => {
         const newValue = e.target.value;
-        // This handler is only for the *core* textarea, not Tiptap.
-        // Debouncing is recommended here.
-        // Example (assuming a debounce utility is available):
-        // this._debouncedContentUpdate(noteId, newValue);
-        // Direct dispatch for simplicity:
         this._stateManager.dispatch({type: 'CORE_UPDATE_NOTE', payload: {noteId, changes: {content: newValue}}});
     };
     _handleNoteListKeyDown = (e) => {
-        // Basic keyboard navigation for note list (example)
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault();
             const currentItem = e.target.closest('.note-list-item');
             const nextItem = e.key === 'ArrowDown' ? currentItem?.nextElementSibling : currentItem?.previousElementSibling;
             if (nextItem && nextItem.matches('.note-list-item')) {
                 nextItem.focus();
-                // Optionally select on navigation:
-                // const noteId = nextItem.dataset.noteId;
-                // if (noteId) this._handleSelectNote(noteId);
             }
         } else if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
@@ -811,16 +741,14 @@ class UIRenderer {
     _handleClearState = () => {
         if (confirm(`WARNING: This will delete ALL your notes and settings locally and cannot be undone. Are you absolutely sure?`)) {
             if (confirm(`SECOND WARNING: Please confirm again that you want to erase everything.`)) {
-                window._clearState(); // Call the debug function exposed globally
+                window._clearState();
             }
         }
     };
 
-    // --- Search Query Parsing Helper ---
+    // Search Query Parsing Helper
     _parseSearchQuery(query) {
         const structuredFilters = [];
-        // Regex to find key:value pairs, potentially with operators like >, <, !=
-        // Example: key:value key:"quoted value" key>10 key!=false
         const filterRegex = /(\w+)\s*(!?[:><]=?)\s*("([^"]*)"|'([^']*)'|(\S+))/g;
         let textQuery = query;
         let match;
@@ -828,117 +756,72 @@ class UIRenderer {
         while ((match = filterRegex.exec(query)) !== null) {
             const key = match[1];
             const operator = match[2];
-            // Value can be quoted or unquoted
             const value = match[4] ?? match[5] ?? match[6];
 
             structuredFilters.push({key: key.toLowerCase(), operator, value});
-
-            // Remove the matched filter from the text query part
             textQuery = textQuery.replace(match[0], '').trim();
         }
 
         return {textQuery: textQuery.trim(), structuredFilters};
     }
 
-    // --- Structured Filter Evaluation Helper ---
+    // Structured Filter Evaluation Helper
     _evaluateStructuredFilters(noteProperties, structuredFilters) {
-        const ontologyService = this._getOntologyService(); // Use lazy getter
+        const ontologyService = this._getOntologyService();
 
         for (const filter of structuredFilters) {
             const prop = noteProperties.find(p => p.key.toLowerCase() === filter.key);
 
-            // If filtering on a key the note doesn't have, it's not a match (unless operator is !=)
             if (!prop && filter.operator !== '!=') {
                 return false;
             }
-            // Handle != operator specifically for non-existent keys
             if (!prop && filter.operator === '!=') {
-                continue; // Property doesn't exist, so it's "not equal" to the filter value
+                continue;
             }
 
-            // Property exists, now compare values
             const propValue = prop.value;
             const filterValueStr = filter.value;
             const propType = prop.type || ontologyService?.inferType(propValue, filter.key) || 'text';
 
             let match = false;
 
-            // --- Comparison Logic (Needs refinement for dates, numbers, booleans) ---
             try {
-                // Basic type coercion/comparison
                 if (propType === 'number') {
                     const numProp = Number(propValue);
                     const numFilter = Number(filterValueStr);
                     if (!isNaN(numProp) && !isNaN(numFilter)) {
                         switch (filter.operator) {
-                            case ':':
-                            case '=':
-                                match = numProp === numFilter;
-                                break;
-                            case '>':
-                                match = numProp > numFilter;
-                                break;
-                            case '>=':
-                                match = numProp >= numFilter;
-                                break;
-                            case '<':
-                                match = numProp < numFilter;
-                                break;
-                            case '<=':
-                                match = numProp <= numFilter;
-                                break;
-                            case '!=':
-                                match = numProp !== numFilter;
-                                break;
-                            default:
-                                match = false; // Unsupported operator for type
+                            case ':': case '=': match = numProp === numFilter; break;
+                            case '>': match = numProp > numFilter; break;
+                            case '>=': match = numProp >= numFilter; break;
+                            case '<': match = numProp < numFilter; break;
+                            case '<=': match = numProp <= numFilter; break;
+                            case '!=': match = numProp !== numFilter; break;
+                            default: match = false;
                         }
                     }
                 } else if (propType === 'boolean') {
                     const boolProp = String(propValue).toLowerCase() === 'true' || propValue === true;
                     const boolFilter = String(filterValueStr).toLowerCase() === 'true' || filterValueStr === true;
                     switch (filter.operator) {
-                        case ':':
-                        case '=':
-                            match = boolProp === boolFilter;
-                            break;
-                        case '!=':
-                            match = boolProp !== boolFilter;
-                            break;
-                        default:
-                            match = false;
+                        case ':': case '=': match = boolProp === boolFilter; break;
+                        case '!=': match = boolProp !== boolFilter; break;
+                        default: match = false;
                     }
                 } else if (propType === 'date') {
-                    // TODO: Implement robust date comparison (e.g., using a library)
-                    // Handle relative dates ('today', 'next-week', 'yesterday') and operators
-                    // Placeholder: simple string comparison for now
                     const dateProp = new Date(propValue);
-                    const dateFilter = new Date(filterValueStr); // Very basic parsing
+                    const dateFilter = new Date(filterValueStr);
                     if (!isNaN(dateProp) && !isNaN(dateFilter)) {
                         switch (filter.operator) {
-                            case ':':
-                            case '=':
-                                match = dateProp.toDateString() === dateFilter.toDateString();
-                                break; // Compare day only
-                            case '>':
-                                match = dateProp > dateFilter;
-                                break;
-                            case '>=':
-                                match = dateProp >= dateFilter;
-                                break;
-                            case '<':
-                                match = dateProp < dateFilter;
-                                break;
-                            case '<=':
-                                match = dateProp <= dateFilter;
-                                break;
-                            case '!=':
-                                match = dateProp.toDateString() !== dateFilter.toDateString();
-                                break;
-                            default:
-                                match = false;
+                            case ':': case '=': match = dateProp.toDateString() === dateFilter.toDateString(); break;
+                            case '>': match = dateProp > dateFilter; break;
+                            case '>=': match = dateProp >= dateFilter; break;
+                            case '<': match = dateProp < dateFilter; break;
+                            case '<=': match = dateProp <= dateFilter; break;
+                            case '!=': match = dateProp.toDateString() !== dateFilter.toDateString(); break;
+                            default: match = false;
                         }
-                    } else { // Fallback to string compare if dates invalid
+                    } else {
                         match = String(propValue).toLowerCase().includes(filterValueStr.toLowerCase());
                     }
                 } else if (propType === 'list') {
@@ -946,32 +829,26 @@ class UIRenderer {
                     const lowerFilter = filterValueStr.toLowerCase();
                     match = listProp.some(item => String(item).toLowerCase().includes(lowerFilter));
                     if (filter.operator === '!=') match = !match;
-                    else if (filter.operator !== ':' && filter.operator !== '=') match = false; // Only equality/contains for lists now
-                } else { // Default: text comparison (case-insensitive contains)
+                    else if (filter.operator !== ':' && filter.operator !== '=') match = false;
+                } else { // Default: text comparison
                     const textProp = String(propValue).toLowerCase();
                     const textFilter = filterValueStr.toLowerCase();
                     match = textProp.includes(textFilter);
                     if (filter.operator === '!=') match = !match;
-                    else if (filter.operator !== ':' && filter.operator !== '=') match = false; // Only equality/contains for text now
+                    else if (filter.operator !== ':' && filter.operator !== '=') match = false;
                 }
             } catch (e) {
                 console.warn(`Error comparing property '${filter.key}' (type: ${propType})`, e);
                 match = false;
             }
-            // --- End Comparison Logic ---
-
-            // If any filter doesn't match, the whole set fails
             if (!match) return false;
         }
-
-        // All filters passed
         return true;
     }
 
 
-    // --- Centralized Modal Rendering Logic ---
+    // Centralized Modal Rendering Logic
     _renderModal(state) {
-        // Get modalType and modalProps from the NEW state structure
         const {modalType, modalProps} = state.uiState;
         if (!modalType) return '';
 
@@ -984,21 +861,20 @@ class UIRenderer {
                 return this._renderPropertyAddModal(state, modalProps);
             case 'propertyEdit':
                 return this._renderPropertyEditModal(state, modalProps);
-            // Add other modal types here
             default:
                 console.warn(`UIRenderer: Unknown modal type requested: ${modalType}`);
                 return '';
         }
     }
 
-    // --- Specific Modal Renderers ---
+    // Specific Modal Renderers
 
     _renderTemplateSelectorModal(state, props) {
-        const {templates = [], context = 'insert', onSelectActionType = 'TEMPLATE_SELECTED'} = props; // Expect templates array and context
+        const {templates = [], context = 'insert', onSelectActionType = 'TEMPLATE_SELECTED'} = props;
 
         const handleSelect = (template) => {
             this._stateManager.dispatch({type: onSelectActionType, payload: {template, context}});
-            this._handleCloseModal(); // Close modal after selection
+            this._handleCloseModal();
         };
 
         return html`
@@ -1023,7 +899,7 @@ class UIRenderer {
 
     _renderPropertyAddModal(state, props) {
         const {noteId, possibleKeys = [], onAddActionType = 'PROPERTY_ADD_CONFIRMED'} = props;
-        const coreAPI = window.realityNotebookCore; // Get core API instance
+        const coreAPI = window.realityNotebookCore;
         const ontologyService = coreAPI?.getService('OntologyService');
 
         const handleSubmit = (event) => {
@@ -1031,55 +907,18 @@ class UIRenderer {
             const form = event.target;
             const key = form.keySelect.value === '__custom__' ? form.customKey.value.trim() : form.keySelect.value;
             const value = form.value.value;
-            const temporaryId = `temp_${Utils.generateUUID()}`; // Generate temporary ID for potential error association
+            const temporaryId = `temp_${Utils.generateUUID()}`;
 
             if (key) {
-                // Dispatch the action, the reducer will handle validation
-                this._stateManager.dispatch({
-                    type: onAddActionType,
-                    payload: { noteId, key, value, temporaryId } // Pass temporaryId
-                });
-                // Don't close modal immediately, wait for state update to see if validation passed
-                // If validation passes, the error state for this tempId won't be set.
-                // If it fails, the error state *will* be set, and the modal should stay open showing the error.
-                // We need a way to check if the add was successful *after* dispatch. This is tricky.
-                // Option A: Close optimistically, rely on global status for error. (Simpler)
-                // Option B: Keep modal open, check error state on next render. (Better UX)
-
-                // Let's try Option B: Keep modal open, check error state in render.
-                // The modal will re-render with the error message if validation fails.
-                // If validation succeeds, the property will be added, and the modal *should* close.
-                // How to trigger close on success? Maybe the reducer clears the error *and* closes the modal? No, reducers shouldn't cause side effects.
-                // Maybe the component checks: if no error exists for tempId after dispatch, *then* close?
-
-                // Let's stick to the original plan: Dispatch, let reducer handle validation failure state.
-                // The modal render logic will show the error if it exists in the state.
-                // We need to manually close only if the dispatch *didn't* result in an error state for this tempId.
-                // This requires checking state *after* dispatch, which is awkward here.
-
-                // --- Revised Approach ---
-                // Dispatch the add action.
-                // The reducer will either add the property OR set a validation error in uiState.
-                // The modal's render function will check for the validation error associated with `temporaryId`.
-                // If an error is displayed, the user can correct and resubmit.
-                // If the property *is* successfully added (no error state set), how does the modal close?
-                // We can check in the render function: if the property now exists and there's no error, close? Seems complex.
-
-                // --- Simplest Approach (Compromise) ---
-                // Dispatch the add action. If validation fails *synchronously* within the reducer (which it does now),
-                // the error state will be set *before* this function continues. We can check it immediately after dispatch.
-                // This relies on synchronous reducer execution.
                 this._stateManager.dispatch({
                     type: onAddActionType,
                     payload: { noteId, key, value, temporaryId }
                 });
 
-                // Check state *immediately* after dispatch (assuming sync reducer)
                 const potentialError = this._stateManager.getState().uiState.propertyValidationErrors?.[noteId]?.[temporaryId];
                 if (!potentialError) {
-                    this._handleCloseModal(); // Close only if validation likely passed (no error set)
+                    this._handleCloseModal();
                 }
-                // If potentialError exists, the modal stays open, and the error will be rendered.
 
             } else {
                 coreAPI?.showGlobalStatus("Property key cannot be empty.", "warning");
@@ -1090,7 +929,7 @@ class UIRenderer {
             const customKeyInput = event.target.form.customKey;
             customKeyInput.style.display = event.target.value === '__custom__' ? 'block' : 'none';
             if (event.target.value !== '__custom__') {
-                customKeyInput.value = ''; // Clear custom if selection changes
+                customKeyInput.value = '';
             }
         };
 
@@ -1135,24 +974,20 @@ class UIRenderer {
             onUpdateActionType = 'PROPERTY_UPDATE_CONFIRMED',
             onDeleteActionType = 'PROPERTY_DELETE_CONFIRMED'
         } = props;
-        if (!property) return ''; // Should not happen
+        if (!property) return '';
         const coreAPI = window.realityNotebookCore;
         const ontologyService = coreAPI?.getService('OntologyService');
         const hints = ontologyService?.getUIHints(property.key) || {};
         const inputType = hints.inputType || 'text';
 
-        // Function to render the correct input based on type hint
         const renderInput = () => {
-            // Reuse logic from InlinePropertyNodeView or PropertiesPlugin UI
-            // For simplicity, using text input for now, but should be enhanced
-            // based on inputType (date, select, checkbox, range etc.)
             if (inputType === 'select' && hints.options) {
                 return html`<select name="value" required>
                     ${hints.options.map(opt => html`
                         <option value="${opt}" ?selected=${opt === property.value}>${opt}</option>
                     `)}
                 </select>`;
-            } else if (inputType === 'checkbox') { // Boolean
+            } else if (inputType === 'checkbox') {
                 return html`<input type="checkbox" name="value" .checked=${!!property.value}>`;
             } else if (inputType === 'date') {
                 const dateValue = property.value ? new Date(property.value).toISOString().split('T')[0] : '';
@@ -1168,31 +1003,26 @@ class UIRenderer {
             event.preventDefault();
             const form = event.target;
             const newKey = form.key.value.trim();
-            const newValueRaw = inputType === 'checkbox' ? form.value.checked : form.value.value; // Get value from checkbox or other input
-            // Normalize value based on original type before dispatching
+            const newValueRaw = inputType === 'checkbox' ? form.value.checked : form.value.value;
             const newValueNormalized = coreAPI.getPluginAPI('properties')?._normalizeValue(newValueRaw, property.type) ?? newValueRaw;
 
             if (newKey) {
                 const changes = {};
                 if (newKey !== property.key) changes.key = newKey;
                 if (newValueNormalized !== property.value) changes.value = newValueNormalized;
-                // TODO: Add type change possibility?
 
                 if (Object.keys(changes).length > 0) {
-                     // Dispatch update action
-                    this._stateManager.dispatch({
+                     this._stateManager.dispatch({
                         type: onUpdateActionType,
                         payload: {noteId, propertyId: property.id, changes}
                     });
 
-                    // Check state *immediately* after dispatch for validation errors
                     const potentialError = this._stateManager.getState().uiState.propertyValidationErrors?.[noteId]?.[property.id];
                     if (!potentialError) {
-                        this._handleCloseModal(); // Close only if validation likely passed
+                        this._handleCloseModal();
                     }
-                    // If potentialError exists, modal stays open, error is rendered.
                 } else {
-                    this._handleCloseModal(); // No changes, just close
+                    this._handleCloseModal();
                 }
             } else {
                 coreAPI?.showGlobalStatus("Property key cannot be empty.", "warning");
@@ -1223,7 +1053,6 @@ class UIRenderer {
                             ${state.uiState.propertyValidationErrors?.[noteId]?.[property.id] || ''}
                         </div>
                     </div>
-                    <!-- TODO: Add Type selector? -->
                     <div class="modal-actions">
                         <button type="button" class="danger" @click=${handleDelete}>Delete</button>
                         <button type="button" @click=${this._handleCloseModal}>Cancel</button>
@@ -1235,32 +1064,26 @@ class UIRenderer {
     }
 
 
-    // --- Method for plugins to register components ---
+    // Method for plugins to register components
     registerSlotComponent(pluginId, slotName, renderFn) {
         if (!this._slotRegistry.has(slotName)) {
             this._slotRegistry.set(slotName, []);
         }
-        // Prevent duplicate registration? Or allow multiple? Allow for now.
         this._slotRegistry.get(slotName).push({pluginId, renderFn});
         console.log(`UIRenderer: Registered component from [${pluginId}] for slot [${slotName}]`);
-        // Trigger a re-render after registration? Debounced?
-        this._scheduleRender(); // Schedule a render to show the new component
+        this._scheduleRender();
     }
 
-    // --- Scroll position saving/restoring ---
+    // Scroll position saving/restoring
     _saveScrollPositions() {
-        // Save scroll position for elements likely to need it
         const noteList = this._rootElement?.querySelector('#note-list');
         if (noteList) this._scrollPositions.noteList = noteList.scrollTop;
         const editorArea = this._rootElement?.querySelector('#editor-area');
         if (editorArea) this._scrollPositions.editorArea = editorArea.scrollTop;
-        // console.log("Saving scroll:", this._scrollPositions);
     }
 
     _restoreScrollPositions() {
-        // Use requestAnimationFrame to ensure DOM is settled before restoring
         requestAnimationFrame(() => {
-            // console.log("Attempting restore scroll:", this._scrollPositions);
             const noteList = this._rootElement?.querySelector('#note-list');
             if (noteList && this._scrollPositions.hasOwnProperty('noteList')) {
                 noteList.scrollTop = this._scrollPositions.noteList;
@@ -1269,7 +1092,6 @@ class UIRenderer {
             if (editorArea && this._scrollPositions.hasOwnProperty('editorArea')) {
                 editorArea.scrollTop = this._scrollPositions.editorArea;
             }
-            // Clear saved positions after restoring
             this._scrollPositions = {};
         });
     }
@@ -1288,7 +1110,7 @@ class PluginManager {
         this._stateManager = stateManager;
         this._uiRenderer = uiRenderer;
         this._eventBus = eventBus;
-        this._coreAPI = new CoreAPI(stateManager, this, uiRenderer, eventBus); // Pass 'this' for getService/getPluginAPI
+        this._coreAPI = new CoreAPI(stateManager, this, uiRenderer, eventBus);
         console.log("PluginManager initialized.");
     }
 
@@ -1309,7 +1131,7 @@ class PluginManager {
 
         const entry = {
             definition: pluginDefinition,
-            instance: null, // Will be the definition object itself
+            instance: null,
             status: 'registered',
             error: null,
             api: null
@@ -1326,17 +1148,14 @@ class PluginManager {
         } catch (e) {
             console.error("Plugin: Stopped activation due to dependency errors.", e);
             this._eventBus.publish('PLUGIN_ACTIVATION_FAILED', {error: e.message});
-            // Optionally show a global error status
             this._coreAPI.showGlobalStatus(`Plugin activation failed: ${e.message}`, 'error', 0);
-            return; // Stop activation
+            return;
         }
 
-        //console.log('Plugin: Activating plugins...');
         this._pluginLoadOrder.forEach(pluginId => {
             const entry = this._pluginRegistry.get(pluginId);
-            if (!entry || entry.status !== 'registered') return; // Should not happen if load order is correct
+            if (!entry || entry.status !== 'registered') return;
 
-            // Double-check dependencies are active (belt-and-suspenders)
             const deps = entry.definition.dependencies || [];
             const depsMet = deps.every(depId => this._pluginRegistry.get(depId)?.status === 'active');
             if (!depsMet) {
@@ -1355,26 +1174,20 @@ class PluginManager {
             console.log(`Plugin: [${pluginId}] activating`);
 
             try {
-                // Treat definition object as instance for simplicity
                 entry.instance = entry.definition;
 
-                // --- Execute Plugin Lifecycle Methods ---
-                // 1. init (CoreAPI ready)
                 entry.instance.init(this._coreAPI);
 
-                // 2. registerReducer
                 if (typeof entry.instance.registerReducer === 'function') {
                     const reducer = entry.instance.registerReducer();
                     if (reducer) this._stateManager.registerReducer(pluginId, reducer);
                 }
 
-                // 3. registerMiddleware
                 if (typeof entry.instance.registerMiddleware === 'function') {
                     const middleware = entry.instance.registerMiddleware();
                     if (middleware) this._stateManager.registerMiddleware(pluginId, middleware);
                 }
 
-                // 4. registerUISlots
                 if (typeof entry.instance.registerUISlots === 'function') {
                     const slots = entry.instance.registerUISlots() || {};
                     Object.entries(slots).forEach(([slotName, renderFn]) => {
@@ -1386,7 +1199,6 @@ class PluginManager {
                     });
                 }
 
-                // 5. providesServices
                 if (typeof entry.instance.providesServices === 'function') {
                     const services = entry.instance.providesServices() || {};
                     Object.entries(services).forEach(([serviceName, serviceInstance]) => {
@@ -1394,12 +1206,10 @@ class PluginManager {
                     });
                 }
 
-                // 6. getAPI
                 if (typeof entry.instance.getAPI === 'function')
                     entry.api = entry.instance.getAPI();
 
 
-                // 7. onActivate
                 if (typeof entry.instance.onActivate === 'function')
                     entry.instance.onActivate();
 
@@ -1415,7 +1225,6 @@ class PluginManager {
             }
         });
 
-        // After attempting all activations:
         const failedPlugins = Array.from(this._pluginRegistry.values()).filter(p => p.status === 'error');
         if (failedPlugins.length > 0) {
             console.error("Plugin: Failed to activate:", failedPlugins.map(p => p.definition.id));
@@ -1467,17 +1276,16 @@ class CoreAPI {
         this._pluginManager = pluginManager;
         this._uiRenderer = uiRenderer;
         this._eventBus = eventBus;
-        // Freeze the API object to prevent plugins from modifying it accidentally
         Object.freeze(this);
         Object.freeze(this.utils);
     }
 
-    // --- State ---
+    // State API
     dispatch = (action) => this._stateManager.dispatch(action);
     getState = () => this._stateManager.getState();
     subscribe = (listener) => this._stateManager.subscribe(listener);
 
-    // --- State Helpers ---
+    // State Selectors
     getNoteById = (noteId) => this.getState().notes[noteId] || null;
     getSelectedNote = () => {
         const state = this.getState();
@@ -1491,25 +1299,19 @@ class CoreAPI {
     getPluginSettings = (pluginId) => this.getState().settings.plugins[pluginId] || {};
     getRuntimeCache = (key) => this.getState().runtimeCache[key];
 
-    // --- Events ---
+    // Event API
     publishEvent = (eventType, payload) => this._eventBus.publish(eventType, payload);
     subscribeToEvent = (eventType, handler) => this._eventBus.subscribe(eventType, handler);
 
-    // --- UI ---
-    // Plugins register slots via definition, not API.
-    // Ephemeral components might be better handled via dedicated state/actions.
+    // UI API
     showGlobalStatus = (message, type = 'info', duration = 5000, id = null) => {
-        // Dispatch action to update state
         this.dispatch({type: 'CORE_SET_GLOBAL_STATUS', payload: {message, type, duration, id}});
-        // Schedule clearing via timeout -> dispatching another action
-        // This avoids side effects directly in the API method or reducer.
         if (duration > 0 && duration !== Infinity) {
             setTimeout(() => {
-                // Check if the message is still the same before clearing
                 const currentState = this.getState();
-                const currentStatus = id ? currentState.uiState.globalStatusMessages?.[id] : currentState.uiState.globalStatus; // Check specific or general
+                const currentStatus = id ? currentState.uiState.globalStatusMessages?.[id] : currentState.uiState.globalStatus;
                 if (currentStatus?.message === message && currentStatus?.type === type) {
-                    this.dispatch({type: 'CORE_CLEAR_GLOBAL_STATUS', payload: {id}}); // Pass ID to clear specific message
+                    this.dispatch({type: 'CORE_CLEAR_GLOBAL_STATUS', payload: {id}});
                 }
             }, duration);
         }
@@ -1519,34 +1321,32 @@ class CoreAPI {
         this.dispatch({type: 'CORE_CLEAR_GLOBAL_STATUS', payload: {id}});
     };
 
-    // --- Services & Plugins ---
+    // Service & Plugin API
     getService = (serviceName) => this._pluginManager.getService(serviceName);
     getPluginAPI = (pluginId) => this._pluginManager.getPluginAPI(pluginId);
 }
 
-// --- 8. Core Data Model & Initial State ---
+// Core Data Model & Initial State
 const initialAppState = {
-    notes: {}, // { [id]: CoreNote }
-    noteOrder: [], // [id1, id2, ...]
-    systemNoteIndex: {}, // { [systemType]: noteId }
+    notes: {},
+    noteOrder: [],
+    systemNoteIndex: {},
     settings: {
         core: {theme: 'light', userId: null, onboardingComplete: false},
-        // plugins: {}
     },
     uiState: {
         selectedNoteId: null,
         searchTerm: '',
         noteListSortMode: 'time',
-        activeModal: null, // Keep for compatibility? No, remove.
-        modalType: null, // e.g., 'settings', 'propertyEdit'
-        modalProps: null, // Props for the current modal
-        globalStatus: null, // { message, type, duration, id? } - For single status message
-        globalStatusMessages: {}, // { [id]: { message, type, duration } } - For multiple persistent messages
-        propertyValidationErrors: {}, // { [noteId]: { [propertyId]: errorMessage } } - Transient validation errors
-        // noteListSortMode: 'time', // Default sort mode <-- Removed duplicate
+        activeModal: null,
+        modalType: null,
+        modalProps: null,
+        globalStatus: null,
+        globalStatusMessages: {},
+        propertyValidationErrors: {},
     },
-    pluginRuntimeState: {}, // State managed *by* plugins, persisted if needed by plugin reducer
-    runtimeCache: {}, // Non-persistent cache for runtime data
+    pluginRuntimeState: {},
+    runtimeCache: {},
 };
 
 const coreReducer = (draft, action) => {
@@ -1578,11 +1378,10 @@ const coreReducer = (draft, action) => {
                 updatedAt: now,
                 isArchived: false,
                 systemType: systemType,
-                // pluginData is NOT initialized here
             };
-            draft.noteOrder.unshift(newNoteId); // Add to beginning
+            draft.noteOrder.unshift(newNoteId);
             draft.uiState.selectedNoteId = newNoteId;
-            draft.uiState.searchTerm = ''; // Clear search on add
+            draft.uiState.searchTerm = '';
             if (systemType) {
                 if (draft.systemNoteIndex[systemType]) console.warn(`CORE_ADD_NOTE: Overwriting system index for type ${systemType}`);
                 draft.systemNoteIndex[systemType] = newNoteId;
@@ -1601,13 +1400,12 @@ const coreReducer = (draft, action) => {
         case 'CORE_UPDATE_NOTE': {
             const {noteId, changes} = action.payload;
             const note = draft.notes[noteId];
-            if (!note) break; // Note doesn't exist
+            if (!note) break;
 
             let coreFieldsChanged = false;
             const oldSystemType = note.systemType;
             let newSystemType = oldSystemType;
 
-            // Update core fields directly on the draft
             if (changes.hasOwnProperty('name') && note.name !== changes.name) {
                 note.name = changes.name;
                 coreFieldsChanged = true;
@@ -1627,9 +1425,8 @@ const coreReducer = (draft, action) => {
             }
 
             if (coreFieldsChanged) {
-                note.updatedAt = Date.now(); // Update timestamp if core fields changed
+                note.updatedAt = Date.now();
 
-                // Update systemNoteIndex if systemType changed
                 if (newSystemType !== oldSystemType) {
                     if (oldSystemType && draft.systemNoteIndex[oldSystemType] === noteId) {
                         delete draft.systemNoteIndex[oldSystemType];
@@ -1639,17 +1436,14 @@ const coreReducer = (draft, action) => {
                         draft.systemNoteIndex[newSystemType] = noteId;
                     }
                 }
-                // If archiving, deselect the note
                 if (changes.isArchived === true && draft.uiState.selectedNoteId === noteId) {
                     draft.uiState.selectedNoteId = null;
                 }
             }
-            // Plugin reducers will handle changes to pluginData for this note
             break;
         }
 
         case 'CORE_ARCHIVE_NOTE': {
-            // Delegate to CORE_UPDATE_NOTE logic within the same reducer pass
             const note = draft.notes[action.payload.noteId];
             if (note && !note.isArchived) {
                 note.isArchived = true;
@@ -1666,19 +1460,15 @@ const coreReducer = (draft, action) => {
             const noteToDelete = draft.notes[noteId];
             if (!noteToDelete) break;
 
-            // Update systemNoteIndex if necessary
             if (noteToDelete.systemType && draft.systemNoteIndex[noteToDelete.systemType] === noteId) {
                 delete draft.systemNoteIndex[noteToDelete.systemType];
             }
 
-            // Remove from order
             draft.noteOrder = draft.noteOrder.filter(id => id !== noteId);
-            // Remove from notes map
             delete draft.notes[noteId];
 
-            // Update selection if needed
             if (draft.uiState.selectedNoteId === noteId) {
-                draft.uiState.selectedNoteId = null; // Or select next/previous? Null is simpler.
+                draft.uiState.selectedNoteId = null;
             }
             break;
         }
@@ -1695,7 +1485,6 @@ const coreReducer = (draft, action) => {
         case 'CORE_CLOSE_MODAL': {
             draft.uiState.modalType = null;
             draft.uiState.modalProps = null;
-            // Clear validation errors when any modal closes
             draft.uiState.propertyValidationErrors = {};
             break;
         }
@@ -1710,7 +1499,6 @@ const coreReducer = (draft, action) => {
             break;
         }
 
-        // CORE_SET_PLUGIN_SETTING is REMOVED by Enhancement #0
 
         case 'CORE_SET_GLOBAL_STATUS': {
             const {message, type = 'info', duration = 5000, id = null} = action.payload;
@@ -1718,14 +1506,13 @@ const coreReducer = (draft, action) => {
             if (id) {
                 if (!draft.uiState.globalStatusMessages) draft.uiState.globalStatusMessages = {};
                 draft.uiState.globalStatusMessages[id] = statusPayload;
-                // Optionally clear the main status if setting a specific one? Or let them coexist? Let them coexist for now.
             } else {
                 draft.uiState.globalStatus = statusPayload;
             }
             break;
         }
         case 'CORE_CLEAR_GLOBAL_STATUS': {
-            const {id = null} = action.payload || {}; // Handle payload possibly being undefined
+            const {id = null} = action.payload || {};
             if (id) {
                 if (draft.uiState.globalStatusMessages) {
                     delete draft.uiState.globalStatusMessages[id];
@@ -1748,14 +1535,12 @@ const coreReducer = (draft, action) => {
         }
 
         case 'CORE_STATE_CLEARED': {
-            // Reset state to initial after data wipe
             Object.assign(draft, initialAppState);
             draft.uiState.globalStatus = {
                 message: "Local data cleared. Reloading recommended.",
                 type: 'warning',
                 duration: 0
             };
-            // Clear validation error for the specific property on successful update
             if (draft.uiState.propertyValidationErrors?.[noteId]?.[propertyId]) {
                 delete draft.uiState.propertyValidationErrors[noteId][propertyId];
                 if (Object.keys(draft.uiState.propertyValidationErrors[noteId]).length === 0) {
@@ -1765,11 +1550,11 @@ const coreReducer = (draft, action) => {
             break;
         }
 
-        // --- Property Validation Failure ---
+        // Property Validation Failure
         case 'PROPERTY_VALIDATION_FAILURE': {
             const { noteId, propertyId, temporaryId, errorMessage } = action.payload;
-            const idToUse = propertyId || temporaryId; // Use real ID if available, else temporary
-            if (!idToUse) break; // Need an ID to associate the error
+            const idToUse = propertyId || temporaryId;
+            if (!idToUse) break;
 
             if (!draft.uiState.propertyValidationErrors) draft.uiState.propertyValidationErrors = {};
             if (!draft.uiState.propertyValidationErrors[noteId]) draft.uiState.propertyValidationErrors[noteId] = {};
@@ -1777,13 +1562,11 @@ const coreReducer = (draft, action) => {
             break;
         }
 
-        // --- Added for Enhancement #2 (Priority Sort) ---
         case 'CORE_SET_NOTE_LIST_SORT_MODE': {
             const newMode = action.payload;
             if (newMode === 'time' || newMode === 'priority') {
                 if (draft.uiState.noteListSortMode !== newMode) {
                     draft.uiState.noteListSortMode = newMode;
-                    // Notify listeners - state change handled by Immer/StateManager
                 }
             }
             break;
@@ -1799,27 +1582,26 @@ async function main() {
     let api = null;
 
     try {
-        // Initialize Core Services
+        // Initialize core services
         const events = new EventBus();
         const state = new StateManager(initialAppState, coreReducer);
         const ui = new UIRenderer(state, 'app');
         const plugins = new PluginManager(state, ui, events);
         const persistence = new PersistenceService(state);
 
-        api = plugins._coreAPI; // Get the created instance
+        api = plugins._coreAPI;
 
-        // Expose Debug Globals
+        // Expose debug globals
         window.realityNotebookCore = api;
         window._getState = state.getState.bind(state);
         window._dispatch = state.dispatch.bind(state);
-        window._clearState = persistence.clearState.bind(persistence); // Expose clear function
+        window._clearState = persistence.clearState.bind(persistence);
 
-        // Load Initial State
+        // Load initial state
         api.showGlobalStatus("Loading saved data...", "info");
         let loadedState = null;
         try {
             loadedState = await persistence.loadState();
-            // Dispatch action to merge loaded state and reset transient fields
             state.dispatch({type: 'CORE_STATE_LOADED', payload: {loadedState}});
             if (loadedState) {
                 api.showGlobalStatus("Data loaded.", "success", 1500);
@@ -1828,36 +1610,24 @@ async function main() {
             }
         } catch (loadError) {
             console.error("Core: Failed to load persistent state.", loadError);
-            // Dispatch with null state to initialize default structure
             state.dispatch({type: 'CORE_STATE_LOADED', payload: {loadedState: null}});
             api.showGlobalStatus("Error loading data. Starting with default state.", "error", 5000);
-            // Optionally render a more persistent error message if loading fails critically
         }
 
-        // Register Plugins
+        // Register and activate plugins
         plugins.registerPlugins(PLUGINS);
-
-        // Activate Plugins
         api.showGlobalStatus("Initializing plugins...", "info");
         try {
-            plugins.activatePlugins(); // Handles dependency sort, lifecycle methods
-            // Status messages for success/failure are handled within activatePlugins
+            plugins.activatePlugins();
         } catch (activationError) {
-            // This catch is mostly for synchronous errors during the activation loop setup,
-            // individual plugin errors are caught inside activatePlugins.
             console.error("Core: Critical error during plugin activation phase.", activationError);
-            api.showGlobalStatus(`Critical plugin activation error: ${activationError.message}`, "error", 0); // Persistent error
+            api.showGlobalStatus(`Critical plugin activation error: ${activationError.message}`, "error", 0);
         }
 
-        // Initial Render is triggered by CORE_STATE_LOADED state change via UIRenderer subscription.
 
         console.log("%cNetention Core Initialized Successfully.", "color: green; font-weight: bold;");
         api.showGlobalStatus("Application Ready", "success", 2000);
 
-        // Post-initialization (Example: Trigger onboarding check)
-        // if (!stateManager.getState().settings.core.onboardingComplete) {
-        //     stateManager.dispatch({ type: 'ONBOARDING_CHECK_START' }); // Action handled by onboarding plugin
-        // }
     } catch (error) {
         console.error("%cCRITICAL ERROR DURING INITIALIZATION:", "color: red; font-weight: bold;", error);
         const appRoot = document.getElementById('app');
