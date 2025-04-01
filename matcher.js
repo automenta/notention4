@@ -961,7 +961,6 @@ export const MatcherPlugin = {
                 type: 'CORE_SET_RUNTIME_CACHE',
                 payload: {key: cacheKey, value: embeddingVector}
             });
-            // console.log(`MatcherPlugin: Embedding generated and cached for note ${note.id} with key ${cacheKey}`);
             this._coreAPI.showGlobalStatus(`Matcher: Embedding generated for "${note.name || note.id}".`, "success", 1500);
 
             return embeddingVector;
