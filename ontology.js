@@ -438,7 +438,7 @@ export const OntologyPlugin = {
                     <label>Icon:</label><input type="text" .value=${hintValue.icon || ''} @input=${(e) => this._handleOntologyChange(e, 'icon', ontologyData, noteId, dispatch)}>
                     <label>Color:</label><input type="color" .value=${hintValue.color || '#cccccc'} @input=${(e) => this._handleOntologyChange(e, 'color', ontologyData, noteId, dispatch)}>
                     <label>Input Type:</label><input type="text" .value=${hintValue.inputType || 'text'} @input=${(e) => this._handleOntologyChange(e, 'inputType', ontologyData, noteId, dispatch)}>
-                    <label>Options <small>(Valid JSON Array req.)</small>:</label><input type="text" .value=${JSON.stringify(hintValue.options || [])} @input=${(e) => this._handleOntologyChange(e, 'options', ontologyData, noteId, dispatch)}>
+                    <label>Options <small>(Valid JSON Array required.)</small>:</label><input type="text" .value=${JSON.stringify(hintValue.options || [])} @input=${(e) => this._handleOntologyChange(e, 'options', ontologyData, noteId, dispatch)}>
                     <label>Min:</label><input type="number" .value=${hintValue.min ?? ''} @input=${(e) => this._handleOntologyChange(e, 'min', ontologyData, noteId, dispatch)}>
                     <label>Max:</label><input type="number" .value=${hintValue.max ?? ''} @input=${(e) => this._handleOntologyChange(e, 'max', ontologyData, noteId, dispatch)}>
                     <label>Step:</label><input type="number" .value=${hintValue.step ?? ''} @input=${(e) => this._handleOntologyChange(e, 'step', ontologyData, noteId, dispatch)}>

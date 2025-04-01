@@ -433,7 +433,7 @@ class UIRenderer {
         if (filteredNoteIds.length === 0) {
             return html`
                 <li style="padding: 1rem; color: var(--secondary-text-color);">
-                    ${searchTerm ? 'No matching notes.' : 'No notes yet.'}
+                    ${searchTerm ? 'No matching notes.' : 'No notes yet'}
                 </li>`;
         }
 
