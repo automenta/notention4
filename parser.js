@@ -23,7 +23,7 @@ import './parser.css';
 export const SemanticParserPlugin = {
     id: 'parser',
     name: 'Semantic Parser',
-    dependencies: ['ontology', 'properties', 'llm', 'editor'],
+    dependencies: ['ontology', 'properties', 'llm', 'richTextEditor'],
 
     coreAPI: null,
     ontologyService: null,
