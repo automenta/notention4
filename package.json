@@ -21,6 +21,7 @@
     "tippy.js": "^6.3.7"
   },
   "devDependencies": {
+    "vitest": "^1.5.1",
     "vite": "^6.2.4"
   }
 }
