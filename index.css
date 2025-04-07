@@ -73,6 +73,10 @@ html, body {
     overflow: hidden; /* Prevent body scroll */
 }
 
+button, select {
+    background-color: var(--bg-color);
+}
+
 #app {
     height: 100%;
     display: flex;

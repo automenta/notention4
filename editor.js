@@ -519,8 +519,12 @@ export const RichTextEditorPlugin = {
                         /* --- CSS Rules (Ensure ALL previous styles are pasted here) --- */
 
                         /* --- Editor Toolbar & Content Styles --- */
-                        .editor-toolbar { display: flex; flex-wrap: wrap; align-items: center; padding: 4px 8px; border: 1px solid var(--border-color, #ccc); border-radius: 4px 4px 0 0; background-color: var(--toolbar-bg, #f0f0f0); min-height: 34px; }
-                        .toolbar-button, .toolbar-select { background: transparent; border: 1px solid transparent; border-radius: 3px; padding: 4px 6px; margin: 2px; cursor: pointer; font-size: 1em; line-height: 1.2; min-width: 28px; text-align: center; color: var(--text-color, #333); vertical-align: middle; }
+                        .editor-toolbar { display: flex; flex-wrap: wrap; align-items: center; padding: 4px 8px; border: 1px solid var(--border-color, #ccc); border-radius: 4px 4px 0 0; 
+                            
+                             
+                            min-height: 34px; 
+                        }
+                        .toolbar-button, .toolbar-select { border: 1px solid transparent; border-radius: 3px; padding: 4px 6px; margin: 2px; cursor: pointer; font-size: 1em; line-height: 1.2; min-width: 28px; text-align: center; color: var(--text-color, #333); vertical-align: middle; }
                         .toolbar-button:hover:not(:disabled) { background-color: var(--button-hover-bg, #e0e0e0); border-color: var(--border-color, #ccc); }
                         .toolbar-button.is-active { background-color: var(--accent-color-muted, #cce5ff); border-color: var(--accent-color, #99caff); color: var(--accent-text-color, #004085); }
                         .toolbar-button:disabled { opacity: 0.5; cursor: not-allowed; }
