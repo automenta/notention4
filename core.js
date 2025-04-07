@@ -37,7 +37,13 @@ const PLUGINS = [
 ];
 
 
-const {html, render} = window.litHtml;
+const {html, render} = window.lit ?? window.litHtml ?? (() => {
+    console.error("Lit-html not found. UI rendering will fail.");
+    return {
+        html: (strings, ...values) => strings.map((str, i) => str + (values[i] || '')).join(''),
+        render: (template, container) => { container.innerHTML = template; }
+    };
+})();
 
 // Core State Manager
 class StateManager {
