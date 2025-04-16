@@ -566,7 +566,6 @@ Generated Note Content:
 
                     try {
                         const embeddingsModel = pluginInstance._getEmbeddingsInstance(options);
-                        console.log('embed', embeddingsModel);
                         const embeddingVector = await embeddingsModel.embedQuery(text);
 
                         if (!Array.isArray(embeddingVector) || embeddingVector.length === 0) {
