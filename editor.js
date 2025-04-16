@@ -479,10 +479,12 @@ export const RichTextEditorPlugin = {
                     }
                     // 3. UPDATE
                     else if (editorShouldExist && this._editorInstance && !this._editorInstance.inactive() && !noteChanged) {
+                        // Check if the content has actually changed before updating
                         if (note.content !== this._currentContentCache && !this._editorInstance.hasFocus()) {
                             this._isUpdatingInternally = true;
                             try {
-                                this._editorInstance.setContent(note.content || '');
+                                // Use Tiptap's `update` method instead of `setContent` to preserve editor state
+                                this._editorInstance._tiptapInstance.commands.updateContent(note.content || '', true);
                                 this._currentContentCache = note.content || '';
                             } finally {
                                 this._isUpdatingInternally = false;
@@ -501,8 +503,9 @@ export const RichTextEditorPlugin = {
                     // 4. CLEANUP
                     else if (!editorShouldExist) {
                         this._destroyEditor();
-                        mountPoint.innerHTML = '';
-                        delete mountPoint.dataset.noteId;
+                        // Do not manipulate the DOM directly here. Let Lit-html handle it.
+                        // mountPoint.innerHTML = '';
+                        // delete mountPoint.dataset.noteId;
                         this._currentNoteId = null;
                         this._currentContentCache = '';
                         this._updateToolbarUI('noEditorCleanup');
