@@ -5,9 +5,11 @@
   "main": "index.js",
   "private": true,
   "scripts": {
+    "dev": "npx vite dev",
     "test": "vitest"
   },
   "dependencies": {
+    "@langchain/community": "^0.3.40",
     "@langchain/core": "^0.3.43",
     "@langchain/openai": "^0.5.1",
     "@tiptap/core": "^2.11.6",

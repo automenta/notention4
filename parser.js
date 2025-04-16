@@ -575,6 +575,7 @@ export const SemanticParserPlugin = {
         // Check required services again within the function
         // Fix typo: llMService -> llmService
         if (!content || !this.llmService || !this.ontologyService || !this.coreAPI) {
+            console.log('llm', content, this.llmService, this.coreAPI);
             console.warn("Parser: LLM parsing skipped, content or LLMService/OntologyService/CoreAPI missing.");
             this.coreAPI?.showGlobalStatus("Cannot parse with AI: Services missing.", "warning");
             return [];

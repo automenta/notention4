@@ -5,7 +5,10 @@
 import {SLOT_SETTINGS_PANEL_SECTION} from './ui.js';
 
 // Assuming these are correctly resolved in your environment
-import {ChatOpenAI, OpenAIEmbeddings} from "@langchain/openai";
+//import {ChatOpenAI, OpenAIEmbeddings} from "@langchain/openai";
+import { ChatOllama } from "@langchain/community/chat_models/ollama";
+import { OllamaEmbeddings } from "@langchain/community/embeddings/ollama";
+
 import {AIMessage, HumanMessage, SystemMessage} from "@langchain/core/messages";
 import './llm.css';
 
@@ -96,7 +99,7 @@ export const LLMPlugin = {
             // Add embedding-specific config loading
             embeddingModelName: mergedConfig.embeddingModelName || null,
             embeddingApiKey: mergedConfig.embeddingApiKey || null, // Fallback handled in _getEmbeddingsInstance
-            embeddingEndpointUrl: mergedConfig.embeddingEndpointUrl || null, // Fallback handled in _getEmbeddingsInstance
+            embeddingEndpointUrl: mergedConfig.embeddingEndpointUrl || 'localhost:11434/api', // Fallback handled in _getEmbeddingsInstance
         };
 
         const logConfig = {...this._config};
@@ -211,7 +214,8 @@ export const LLMPlugin = {
         }
 
         try {
-            return new ChatOpenAI(modelConfig);
+            return new ChatOllama(modelConfig);
+            //return new ChatOpenAI(modelConfig);
         } catch (error) {
             console.error("LLMPlugin: Error instantiating LangChain Chat Model:", error);
             this._coreAPI.showGlobalStatus(`LLM Init Error: ${error.message}`, "error", 5000);
@@ -249,7 +253,8 @@ export const LLMPlugin = {
         }
 
         try {
-            return new OpenAIEmbeddings(embeddingsConfig);
+            return new OllamaEmbeddings(embeddingsConfig);
+            //return new OpenAIEmbeddings(embeddingsConfig);
         } catch (error) {
             console.error("LLMPlugin: Error instantiating LangChain Embeddings Model:", error);
             this._coreAPI.showGlobalStatus(`Embeddings Init Error: ${error.message}`, "error", 5000);
@@ -561,6 +566,7 @@ Generated Note Content:
 
                     try {
                         const embeddingsModel = pluginInstance._getEmbeddingsInstance(options);
+                        console.log('embed', embeddingsModel);
                         const embeddingVector = await embeddingsModel.embedQuery(text);
 
                         if (!Array.isArray(embeddingVector) || embeddingVector.length === 0) {
