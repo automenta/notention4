@@ -1387,7 +1387,7 @@ const initialAppState = {
     noteOrder: [],
     systemNoteIndex: {},
     settings: {
-        core: {theme: 'light', userId: null, onboardingComplete: false},
+        core: { theme: 'light', userId: null, onboardingComplete: false },
         plugins: {} // Ensure plugins settings object exists
     },
     uiState: {
@@ -1409,14 +1409,15 @@ const coreReducer = (draft, action) => {
     switch (action.type) {
         case 'CORE_STATE_LOADED': {
             const loaded = action.payload.loadedState || {};
+
             // Reset to initial state first, preserving core settings structure
             Object.assign(draft, {
                 ...initialAppState,
                 settings: {
-                    core: {...initialAppState.settings.core},
+                    core: { ...initialAppState.settings.core },
                     plugins: {} // Start fresh for plugin settings
                 },
-                uiState: {...initialAppState.uiState}, // Reset UI state
+                uiState: { ...initialAppState.uiState }, // Reset UI state
                 pluginRuntimeState: {}, // Reset runtime state
                 runtimeCache: {} // Reset runtime cache
             });
@@ -1424,7 +1425,7 @@ const coreReducer = (draft, action) => {
             // Carefully merge persisted data
             draft.notes = loaded.notes || {};
             draft.noteOrder = Array.isArray(loaded.noteOrder) ? loaded.noteOrder.filter(id => draft.notes[id]) : []; // Filter out orphaned IDs
-            draft.settings.core = {...draft.settings.core, ...(loaded.settings?.core || {})}; // Merge core settings
+            draft.settings.core = { ...draft.settings.core, ...(loaded.settings?.core || {}) }; // Merge core settings
             draft.settings.plugins = loaded.settings?.plugins || {}; // Load plugin settings
             draft.runtimeCache = loaded.runtimeCache || {}; // Load runtime cache
 
@@ -1438,9 +1439,6 @@ const coreReducer = (draft, action) => {
                     draft.systemNoteIndex[note.systemType] = note.id;
                 }
             });
-            // Ensure transient state is reset (already done above)
-            // draft.uiState = {...initialAppState.uiState};
-            // draft.pluginRuntimeState = {};
             break;
         }
 

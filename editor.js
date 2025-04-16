@@ -350,7 +350,10 @@ function SuggestionPlugin(dispatch) {
     let currentNoteId = null;
     let currentDecorationSet = DecorationSet.empty;
     let tippyInstances = [];
-    const destroyTippyInstances = () => { tippyInstances.forEach(i => i?.destroy()); tippyInstances = []; };
+    const destroyTippyInstances = () => {
+        tippyInstances.forEach(i => i?.destroy());
+        tippyInstances = [];
+    };
     const createPopoverContent = (suggestion) => { /* ... (implementation unchanged) ... */
         const container = document.createElement('div');
         container.className = 'suggestion-popover';
@@ -358,53 +361,123 @@ function SuggestionPlugin(dispatch) {
             <div class="suggestion-text"> Add property: <strong class="suggestion-key">${Utils.escapeHtml(suggestion.property.key)}</strong> = <em class="suggestion-value">${Utils.escapeHtml(suggestion.displayText || suggestion.property.value)}</em> <span class="suggestion-source" title="Source: ${Utils.escapeHtml(suggestion.source)}${suggestion.confidence ? ` | Confidence: ${Math.round(suggestion.confidence * 100)}%` : ''}"> (${Utils.escapeHtml(suggestion.source.replace('heuristic ', 'H:'))}${suggestion.confidence ? ` ${Math.round(suggestion.confidence * 100)}%` : ''}) </span> </div>
             <div class="suggestion-actions"> <button class="suggestion-confirm" title="Confirm">✓</button> <button class="suggestion-ignore" title="Ignore">✕</button> </div>
         `;
-        container.querySelector('.suggestion-confirm').onmousedown = (e) => { e.preventDefault(); dispatch({ type: 'PARSER_CONFIRM_SUGGESTION', payload: { noteId: currentNoteId, suggestion } }); tippyInstances.find(inst => inst.reference === e.target.closest('.tippy-popper')?.previousSibling)?.hide(); };
-        container.querySelector('.suggestion-ignore').onmousedown = (e) => { e.preventDefault(); dispatch({ type: 'PARSER_IGNORE_SUGGESTION', payload: { noteId: currentNoteId, suggestionId: suggestion.id } }); tippyInstances.find(inst => inst.reference === e.target.closest('.tippy-popper')?.previousSibling)?.hide(); };
+        container.querySelector('.suggestion-confirm').onmousedown = (e) => {
+            e.preventDefault();
+            dispatch({type: 'PARSER_CONFIRM_SUGGESTION', payload: {noteId: currentNoteId, suggestion}});
+            tippyInstances.find(inst => inst.reference === e.target.closest('.tippy-popper')?.previousSibling)?.hide();
+        };
+        container.querySelector('.suggestion-ignore').onmousedown = (e) => {
+            e.preventDefault();
+            dispatch({type: 'PARSER_IGNORE_SUGGESTION', payload: {noteId: currentNoteId, suggestionId: suggestion.id}});
+            tippyInstances.find(inst => inst.reference === e.target.closest('.tippy-popper')?.previousSibling)?.hide();
+        };
         return container;
     };
     return new ProseMirrorPlugin({
         key: suggestionPluginKey,
         state: {
-            init: () => ({ noteId: null, decorationSet: DecorationSet.empty }),
+            init: () => ({noteId: null, decorationSet: DecorationSet.empty}),
             apply(tr, pluginState) {
-                const meta = tr.getMeta(suggestionPluginKey); let next = { ...pluginState };
-                if (meta) { if (meta.noteId !== undefined) next.noteId = meta.noteId; if (meta.decorationSet !== undefined) next.decorationSet = meta.decorationSet; }
+                const meta = tr.getMeta(suggestionPluginKey);
+                let next = {...pluginState};
+                if (meta) {
+                    if (meta.noteId !== undefined) next.noteId = meta.noteId;
+                    if (meta.decorationSet !== undefined) next.decorationSet = meta.decorationSet;
+                }
                 // Only map decorations if the document changed
                 if (tr.docChanged) {
                     next.decorationSet = next.decorationSet.map(tr.mapping, tr.doc);
                 }
-                currentNoteId = next.noteId; currentDecorationSet = next.decorationSet; return next;
+                currentNoteId = next.noteId;
+                currentDecorationSet = next.decorationSet;
+                return next;
             },
         },
-        props: { decorations(state) { return this.getState(state)?.decorationSet ?? DecorationSet.empty; }, },
+        props: {
+            decorations(state) {
+                return this.getState(state)?.decorationSet ?? DecorationSet.empty;
+            },
+        },
         view(editorView) {
-            const store = window.realityNotebookCore; if (!store) { console.error("SuggestionPlugin: Core API not found."); return { destroy() { } }; }
+            const store = window.realityNotebookCore;
+            if (!store) {
+                console.error("SuggestionPlugin: Core API not found.");
+                return {
+                    destroy() {
+                    }
+                };
+            }
             let prevJson = null;
             const unsub = store.subscribe((newState) => {
-                const state = suggestionPluginKey.getState(editorView.state); const noteId = state?.noteId;
-                if (!noteId) { if (currentDecorationSet !== DecorationSet.empty) { destroyTippyInstances(); if (!editorView.isDestroyed) editorView.dispatch(editorView.state.tr.setMeta(suggestionPluginKey, { decorationSet: DecorationSet.empty })); } prevJson = null; return; }
+                const state = suggestionPluginKey.getState(editorView.state);
+                const noteId = state?.noteId;
+                if (!noteId) {
+                    if (currentDecorationSet !== DecorationSet.empty) {
+                        destroyTippyInstances();
+                        if (!editorView.isDestroyed) editorView.dispatch(editorView.state.tr.setMeta(suggestionPluginKey, {
+                            decorationSet: DecorationSet.empty
+                        }));
+                    }
+                    prevJson = null;
+                    return;
+                }
                 const sugg = newState.pluginRuntimeState?.parser?.suggestions?.[noteId] || [];
                 // Filter suggestions that are pending AND have a valid location
                 const pending = sugg.filter(s => s.status === 'pending' && s.location && typeof s.location.start === 'number' && typeof s.location.end === 'number');
-                const currJson = JSON.stringify(pending.map(s => ({ id: s.id, loc: s.location })));
+                const currJson = JSON.stringify(pending.map(s => ({
+                    id: s.id,
+                    loc: s.location
+                })));
                 if (currJson !== prevJson) {
-                    prevJson = currJson; destroyTippyInstances();
-                    const decos = pending.flatMap(s => { /* ... (decoration creation unchanged) ... */
-                        const { start, end } = s.location;
+                    prevJson = currJson;
+                    destroyTippyInstances();
+                    const decos = pending.flatMap(s => {
+                        const {start, end} = s.location;
                         // Additional validation: Ensure location is within current document bounds
                         if (start >= end || start < 0 || end > editorView.state.doc.content.size) {
-                             console.warn("SuggestionPlugin: Invalid or out-of-bounds suggestion location skipped.", { suggestionId: s.id, start, end, docSize: editorView.state.doc.content.size });
-                             return [];
+                            console.warn("SuggestionPlugin: Invalid or out-of-bounds suggestion location skipped.", {
+                                suggestionId: s.id,
+                                start,
+                                end,
+                                docSize: editorView.state.doc.content.size
+                            });
+                            return [];
                         }
-                        const hl = Decoration.inline(start, end, { class: 'suggestion-highlight', nodeName: 'span' });
-                        const wd = Decoration.widget(end, () => { /* ... (widget creation unchanged) ... */
-                            const btn = document.createElement('button'); btn.className = 'suggestion-action-button'; btn.textContent = '💡'; btn.dataset.suggestionId = s.id; btn.title = 'Suggested Property';
-                            const tippyInst = tippy(btn, { content: createPopoverContent(s), allowHTML: true, interactive: true, trigger: 'click', placement: 'bottom-start', appendTo: () => editorView.dom.closest('.editor-container') || document.body, hideOnClick: true, theme: 'light-border', onShow(inst) { tippyInstances.filter(i => i !== inst && i?.state && !i.state.isDestroyed).forEach(i => i.hide()); }, onDestroy(inst) { tippyInstances = tippyInstances.filter(i => i !== inst); } });
-                            tippyInstances.push(tippyInst); return btn;
-                        }, { side: 1 }); return [hl, wd];
+                        const hl = Decoration.inline(start, end, {
+                            class: 'suggestion-highlight',
+                            nodeName: 'span'
+                        });
+                        const wd = Decoration.widget(end, () => {
+                            const btn = document.createElement('button');
+                            btn.className = 'suggestion-action-button';
+                            btn.textContent = '💡';
+                            btn.dataset.suggestionId = s.id;
+                            btn.title = 'Suggested Property';
+                            const tippyInst = tippy(btn, {
+                                content: createPopoverContent(s),
+                                allowHTML: true,
+                                interactive: true,
+                                trigger: 'click',
+                                placement: 'bottom-start',
+                                appendTo: () => editorView.dom.closest('.editor-container') || document.body,
+                                hideOnClick: true,
+                                theme: 'light-border',
+                                onShow(inst) {
+                                    tippyInstances.filter(i => i !== inst && i?.state && !i.state.isDestroyed).forEach(i => i.hide());
+                                },
+                                onDestroy(inst) {
+                                    tippyInstances = tippyInstances.filter(i => i !== inst);
+                                }
+                            });
+                            tippyInstances.push(tippyInst);
+                            return btn;
+                        }, {side: 1});
+                        return [hl, wd];
                     });
                     if (!editorView.isDestroyed) {
-                        const tr = editorView.state.tr.setMeta(suggestionPluginKey, { decorationSet: DecorationSet.create(editorView.state.doc, decos) });
+                        const tr = editorView.state.tr.setMeta(suggestionPluginKey, {
+                            decorationSet: DecorationSet.create(editorView.state.doc, decos)
+                        });
                         // Avoid dispatching if the view is already destroyed (can happen during rapid note switching)
                         if (!editorView.isDestroyed) {
                             editorView.dispatch(tr);
@@ -412,7 +485,20 @@ function SuggestionPlugin(dispatch) {
                     }
                 }
             });
-            return { destroy() { destroyTippyInstances(); unsub(); }, update(v, pS) { const nS = suggestionPluginKey.getState(v.state); const oS = suggestionPluginKey.getState(pS); if (nS?.noteId !== oS?.noteId) { destroyTippyInstances(); prevJson = null; } } };
+            return {
+                destroy() {
+                    destroyTippyInstances();
+                    unsub();
+                },
+                update(v, pS) {
+                    const nS = suggestionPluginKey.getState(v.state);
+                    const oS = suggestionPluginKey.getState(pS);
+                    if (nS?.noteId !== oS?.noteId) {
+                        destroyTippyInstances();
+                        prevJson = null;
+                    }
+                }
+            };
         }
     });
 }
