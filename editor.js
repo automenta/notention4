@@ -469,15 +469,18 @@ export const RichTextEditorPlugin = {
                             Promise.resolve().then(() => { // Sync suggestion plugin after microtask
                                 if (this._editorInstance?._tiptapInstance?.view && this._editorInstance?._tiptapInstance?.state) {
                                     this._editorInstance._tiptapInstance.view.dispatch(this._editorInstance._tiptapInstance.state.tr.setMeta(suggestionPluginKey, { noteId: noteId }));
-                                } else { console.warn("Editor view/state not ready for suggestion meta update."); }
+                                } else {
+                                    console.warn("Editor view/state not ready for suggestion meta update.");
+                                }
                             });
                             this._updateToolbarUI('init');
                         } catch (error) {
                             console.error(`${this.name}: Failed to init editor for note ${noteId}:`, error);
-                            mountPoint.innerHTML = `<div style="color: red;">Editor Load Error!</div>`; this._destroyEditor();
+                            mountPoint.innerHTML = `<div style="color: red;">Editor Load Error!</div>`;
+                            this._destroyEditor();
                         }
                     }
-                    // 3. UPDATE
+                    // 3. UPDATE - Moved syncSuggestionPlugin call here
                     else if (editorShouldExist && this._editorInstance && !this._editorInstance.inactive() && !noteChanged) {
                         // Check if the content has actually changed before updating
                         if (note.content !== this._currentContentCache && !this._editorInstance.hasFocus()) {
@@ -508,7 +511,7 @@ export const RichTextEditorPlugin = {
                 // --- Return HTML Structure ---
                 return html`
                     <div class="editor-container" style="display: flex; flex-direction: column; height: 100%;">
-                        <div id="editor-toolbar-container" class="editor-toolbar" role="toolbar" aria-label="Text Formatting">
+                    <div id="editor-toolbar-container" class="editor-toolbar" role="toolbar" aria-label="Text Formatting">
                             <!-- Toolbar content rendered dynamically -->
                         </div>
                         <div id="editor-mount-point"
