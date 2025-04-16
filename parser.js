@@ -663,17 +663,19 @@ JSON Output:
                     if ((trimmedResponse.startsWith('[') && trimmedResponse.endsWith(']')) || (trimmedResponse.startsWith('{') && trimmedResponse.endsWith('}'))) {
                         parsedJson = JSON.parse(trimmedResponse);
                     } else {
-                         // 3. Handle cases where LLM might just output the JSON without brackets/braces if it's a single object (less common for arrays)
-                         // This is less reliable, might need more specific LLM instructions.
-                         // For now, assume array output is standard.
-                         console.warn("Parser: LLM response did not contain a JSON code block or a direct JSON array/object structure.", { response: trimmedResponse });
-                         throw new Error("LLM response did not contain recognizable JSON output.");
-                    }
-                }
-            } catch (jsonError) {
+                         // 3. Attempt to handle single JSON object responses
+                         try {
+                             parsedJson = [JSON.parse(trimmedResponse)]; // Wrap in array
+                         } catch (singleJsonError) {
+                             console.warn("Parser: LLM response did not contain a JSON code block or a direct JSON array/object structure.", { response: trimmedResponse });
+                             throw new Error("LLM response did not contain recognizable JSON output.");
+                         }
+                     }
+                 }
+             } catch (jsonError) {
                  console.error("Parser: Failed to parse JSON from LLM response.", { responseText, jsonError });
                  throw new Error(`LLM response contained invalid JSON: ${jsonError.message}`);
-            }
+             }
 
 
             if (!Array.isArray(parsedJson)) {
