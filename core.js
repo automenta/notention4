@@ -316,16 +316,38 @@ class UIRenderer {
             // Log the error to the console
             console.error("UIRenderer: CRITICAL ERROR during renderApp!", error);
             // Render an error message in the root element
-            render(html`
-                <div class="error-display">
-                    <h1>Application Render Error</h1>
-                    <p>An unexpected error occurred while rendering the UI.</p>
-                    <pre>${Utils.sanitizeHTML(error.stack)}</pre>
-                    <p>Please check the console for details. You may need to reload or clear application data.</p>
-                </div>`, this._rootElement);
+            // Check if the error is the specific ChildPart error, which might be transient due to editor interaction
+            if (error.message.includes("ChildPart") && error.message.includes("parentNode")) {
+                 console.warn("UIRenderer: Encountered known ChildPart error, likely due to editor DOM manipulation. Attempting recovery render.");
+                 // Attempt a re-render on the next frame, hoping the DOM state is more stable
+                 requestAnimationFrame(() => {
+                     try {
+                         render(this._renderMainVdomTree(this._stateManager.getState()), this._rootElement);
+                     } catch (recoveryError) {
+                         console.error("UIRenderer: Recovery render also failed!", recoveryError);
+                         render(html`
+                            <div class="error-display">
+                                <h1>Application Render Error</h1>
+                                <p>An unexpected error occurred while rendering the UI, and recovery failed.</p>
+                                <pre>${Utils.sanitizeHTML(recoveryError.stack)}</pre>
+                                <p>Please check the console for details. You may need to reload or clear application data.</p>
+                            </div>`, this._rootElement);
+                     }
+                 });
+            } else {
+                // For other critical errors, render the error message immediately
+                render(html`
+                    <div class="error-display">
+                        <h1>Application Render Error</h1>
+                        <p>An unexpected error occurred while rendering the UI.</p>
+                        <pre>${Utils.sanitizeHTML(error.stack)}</pre>
+                        <p>Please check the console for details. You may need to reload or clear application data.</p>
+                    </div>`, this._rootElement);
+            }
         } finally {
             // Restore scroll positions after rendering, even if there was an error
-            this._restoreScrollPositions();
+            // Defer restoration slightly to allow potential recovery render to complete
+            setTimeout(() => this._restoreScrollPositions(), 0);
         }
     }
 
@@ -367,7 +389,7 @@ class UIRenderer {
                 </div>
                 <div id="main-content-area" class="main-content-area">
                     <div id="editor-area" class="editor-area" role="main" aria-live="polite">
-                        ${selectedNote ? this._renderEditorArea(state, selectedNote) : this._renderWelcomeMessage(state)}
+                        ${this._renderEditorArea(state, selectedNote)}
                     </div>
                     <div id="status-bar" class="status-bar" role="status">
                                 <span class="core-status ${globalStatus?.type || 'info'}"
@@ -383,6 +405,10 @@ class UIRenderer {
                 </div>
             </div>
             <style>
+                .error-display { padding: 20px; border: 2px solid var(--danger-color, red); background: #fff0f0; color: #333; }
+                .error-display h1 { color: var(--danger-color, red); margin-bottom: 10px; }
+                .error-display pre { white-space: pre-wrap; word-wrap: break-word; border: 1px solid #ccc; padding: 10px; background: #f9f9f9; margin-top: 10px; max-height: 300px; overflow-y: auto; }
+
                 .validation-error {
                     color: var(--danger-color, red);
                     font-size: 0.85em;
@@ -475,82 +501,69 @@ class UIRenderer {
     }
 
     _renderEditorArea(state, note) {
-        const slotContent = this._renderSlot(state, SLOT_EDITOR_CONTENT_AREA, note.id);
-        const hasPluginContent = Array.isArray(slotContent)
-            ? slotContent.some(item => item != null && item !== '')
-            : (slotContent != null && slotContent !== '');
-
+        // The editor plugin will manage the content inside #editor-mount-point
+        // We just render the structure here.
         return html`
-            <div class="editor-header" data-note-id=${note.id}>
+            <div class="editor-header" data-note-id=${note?.id}>
                 <input
                     type="text"
                     class="editor-title-input"
-                    .value=${note.name}
+                    .value=${note?.name || ''}
                     placeholder="Note Title"
                     aria-label="Note Title"
-                    @input=${this._handleTitleInput(note.id)}
+                    @input=${this._handleTitleInput(note?.id)}
+                    ?disabled=${!note}
                 >
-                <div class="editor-header-actions" data-slot="${SLOT_EDITOR_HEADER_ACTIONS}" data-note-id=${note.id}>
-                    <button class="core-archive-note" @click=${this._handleArchiveNote(note.id)}
-                        title="Archive Note" aria-label="Archive Note">Archive
+                <div class="editor-header-actions" data-slot="${SLOT_EDITOR_HEADER_ACTIONS}" data-note-id=${note?.id}>
+                    <button class="core-archive-note" @click=${this._handleArchiveNote(note?.id)}
+                        title="Archive Note" aria-label="Archive Note" ?disabled=${!note}>Archive
                     </button>
-                    <button class="core-delete-note" @click=${this._handleDeleteNote(note.id, note.name)}
-                        title="Delete Note" aria-label="Delete Note">Delete
+                    <button class="core-delete-note" @click=${this._handleDeleteNote(note?.id, note?.name)}
+                        title="Delete Note" aria-label="Delete Note" ?disabled=${!note}>Delete
                     </button>
-                    ${this._renderSlot(state, SLOT_EDITOR_HEADER_ACTIONS, note.id)}
+                    ${this._renderSlot(state, SLOT_EDITOR_HEADER_ACTIONS, note?.id)}
                     <button class="editor-header-button llm-action-button"
-                        @click=${() => this._handleLlmSummarize(note.id)} title="Summarize selection or note">
+                        @click=${() => this._handleLlmSummarize(note?.id)} title="Summarize selection or note" ?disabled=${!note}>
                         Summarize
                     </button>
                     <button class="editor-header-button llm-action-button"
-                        @click=${() => this._handleLlmAskQuestion(note.id)} title="Ask question about note content">
+                        @click=${() => this._handleLlmAskQuestion(note?.id)} title="Ask question about note content" ?disabled=${!note}>
                         Ask
                     </button>
                     <button class="editor-header-button llm-action-button"
-                        @click=${() => this._handleLlmGetActions(note.id)}
-                        title="Suggest actions based on note content">Actions
+                        @click=${() => this._handleLlmGetActions(note?.id)}
+                        title="Suggest actions based on note content" ?disabled=${!note}>Actions
                     </button>
                 </div>
             </div>
+
+            <!-- Editor Content Area: Plugin fills #editor-mount-point -->
             <div class="editor-content-wrapper"
-                style="flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;">
-                ${hasPluginContent ? html`
-                <div class="editor-content-area plugin-controlled" data-slot="${SLOT_EDITOR_CONTENT_AREA}"
-                    data-note-id=${note.id}
-                    style="flex-grow: 1; display: flex; flex-direction: column; overflow-y: auto;">
-                    ${slotContent}
-                </div>` : html`
-                <div class="editor-content-area core-controlled"
-                    style="flex-grow: 1; display: flex; flex-direction: column;">
-                    <textarea
-                        class="core-content-editor"
-                        aria-label="Note Content"
-                        placeholder="Start writing..."
-                        .value=${note.content}
-                        @input=${this._handleContentInput(note.id)}
-                        style="flex-grow: 1; width: 100%; border: none; padding: 10px; font-family: inherit; font-size: inherit; resize: none; outline: none;"
-                    ></textarea>
-                </div>`}
+                 style="flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;">
+                 <!-- Render the slot which contains the toolbar -->
+                 <div data-slot="${SLOT_EDITOR_CONTENT_AREA}" data-note-id=${note?.id}>
+                     ${this._renderSlot(state, SLOT_EDITOR_CONTENT_AREA, note?.id)}
+                 </div>
+                 <!-- Always render the mount point; editor plugin will attach here -->
+                 <div id="editor-mount-point"
+                      style="flex-grow: 1; overflow-y: auto; border: 1px solid var(--border-color, #ccc); border-top: none; border-radius: 0 0 4px 4px; padding: 10px;"
+                      class="tiptap-editor-content" data-note-id=${note?.id || ''}>
+                      ${!note ? html`<div style="color: var(--secondary-text-color); padding: 10px;">Select or create a note.</div>` : ''}
+                 </div>
             </div>
-            <div class="editor-below-content" data-slot="${SLOT_EDITOR_BELOW_CONTENT}" data-note-id=${note.id}>
-                ${this._renderSlot(state, SLOT_EDITOR_BELOW_CONTENT, note.id)}
+
+            <div class="editor-below-content" data-slot="${SLOT_EDITOR_BELOW_CONTENT}" data-note-id=${note?.id}>
+                ${this._renderSlot(state, SLOT_EDITOR_BELOW_CONTENT, note?.id)}
             </div>
-            <div class="editor-plugin-panels" data-slot="${SLOT_EDITOR_PLUGIN_PANELS}" data-note-id=${note.id}>
-                ${this._renderSlot(state, SLOT_EDITOR_PLUGIN_PANELS, note.id)}
+            <div class="editor-plugin-panels" data-slot="${SLOT_EDITOR_PLUGIN_PANELS}" data-note-id=${note?.id}>
+                ${this._renderSlot(state, SLOT_EDITOR_PLUGIN_PANELS, note?.id)}
             </div>
         `;
     }
 
     _renderWelcomeMessage(state) {
-        const noteCount = state.noteOrder.filter(id => !state.notes[id]?.isArchived).length;
-        const message = noteCount > 0
-            ? `Select a note or click "➕ Add Note".`
-            : `Click "➕ Add Note" to get started!`;
-        return html`
-            <div class="welcome-message">
-                <h2>Welcome!</h2>
-                <p>${message}</p>
-            </div>`;
+        // This is now handled inside _renderEditorArea when `note` is null
+        return ''; // No longer needed here
     }
 
     _renderSettingsModal(state) {
@@ -570,6 +583,9 @@ class UIRenderer {
                         <option value="light" ?selected=${state.settings.core.theme === 'light'}>Light</option>
                         <option value="dark" ?selected=${state.settings.core.theme === 'dark'}>Dark</option>
                     </select>
+                    <button id="core-clear-state" @click=${this._handleClearState} style="margin-left: 20px; background-color: var(--danger-bg, #f8d7da); color: var(--danger-color, #721c24); border-color: var(--danger-color, #f5c6cb);">
+                        Clear All Local Data
+                    </button>
                 </div>
                 <div class="settings-plugins">
                     <h3>Plugin Settings</h3>
@@ -609,6 +625,7 @@ class UIRenderer {
     }
 
     async _handleLlmSummarize(noteId) {
+        if (!noteId) return;
         const coreAPI = window.realityNotebookCore;
         const editorService = coreAPI?.getService('EditorService');
         const llmService = coreAPI?.getService('LLMService');
@@ -628,13 +645,17 @@ class UIRenderer {
                 const summaryBlock = `\n\n---\n**AI Summary:**\n${summary}\n---`;
                 editorService.insertContentAtCursor(summaryBlock);
                 coreAPI.showGlobalStatus("Summary generated.", "success", 3000);
+            } else {
+                 coreAPI.showGlobalStatus("AI summary generation returned empty.", "info", 4000);
             }
         } catch (e) {
             console.error("Summarize action failed:", e);
+            coreAPI.showGlobalStatus(`Summarization Error: ${e.message}`, "error", 5000);
         }
     }
 
     async _handleLlmAskQuestion(noteId) {
+        if (!noteId) return;
         const coreAPI = window.realityNotebookCore;
         const editorService = coreAPI?.getService('EditorService');
         const llmService = coreAPI?.getService('LLMService');
@@ -655,13 +676,17 @@ class UIRenderer {
                 const answerBlock = `\n\n---\n**Q:** ${question}\n**A:** ${answer}\n---`;
                 editorService.insertContentAtCursor(answerBlock);
                 coreAPI.showGlobalStatus("Answer inserted into note.", "success", 3000);
+            } else {
+                 coreAPI.showGlobalStatus("AI did not provide an answer.", "info", 4000);
             }
         } catch (e) {
             console.error("Ask Question action failed:", e);
+            coreAPI.showGlobalStatus(`Ask Question Error: ${e.message}`, "error", 5000);
         }
     }
 
     async _handleLlmGetActions(noteId) {
+        if (!noteId) return;
         const coreAPI = window.realityNotebookCore;
         const editorService = coreAPI?.getService('EditorService');
         const llmService = coreAPI?.getService('LLMService');
@@ -678,7 +703,7 @@ class UIRenderer {
             if (actions === null) {
                 // Error handled within getActions, status message shown there
             } else if (actions.length > 0) {
-                const actionsList = actions.map(a => `<li>${a}</li>`).join('');
+                const actionsList = actions.map(a => `<li>${Utils.escapeHtml(a)}</li>`).join(''); // Sanitize actions
                 const actionsBlock = `\n\n---\n**Suggested Actions:**\n<ul>${actionsList}</ul>\n---`;
                 editorService.insertContentAtCursor(actionsBlock);
                 coreAPI.showGlobalStatus("Suggested actions inserted into note.", "success", 3000);
@@ -687,6 +712,7 @@ class UIRenderer {
             }
         } catch (e) {
             console.error("Get Actions action failed:", e);
+            coreAPI.showGlobalStatus(`Suggest Actions Error: ${e.message}`, "error", 5000);
         }
     }
 
@@ -694,8 +720,9 @@ class UIRenderer {
     _handleCloseModal = () => this._stateManager.dispatch({type: 'CORE_CLOSE_MODAL'});
     _handleAddNote = () => this._stateManager.dispatch({type: 'CORE_ADD_NOTE'});
     _handleSelectNote = (noteId) => this._stateManager.dispatch({type: 'CORE_SELECT_NOTE', payload: {noteId}});
-    _handleArchiveNote = (noteId) => () => this._stateManager.dispatch({type: 'CORE_ARCHIVE_NOTE', payload: {noteId}});
+    _handleArchiveNote = (noteId) => () => { if(noteId) this._stateManager.dispatch({type: 'CORE_ARCHIVE_NOTE', payload: {noteId}}); };
     _handleDeleteNote = (noteId, noteName) => () => {
+        if (!noteId) return;
         // More specific confirmation message
         if (confirm(`Permanently delete the note "${noteName || 'Untitled Note'}"?\n\nThis action cannot be undone.`)) {
             // Snapshot plugin data *before* dispatching delete
@@ -720,10 +747,13 @@ class UIRenderer {
         payload: e.target.value
     });
     _handleTitleInput = (noteId) => (e) => {
+        if (!noteId) return;
         const newValue = e.target.value;
         this._stateManager.dispatch({type: 'CORE_UPDATE_NOTE', payload: {noteId, changes: {name: newValue}}});
     };
     _handleContentInput = (noteId) => (e) => {
+        // This handler is only for the fallback <textarea>, not the Tiptap editor
+        if (!noteId) return;
         const newValue = e.target.value;
         this._stateManager.dispatch({type: 'CORE_UPDATE_NOTE', payload: {noteId, changes: {content: newValue}}});
     };
@@ -902,24 +932,30 @@ class UIRenderer {
         const {noteId, possibleKeys = [], onAddActionType = 'PROPERTY_ADD_CONFIRMED'} = props;
         const coreAPI = window.realityNotebookCore;
         const ontologyService = coreAPI?.getService('OntologyService');
+        const temporaryId = props.temporaryId || `temp_${Utils.generateUUID()}`; // Use passed ID or generate
 
         const handleSubmit = (event) => {
             event.preventDefault();
             const form = event.target;
             const key = form.keySelect.value === '__custom__' ? form.customKey.value.trim() : form.keySelect.value;
             const value = form.value.value;
-            const temporaryId = `temp_${Utils.generateUUID()}`;
 
             if (key) {
                 this._stateManager.dispatch({
                     type: onAddActionType,
-                    payload: { noteId, key, value, temporaryId }
+                    payload: { noteId, key, value, temporaryId } // Pass the consistent temporaryId
                 });
 
-                const potentialError = this._stateManager.getState().uiState.propertyValidationErrors?.[noteId]?.[temporaryId];
-                if (!potentialError) {
-                    this._handleCloseModal();
-                }
+                // Check for validation errors *after* dispatching, allowing the property plugin reducer to run
+                requestAnimationFrame(() => {
+                    const potentialError = this._stateManager.getState().uiState.propertyValidationErrors?.[noteId]?.[temporaryId];
+                    if (!potentialError) {
+                        this._handleCloseModal();
+                    } else {
+                        // If there's an error, force a re-render of the modal to display it
+                        this._stateManager.dispatch({ type: 'FORCE_UI_UPDATE' }); // Need to handle this dummy action or just rely on state change
+                    }
+                });
 
             } else {
                 coreAPI?.showGlobalStatus("Property key cannot be empty.", "warning");
@@ -954,9 +990,9 @@ class UIRenderer {
                     </div>
                     <div class="form-field">
                         <label for="prop-value-input">Value:</label>
-                        <input type="text" id="prop-value-input" name="value" required aria-describedby="prop-add-error-${props.temporaryId}">
-                        <div id="prop-add-error-${props.temporaryId}" class="validation-error">
-                            ${state.uiState.propertyValidationErrors?.[noteId]?.[props.temporaryId] || ''}
+                        <input type="text" id="prop-value-input" name="value" required aria-describedby="prop-add-error-${temporaryId}" aria-invalid=${!!state.uiState.propertyValidationErrors?.[noteId]?.[temporaryId]}>
+                        <div id="prop-add-error-${temporaryId}" class="validation-error">
+                            ${state.uiState.propertyValidationErrors?.[noteId]?.[temporaryId] || ''}
                         </div>
                     </div>
                     <div class="modal-actions">
@@ -980,23 +1016,24 @@ class UIRenderer {
         const ontologyService = coreAPI?.getService('OntologyService');
         const hints = ontologyService?.getUIHints(property.key) || {};
         const inputType = hints.inputType || 'text';
+        const propertyId = property.id; // Use the actual property ID
 
         const renderInput = () => {
             if (inputType === 'select' && hints.options) {
-                return html`<select name="value" required>
+                return html`<select name="value" required aria-describedby="prop-edit-error-${propertyId}" aria-invalid=${!!state.uiState.propertyValidationErrors?.[noteId]?.[propertyId]}>
                     ${hints.options.map(opt => html`
                         <option value="${opt}" ?selected=${opt === property.value}>${opt}</option>
                     `)}
                 </select>`;
             } else if (inputType === 'checkbox') {
-                return html`<input type="checkbox" name="value" .checked=${!!property.value}>`;
+                return html`<input type="checkbox" name="value" .checked=${!!property.value} aria-describedby="prop-edit-error-${propertyId}" aria-invalid=${!!state.uiState.propertyValidationErrors?.[noteId]?.[propertyId]}>`;
             } else if (inputType === 'date') {
                 const dateValue = property.value ? new Date(property.value).toISOString().split('T')[0] : '';
-                return html`<input type="date" name="value" .value=${dateValue}>`;
+                return html`<input type="date" name="value" .value=${dateValue} aria-describedby="prop-edit-error-${propertyId}" aria-invalid=${!!state.uiState.propertyValidationErrors?.[noteId]?.[propertyId]}>`;
             } else if (inputType === 'number') {
-                return html`<input type="number" name="value" .value=${property.value ?? ''} step=${hints.step ?? 'any'}>`;
+                return html`<input type="number" name="value" .value=${property.value ?? ''} step=${hints.step ?? 'any'} aria-describedby="prop-edit-error-${propertyId}" aria-invalid=${!!state.uiState.propertyValidationErrors?.[noteId]?.[propertyId]}>`;
             } else { // Default text
-                return html`<input type="text" name="value" .value=${property.value ?? ''} required>`;
+                return html`<input type="text" name="value" .value=${property.value ?? ''} required aria-describedby="prop-edit-error-${propertyId}" aria-invalid=${!!state.uiState.propertyValidationErrors?.[noteId]?.[propertyId]}>`;
             }
         };
 
@@ -1015,15 +1052,20 @@ class UIRenderer {
                 if (Object.keys(changes).length > 0) {
                      this._stateManager.dispatch({
                         type: onUpdateActionType,
-                        payload: {noteId, propertyId: property.id, changes}
+                        payload: {noteId, propertyId: propertyId, changes} // Use actual propertyId
                     });
 
-                    const potentialError = this._stateManager.getState().uiState.propertyValidationErrors?.[noteId]?.[property.id];
-                    if (!potentialError) {
-                        this._handleCloseModal();
-                    }
+                    // Check for validation errors *after* dispatching
+                    requestAnimationFrame(() => {
+                        const potentialError = this._stateManager.getState().uiState.propertyValidationErrors?.[noteId]?.[propertyId];
+                        if (!potentialError) {
+                            this._handleCloseModal();
+                        } else {
+                             this._stateManager.dispatch({ type: 'FORCE_UI_UPDATE' }); // Trigger re-render
+                        }
+                    });
                 } else {
-                    this._handleCloseModal();
+                    this._handleCloseModal(); // No changes, just close
                 }
             } else {
                 coreAPI?.showGlobalStatus("Property key cannot be empty.", "warning");
@@ -1032,7 +1074,7 @@ class UIRenderer {
 
         const handleDelete = () => {
             if (confirm(`Are you sure you want to delete property "${property.key}"?`)) {
-                this._stateManager.dispatch({type: onDeleteActionType, payload: {noteId, propertyId: property.id}});
+                this._stateManager.dispatch({type: onDeleteActionType, payload: {noteId, propertyId: propertyId}}); // Use actual propertyId
                 this._handleCloseModal();
             }
         };
@@ -1048,10 +1090,10 @@ class UIRenderer {
                         <input type="text" id="prop-edit-key" name="key" .value=${property.key} required>
                     </div>
                     <div class="form-field">
-                        <label for="prop-edit-value">Value (Type: ${property.type || 'text'}):</label> {/* Ensure type is shown */}
+                        <label for="prop-edit-value">Value (Type: ${property.type || 'text'}):</label>
                         ${renderInput()}
-                         <div id="prop-edit-error-${property.id}" class="validation-error">
-                            ${state.uiState.propertyValidationErrors?.[noteId]?.[property.id] || ''}
+                         <div id="prop-edit-error-${propertyId}" class="validation-error">
+                            ${state.uiState.propertyValidationErrors?.[noteId]?.[propertyId] || ''}
                         </div>
                     </div>
                     <div class="modal-actions">
@@ -1077,8 +1119,11 @@ class UIRenderer {
     _saveScrollPositions() {
         const noteList = this._rootElement?.querySelector('#note-list');
         if (noteList) this._scrollPositions.noteList = noteList.scrollTop;
-        const editorArea = this._rootElement?.querySelector('#editor-area');
-        if (editorArea) this._scrollPositions.editorArea = editorArea.scrollTop;
+        // Don't save scroll for editor-area as Tiptap manages its own scroll within #editor-mount-point
+        // const editorArea = this._rootElement?.querySelector('#editor-area');
+        // if (editorArea) this._scrollPositions.editorArea = editorArea.scrollTop;
+        const editorMountPoint = this._rootElement?.querySelector('#editor-mount-point');
+        if (editorMountPoint) this._scrollPositions.editorMountPoint = editorMountPoint.scrollTop;
     }
 
     _restoreScrollPositions() {
@@ -1087,10 +1132,15 @@ class UIRenderer {
             if (noteList && this._scrollPositions.hasOwnProperty('noteList')) {
                 noteList.scrollTop = this._scrollPositions.noteList;
             }
-            const editorArea = this._rootElement?.querySelector('#editor-area');
-            if (editorArea && this._scrollPositions.hasOwnProperty('editorArea')) {
-                editorArea.scrollTop = this._scrollPositions.editorArea;
-            }
+            // Restore scroll for the mount point directly
+            const editorMountPoint = this._rootElement?.querySelector('#editor-mount-point');
+             if (editorMountPoint && this._scrollPositions.hasOwnProperty('editorMountPoint')) {
+                 editorMountPoint.scrollTop = this._scrollPositions.editorMountPoint;
+             }
+            // const editorArea = this._rootElement?.querySelector('#editor-area');
+            // if (editorArea && this._scrollPositions.hasOwnProperty('editorArea')) {
+            //     editorArea.scrollTop = this._scrollPositions.editorArea;
+            // }
             this._scrollPositions = {};
         });
     }
@@ -1338,6 +1388,7 @@ const initialAppState = {
     systemNoteIndex: {},
     settings: {
         core: {theme: 'light', userId: null, onboardingComplete: false},
+        plugins: {} // Ensure plugins settings object exists
     },
     uiState: {
         selectedNoteId: null,
@@ -1358,14 +1409,25 @@ const coreReducer = (draft, action) => {
     switch (action.type) {
         case 'CORE_STATE_LOADED': {
             const loaded = action.payload.loadedState || {};
-            // Reset to initial state first
-            Object.assign(draft, initialAppState);
+            // Reset to initial state first, preserving core settings structure
+            Object.assign(draft, {
+                ...initialAppState,
+                settings: {
+                    core: {...initialAppState.settings.core},
+                    plugins: {} // Start fresh for plugin settings
+                },
+                uiState: {...initialAppState.uiState}, // Reset UI state
+                pluginRuntimeState: {}, // Reset runtime state
+                runtimeCache: {} // Reset runtime cache
+            });
+
             // Carefully merge persisted data
             draft.notes = loaded.notes || {};
             draft.noteOrder = Array.isArray(loaded.noteOrder) ? loaded.noteOrder.filter(id => draft.notes[id]) : []; // Filter out orphaned IDs
-            draft.settings.core = {...initialAppState.settings.core, ...(loaded.settings?.core || {})};
+            draft.settings.core = {...draft.settings.core, ...(loaded.settings?.core || {})}; // Merge core settings
             draft.settings.plugins = loaded.settings?.plugins || {}; // Load plugin settings
-            draft.runtimeCache = loaded.runtimeCache || {};
+            draft.runtimeCache = loaded.runtimeCache || {}; // Load runtime cache
+
             // Rebuild systemNoteIndex from loaded notes
             draft.systemNoteIndex = {};
             Object.values(draft.notes).forEach(note => {
@@ -1376,9 +1438,9 @@ const coreReducer = (draft, action) => {
                     draft.systemNoteIndex[note.systemType] = note.id;
                 }
             });
-            // Ensure transient state is reset
-            draft.uiState = {...initialAppState.uiState};
-            draft.pluginRuntimeState = {};
+            // Ensure transient state is reset (already done above)
+            // draft.uiState = {...initialAppState.uiState};
+            // draft.pluginRuntimeState = {};
             break;
         }
 
@@ -1394,7 +1456,7 @@ const coreReducer = (draft, action) => {
                 updatedAt: now,
                 isArchived: false,
                 systemType: systemType, // Use destructured value
-                // pluginData is initialized by plugin reducers reacting to this action
+                pluginData: {} // Initialize pluginData
             };
             draft.noteOrder.unshift(newNoteId);
             draft.uiState.selectedNoteId = newNoteId;
@@ -1412,6 +1474,8 @@ const coreReducer = (draft, action) => {
             const {noteId} = action.payload;
             if (draft.notes[noteId] && draft.uiState.selectedNoteId !== noteId) {
                 draft.uiState.selectedNoteId = noteId;
+                // Clear validation errors when selecting a new note
+                draft.uiState.propertyValidationErrors = {};
             }
             break;
         }
@@ -1498,6 +1562,10 @@ const coreReducer = (draft, action) => {
             draft.noteOrder = draft.noteOrder.filter(id => id !== noteId);
             // Remove from notes object
             delete draft.notes[noteId];
+            // Remove any associated validation errors
+            if (draft.uiState.propertyValidationErrors?.[noteId]) {
+                delete draft.uiState.propertyValidationErrors[noteId];
+            }
 
             if (draft.uiState.selectedNoteId === noteId) {
                 draft.uiState.selectedNoteId = null;
@@ -1597,6 +1665,16 @@ const coreReducer = (draft, action) => {
             draft.uiState.propertyValidationErrors[noteId][idToUse] = errorMessage;
             break;
         }
+        // Clear validation errors when a property is successfully added or updated
+        case 'PROPERTY_ADD_CONFIRMED':
+        case 'PROPERTY_UPDATE_CONFIRMED': {
+             const { noteId, propertyId, temporaryId } = action.payload;
+             const idToClear = propertyId || temporaryId;
+             if (idToClear && draft.uiState.propertyValidationErrors?.[noteId]?.[idToClear]) {
+                 delete draft.uiState.propertyValidationErrors[noteId][idToClear];
+             }
+             break;
+        }
 
         case 'CORE_SET_NOTE_LIST_SORT_MODE': {
             const newMode = action.payload;
@@ -1607,6 +1685,13 @@ const coreReducer = (draft, action) => {
             }
             break;
         }
+
+        // Dummy action to force UI update if needed (e.g., after validation error)
+        case 'FORCE_UI_UPDATE': {
+            // No state change needed, just triggers listeners
+            break;
+        }
+
 
         default:
             break;

@@ -188,18 +188,26 @@ class TiptapEditor extends AbstractEditorLibrary {
                 onUpdate: ({ editor }) => {
                     if (this._isUpdatingInternally) return;
                     const newContent = this.getContent();
-                    if (!(this._lastSetContentWasIdentical && this._content === newContent) && this._content !== newContent) {
-                        this._content = newContent;
-                        this._onChange();
-                        this._lastSetContentWasIdentical = false;
+                    // Check if content actually changed from the last known state
+                    if (this._content !== newContent) {
+                        this._content = newContent; // Update internal cache immediately
+                        this._onChange(); // Trigger the debounced save
+                        this._lastSetContentWasIdentical = false; // Reset flag
                     }
                     if (this._onSelectionUpdateCallback) this._onSelectionUpdateCallback(editor);
                 },
                 onSelectionUpdate: ({ editor }) => {
                     if (this._onSelectionUpdateCallback) this._onSelectionUpdateCallback(editor);
                 },
+                // Add transaction listener to potentially catch external updates?
+                // onTransaction: ({ transaction }) => {
+                //     // Check if the transaction was not originated by the editor itself
+                //     if (!transaction.getMeta('uiEvent')) {
+                //         // Potentially update internal state or cache if needed
+                //     }
+                // }
             });
-            this._content = this.getContent();
+            this._content = this.getContent(); // Initialize internal cache
         } catch (error) {
             this._logError("Initialization", error);
             if (this._element) this._element.innerHTML = `<div style="color: red; padding: 10px;">Error initializing editor. Check console.</div>`;
@@ -213,12 +221,30 @@ class TiptapEditor extends AbstractEditorLibrary {
         let currentContent;
         try { currentContent = this._tiptapInstance.getHTML(); }
         catch (error) { this._logError("getContent (for setContent comparison)", error); currentContent = this._content; }
+
         if (currentContent !== contentToSet) {
-            this._isUpdatingInternally = true; this._lastSetContentWasIdentical = false;
-            try { this._tiptapInstance.commands.setContent(contentToSet, false); this._content = contentToSet; }
-            catch (error) { this._logError("setContent", error); }
-            finally { this._isUpdatingInternally = false; }
-        } else { this._lastSetContentWasIdentical = true; }
+            this._isUpdatingInternally = true;
+            this._lastSetContentWasIdentical = false;
+            try {
+                // Set content without emitting an update event to prevent loops
+                this._tiptapInstance.commands.setContent(contentToSet, false);
+                this._content = contentToSet; // Update internal cache AFTER successful set
+            }
+            catch (error) {
+                this._logError("setContent", error);
+                // If setContent fails, should we revert the internal cache?
+                // this._content = currentContent; // Maybe revert? Needs testing.
+            }
+            finally {
+                // Use requestAnimationFrame to ensure the internal update flag is reset *after*
+                // the current rendering cycle, preventing potential race conditions with onUpdate.
+                requestAnimationFrame(() => {
+                    this._isUpdatingInternally = false;
+                });
+            }
+        } else {
+            this._lastSetContentWasIdentical = true;
+        }
     }
 
     getContent() {
@@ -343,7 +369,10 @@ function SuggestionPlugin(dispatch) {
             apply(tr, pluginState) {
                 const meta = tr.getMeta(suggestionPluginKey); let next = { ...pluginState };
                 if (meta) { if (meta.noteId !== undefined) next.noteId = meta.noteId; if (meta.decorationSet !== undefined) next.decorationSet = meta.decorationSet; }
-                next.decorationSet = next.decorationSet.map(tr.mapping, tr.doc);
+                // Only map decorations if the document changed
+                if (tr.docChanged) {
+                    next.decorationSet = next.decorationSet.map(tr.mapping, tr.doc);
+                }
                 currentNoteId = next.noteId; currentDecorationSet = next.decorationSet; return next;
             },
         },
@@ -354,12 +383,19 @@ function SuggestionPlugin(dispatch) {
             const unsub = store.subscribe((newState) => {
                 const state = suggestionPluginKey.getState(editorView.state); const noteId = state?.noteId;
                 if (!noteId) { if (currentDecorationSet !== DecorationSet.empty) { destroyTippyInstances(); if (!editorView.isDestroyed) editorView.dispatch(editorView.state.tr.setMeta(suggestionPluginKey, { decorationSet: DecorationSet.empty })); } prevJson = null; return; }
-                const sugg = newState.pluginRuntimeState?.parser?.suggestions?.[noteId] || []; const pending = sugg.filter(s => s.status === 'pending' && s.location);
+                const sugg = newState.pluginRuntimeState?.parser?.suggestions?.[noteId] || [];
+                // Filter suggestions that are pending AND have a valid location
+                const pending = sugg.filter(s => s.status === 'pending' && s.location && typeof s.location.start === 'number' && typeof s.location.end === 'number');
                 const currJson = JSON.stringify(pending.map(s => ({ id: s.id, loc: s.location })));
                 if (currJson !== prevJson) {
                     prevJson = currJson; destroyTippyInstances();
                     const decos = pending.flatMap(s => { /* ... (decoration creation unchanged) ... */
-                        const { start, end } = s.location; if (typeof start !== 'number' || typeof end !== 'number' || start >= end || start >= editorView.state.doc.content.size || end > editorView.state.doc.content.size) { console.warn("Invalid sugg location", s); return []; }
+                        const { start, end } = s.location;
+                        // Additional validation: Ensure location is within current document bounds
+                        if (start >= end || start < 0 || end > editorView.state.doc.content.size) {
+                             console.warn("SuggestionPlugin: Invalid or out-of-bounds suggestion location skipped.", { suggestionId: s.id, start, end, docSize: editorView.state.doc.content.size });
+                             return [];
+                        }
                         const hl = Decoration.inline(start, end, { class: 'suggestion-highlight', nodeName: 'span' });
                         const wd = Decoration.widget(end, () => { /* ... (widget creation unchanged) ... */
                             const btn = document.createElement('button'); btn.className = 'suggestion-action-button'; btn.textContent = '💡'; btn.dataset.suggestionId = s.id; btn.title = 'Suggested Property';
@@ -367,7 +403,13 @@ function SuggestionPlugin(dispatch) {
                             tippyInstances.push(tippyInst); return btn;
                         }, { side: 1 }); return [hl, wd];
                     });
-                    if (!editorView.isDestroyed) editorView.dispatch(editorView.state.tr.setMeta(suggestionPluginKey, { decorationSet: DecorationSet.create(editorView.state.doc, decos) }));
+                    if (!editorView.isDestroyed) {
+                        const tr = editorView.state.tr.setMeta(suggestionPluginKey, { decorationSet: DecorationSet.create(editorView.state.doc, decos) });
+                        // Avoid dispatching if the view is already destroyed (can happen during rapid note switching)
+                        if (!editorView.isDestroyed) {
+                            editorView.dispatch(tr);
+                        }
+                    }
                 }
             });
             return { destroy() { destroyTippyInstances(); unsub(); }, update(v, pS) { const nS = suggestionPluginKey.getState(v.state); const oS = suggestionPluginKey.getState(pS); if (nS?.noteId !== oS?.noteId) { destroyTippyInstances(); prevJson = null; } } };
@@ -398,7 +440,8 @@ export const RichTextEditorPlugin = {
     _coreAPI: null,
     _currentNoteId: null,
     _toolbarUpdateQueued: false,
-    _currentContentCache: '',
+    _currentContentCache: '', // Cache of content *set* by the plugin or received from state
+    _isUpdatingFromState: false, // Flag to indicate update comes from state, not user input
 
     init(coreAPI) { this.coreAPI = coreAPI; console.log(`${this.name}: Initialized.`); },
     onActivate() { console.log(`${this.name}: Activated. Editor creation deferred.`); },
@@ -424,18 +467,28 @@ export const RichTextEditorPlugin = {
 
     registerUISlots() {
         return {
+            // This slot now ONLY renders the toolbar. The mount point is rendered by core.js.
             [SLOT_EDITOR_CONTENT_AREA]: (props) => {
                 const { state, dispatch, noteId, coreAPI } = props;
                 const note = noteId ? state.notes[noteId] : null;
-                const debounceTime = 600;
+                const debounceTime = 600; // Debounce time for saving user edits
 
+                // Use requestAnimationFrame to defer DOM manipulation and editor logic
+                // until after the main Lit render cycle for the current state update.
                 requestAnimationFrame(() => {
                     const mountPoint = document.getElementById('editor-mount-point');
-                    const toolbarContainer = document.getElementById('editor-toolbar-container'); // Renamed for clarity
+                    const toolbarContainer = document.getElementById('editor-toolbar-container');
 
-                    if (!mountPoint || !toolbarContainer) {
-                        console.warn(`${this.name}: Mount point or toolbar container not found.`);
+                    if (!toolbarContainer) {
+                         console.warn(`${this.name}: Toolbar container not found.`);
+                         // Don't destroy editor if only toolbar is missing, but log it.
+                    }
+                    if (!mountPoint) {
+                        // If mount point is missing, we can't have an editor. Destroy if exists.
+                        console.warn(`${this.name}: Editor mount point not found. Destroying editor if active.`);
                         if (this._editorInstance && !this._editorInstance.inactive()) this._destroyEditor();
+                        this._currentNoteId = null; // Ensure state reflects no active editor
+                        this._currentContentCache = '';
                         return;
                     }
 
@@ -443,93 +496,147 @@ export const RichTextEditorPlugin = {
                     const editorShouldExist = !!note;
                     const noteChanged = currentInstanceExists && this._currentNoteId !== noteId;
 
-                    // 1. DESTROY
+                    // --- Editor Lifecycle Management ---
+
+                    // 1. DESTROY: If no note selected OR note changed
                     if ((!editorShouldExist && currentInstanceExists) || noteChanged) {
-                        this._destroyEditor(); this._currentNoteId = null; this._currentContentCache = '';
-                        mountPoint.innerHTML = ''; delete mountPoint.dataset.noteId;
+                        // console.log(`Editor Lifecycle: Destroying editor (ShouldExist: ${editorShouldExist}, NoteChanged: ${noteChanged})`);
+                        this._destroyEditor();
+                        this._currentNoteId = null;
+                        this._currentContentCache = '';
+                        // Clear the mount point content manually ONLY if we are sure no editor should exist
+                        if (!editorShouldExist) {
+                            mountPoint.innerHTML = ''; // Clear previous editor content
+                        }
+                        // Update toolbar state (will show 'loading' or similar)
+                        this._updateToolbarUI('destroy');
                     }
 
-                    // 2. CREATE
+                    // 2. CREATE: If note selected AND no active instance
                     if (editorShouldExist && (!this._editorInstance || this._editorInstance.inactive())) {
+                        // console.log(`Editor Lifecycle: Creating editor for note ${noteId}`);
+                        // Clear mount point before creating to ensure clean slate
+                        mountPoint.innerHTML = '';
                         try {
                             this._editorInstance = new TiptapEditor(mountPoint, {
                                 content: note.content || '',
                                 onSelectionUpdate: () => this._updateToolbarUI('selection'),
                                 onChange: debounce(() => {
-                                    if (!this._editorInstance || this._editorInstance.inactive() || !this._currentNoteId || this._editorInstance._isUpdatingInternally) return;
-                                    const currentEditorContent = this._editorInstance.getContent(); this._currentContentCache = currentEditorContent;
+                                    // This callback is triggered by user edits (or programmatic changes that emit updates)
+                                    if (!this._editorInstance || this._editorInstance.inactive() || !this._currentNoteId || this._isUpdatingFromState) return;
+
+                                    const currentEditorContent = this._editorInstance.getContent();
+                                    // Update cache *only* when user changes content
+                                    this._currentContentCache = currentEditorContent;
+
+                                    // Check against state *before* dispatching to avoid redundant updates
                                     const noteInState = coreAPI.getState().notes[this._currentNoteId];
                                     if (noteInState && currentEditorContent !== noteInState.content) {
+                                        // console.log(`Editor onChange: Dispatching update for note ${this._currentNoteId}`);
                                         dispatch({ type: 'CORE_UPDATE_NOTE', payload: { noteId: this._currentNoteId, changes: { content: currentEditorContent } } });
                                     }
                                 }, debounceTime),
                                 editorOptions: {}, dispatch: dispatch, ontologyService: coreAPI.getService('OntologyService'), coreAPI: coreAPI
                             });
-                            this._currentNoteId = noteId; this._currentContentCache = note.content || ''; mountPoint.dataset.noteId = noteId;
-                            Promise.resolve().then(() => { // Sync suggestion plugin after microtask
-                                if (this._editorInstance?._tiptapInstance?.view && this._editorInstance?._tiptapInstance?.state) {
-                                    this._editorInstance._tiptapInstance.view.dispatch(this._editorInstance._tiptapInstance.state.tr.setMeta(suggestionPluginKey, { noteId: noteId }));
+                            this._currentNoteId = noteId;
+                            this._currentContentCache = note.content || ''; // Initialize cache
+                            mountPoint.dataset.noteId = noteId; // Keep track on the element
+
+                            // Sync suggestion plugin state after editor creation
+                            Promise.resolve().then(() => {
+                                if (this._editorInstance?._tiptapInstance?.view && this._editorInstance?._tiptapInstance?.state && !this._editorInstance.inactive()) {
+                                    try {
+                                        this._editorInstance._tiptapInstance.view.dispatch(
+                                            this._editorInstance._tiptapInstance.state.tr.setMeta(suggestionPluginKey, { noteId: noteId })
+                                        );
+                                    } catch (dispatchError) {
+                                         console.error("Error dispatching suggestion meta update after creation:", dispatchError);
+                                    }
                                 } else {
-                                    console.warn("Editor view/state not ready for suggestion meta update.");
+                                    console.warn("Editor view/state not ready for suggestion meta update after creation.");
                                 }
                             });
-                            this._updateToolbarUI('init');
+                            this._updateToolbarUI('create'); // Update toolbar state
                         } catch (error) {
                             console.error(`${this.name}: Failed to init editor for note ${noteId}:`, error);
-                            mountPoint.innerHTML = `<div style="color: red;">Editor Load Error!</div>`;
-                            this._destroyEditor();
+                            mountPoint.innerHTML = `<div style="color: red;">Editor Load Error! Check console.</div>`;
+                            this._destroyEditor(); // Clean up failed instance
                         }
                     }
-                    // 3. UPDATE
+                    // 3. UPDATE: If note selected, instance exists, and note hasn't changed ID
                     else if (editorShouldExist && this._editorInstance && !this._editorInstance.inactive() && !noteChanged) {
-                        // Check if the content has actually changed before updating
-                        if (note.content !== this._currentContentCache && !this._editorInstance.hasFocus()) {
-                            this._isUpdatingInternally = true;
-                            try {
-                                // Use Tiptap's `commands.setContent` method instead of `updateContent` to preserve editor state
-                                this._editorInstance._tiptapInstance.commands.setContent(note.content || '', false);
-                                this._currentContentCache = note.content || '';
-                            } finally {
-                                this._isUpdatingInternally = false;
+                        // Check if the content in the state differs from our cached version
+                        if (note.content !== this._currentContentCache) {
+                            // Only update the editor if it doesn't currently have focus,
+                            // to avoid overwriting active user edits.
+                            if (!this._editorInstance.hasFocus()) {
+                                // console.log(`Editor Lifecycle: Updating content for note ${noteId} from state (Editor not focused)`);
+                                this._isUpdatingFromState = true; // Set flag before update
+                                try {
+                                    // Use Tiptap's `commands.setContent` method
+                                    this._editorInstance.setContent(note.content || ''); // setContent now updates cache internally
+                                    // Cache is updated inside setContent on success
+                                } catch(error) {
+                                    console.error(`${this.name}: Error during setContent in update block:`, error);
+                                } finally {
+                                    // Reset flag after update attempt
+                                    requestAnimationFrame(() => { this._isUpdatingFromState = false; });
+                                }
+                            } else {
+                                // console.log(`Editor Lifecycle: State content differs, but editor has focus. Skipping update for note ${noteId}.`);
+                                // Content in state differs, but user is editing. The next save (onChange)
+                                // from the user will eventually overwrite the state difference.
+                                // OR, if the state change is critical, we might need a different strategy,
+                                // but typically preserving user input is preferred.
                             }
                         }
+                        // Ensure suggestion plugin has the correct noteId (might be redundant but safe)
+                        const suggestionState = suggestionPluginKey.getState(this._editorInstance._tiptapInstance.state);
+                        if (suggestionState?.noteId !== noteId) {
+                             // console.log(`Editor Lifecycle: Syncing suggestion plugin noteId for ${noteId}`);
+                             Promise.resolve().then(() => {
+                                if (this._editorInstance?._tiptapInstance?.view && this._editorInstance?._tiptapInstance?.state && !this._editorInstance.inactive()) {
+                                     try {
+                                        this._editorInstance._tiptapInstance.view.dispatch(
+                                            this._editorInstance._tiptapInstance.state.tr.setMeta(suggestionPluginKey, { noteId: noteId })
+                                        );
+                                     } catch (dispatchError) {
+                                         console.error("Error dispatching suggestion meta update during sync:", dispatchError);
+                                     }
+                                }
+                             });
+                        }
+                         // Always ensure toolbar reflects current editor state
+                         this._updateToolbarUI('update');
                     }
-                    // 4. CLEANUP
+                    // 4. NO EDITOR STATE: If no note is selected and no editor exists (already handled by destroy)
+                    // This case is implicitly handled by the destroy logic above. If !editorShouldExist,
+                    // the editor is destroyed. If it didn't exist anyway, nothing happens.
+                    // We just need to ensure the toolbar is updated correctly.
                     else if (!editorShouldExist) {
-                        this._destroyEditor();
-                        // Do not manipulate the DOM directly here. Let Lit-html handle it.
-                        // mountPoint.innerHTML = '';
-                        // delete mountPoint.dataset.noteId;
-                        this._currentNoteId = null;
-                        this._currentContentCache = '';
-                        this._updateToolbarUI('noEditorCleanup');
+                         this._updateToolbarUI('noEditor');
                     }
-                }); // End rAF
 
-                // --- Return HTML Structure ---
+                }); // End requestAnimationFrame
+
+                // --- Return ONLY the Toolbar HTML Structure ---
+                // The editor itself is managed in the requestAnimationFrame callback above.
                 return html`
-                    <div class="editor-container" style="display: flex; flex-direction: column; height: 100%;">
-                    <div id="editor-toolbar-container" class="editor-toolbar" role="toolbar" aria-label="Text Formatting">
-                            <!-- Toolbar content rendered dynamically -->
-                        </div>
-                        <div id="editor-mount-point"
-                            style="flex-grow: 1; overflow-y: auto; border: 1px solid var(--border-color, #ccc); border-top: none; border-radius: 0 0 4px 4px; padding: 10px;"
-                            class="tiptap-editor-content" data-note-id=${noteId || ''}>
-                            ${!note && (!this._editorInstance || this._editorInstance.inactive())
-                                ? html`<div style="color: var(--secondary-text-color); padding: 10px;">Select or create a note.</div>`
-                                : ''}
+                    <div class="editor-toolbar-container" style="flex-shrink: 0;"> <!-- Prevent toolbar from shrinking -->
+                        <div id="editor-toolbar-container" class="editor-toolbar" role="toolbar" aria-label="Text Formatting">
+                            <!-- Toolbar content rendered dynamically by _updateToolbarUI -->
+                            ${renderToolbarContent(this._editorInstance)}
                         </div>
                     </div>
                     <style>
                         /* --- CSS Rules (Ensure ALL previous styles are pasted here) --- */
 
                         /* --- Editor Toolbar & Content Styles --- */
-                        .editor-toolbar { display: flex; flex-wrap: wrap; align-items: center; padding: 4px 8px; border: 1px solid var(--border-color, #ccc); border-radius: 4px 4px 0 0; 
-                            
-                             
-                            min-height: 34px; 
+                        .editor-toolbar { display: flex; flex-wrap: wrap; align-items: center; padding: 4px 8px; border: 1px solid var(--border-color, #ccc); border-radius: 4px 4px 0 0; border-bottom: none; /* Remove bottom border as mount point has top border */
+                            background-color: var(--toolbar-bg, #f8f9fa); /* Subtle background */
+                            min-height: 34px;
                         }
-                        .toolbar-button, .toolbar-select { border: 1px solid transparent; border-radius: 3px; padding: 4px 6px; margin: 2px; cursor: pointer; font-size: 1em; line-height: 1.2; min-width: 28px; text-align: center; color: var(--text-color, #333); vertical-align: middle; }
+                        .toolbar-button, .toolbar-select { border: 1px solid transparent; border-radius: 3px; padding: 4px 6px; margin: 2px; cursor: pointer; font-size: 1em; line-height: 1.2; min-width: 28px; text-align: center; color: var(--text-color, #333); vertical-align: middle; background-color: transparent; }
                         .toolbar-button:hover:not(:disabled) { background-color: var(--button-hover-bg, #e0e0e0); border-color: var(--border-color, #ccc); }
                         .toolbar-button.is-active { background-color: var(--accent-color-muted, #cce5ff); border-color: var(--accent-color, #99caff); color: var(--accent-text-color, #004085); }
                         .toolbar-button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -538,8 +645,9 @@ export const RichTextEditorPlugin = {
                         .toolbar-divider { display: inline-block; width: 1px; height: 20px; background-color: var(--border-color, #ccc); margin: 0 8px; vertical-align: middle; }
                         .llm-action-button { /* Style for AI buttons */ }
 
-                        /* Tiptap Content Area */
-                        .tiptap-editor-content .tiptap { outline: none; min-height: 150px; line-height: 1.6; color: var(--text-color); caret-color: var(--text-color); padding: 5px; /* Small padding inside content area */ }
+                        /* Tiptap Content Area (#editor-mount-point is styled in core.js now) */
+                        /* Styles specific to the content *inside* the Tiptap editor */
+                        .tiptap-editor-content .tiptap { outline: none; min-height: 150px; /* Ensure minimum height */ line-height: 1.6; color: var(--text-color); caret-color: var(--text-color); }
                         .tiptap-editor-content .tiptap > * + * { margin-top: 0.8em; }
                         .tiptap-editor-content .tiptap p { margin: 0; }
                         .tiptap-editor-content .tiptap ul, .tiptap-editor-content .tiptap ol { padding-left: 1.5rem; margin: 0.5em 0; }

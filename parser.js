@@ -175,6 +175,12 @@ export const SemanticParserPlugin = {
                     if (!propertyIdToUse) {
                          propertyIdToUse = existingProp ? existingProp.id : pluginInstance.coreAPI.utils.generateUUID();
                     }
+                } else {
+                     // No location provided with the suggestion, cannot replace text.
+                     // Ensure propertyIdToUse is set for adding/updating the property.
+                     if (!propertyIdToUse) {
+                         propertyIdToUse = existingProp ? existingProp.id : pluginInstance.coreAPI.utils.generateUUID();
+                     }
                 }
 
                 // --- Dispatch State Update (Add or Update Property) ---
@@ -182,7 +188,7 @@ export const SemanticParserPlugin = {
                     // Only dispatch update if value or type actually changed
                     if (existingProp.value !== propData.value || existingProp.type !== propData.type) {
                         storeApi.dispatch({
-                            type: 'PROPERTY_UPDATE',
+                            type: 'PROPERTY_UPDATE', // Use generic update action type
                             payload: {
                                 noteId: noteId,
                                 propertyId: existingProp.id, // Use the actual existing ID
@@ -195,7 +201,7 @@ export const SemanticParserPlugin = {
                 } else {
                     // Dispatch PROPERTY_ADD using the ID used for editor insertion (or newly generated)
                     storeApi.dispatch({
-                        type: 'PROPERTY_ADD',
+                        type: 'PROPERTY_ADD', // Use generic add action type
                         payload: {
                             noteId: noteId,
                             temporaryId: propertyIdToUse, // Pass the ID used/generated above
@@ -250,6 +256,8 @@ export const SemanticParserPlugin = {
                             // console.log(`ParserReducer: Marking suggestion ${suggestion.id} as confirmed for note ${noteId}`);
                             // Update the status directly on the suggestion object in the state
                             noteSuggestions[suggestionIndex].status = 'confirmed';
+                            // Optionally remove the suggestion from the list after confirmation
+                            // parserState.suggestions[noteId] = noteSuggestions.filter(s => s.id !== suggestion.id);
                         } else {
                             console.warn(`ParserReducer: Suggestion ${suggestion.id} not found for confirmation in note ${noteId}`);
                         }
@@ -265,6 +273,8 @@ export const SemanticParserPlugin = {
                             // console.log(`ParserReducer: Marking suggestion ${suggestionId} as ignored for note ${noteId}`);
                             // Update the status directly on the suggestion object in the state
                             noteSuggestions[suggestionIndex].status = 'ignored';
+                             // Optionally remove the suggestion from the list after ignoring
+                            // parserState.suggestions[noteId] = noteSuggestions.filter(s => s.id !== suggestionId);
                         } else {
                             console.warn(`ParserReducer: Suggestion ${suggestionId} not found for ignoring in note ${noteId}`);
                         }
@@ -572,17 +582,14 @@ export const SemanticParserPlugin = {
      */
     async _parseWithLLM(content, noteId) {
         // console.log(`Parser: Running LLM parsing for note ${noteId}`);
-        // Check required services again within the function
-        // Fix typo: llMService -> llmService
         if (!content || !this.llmService || !this.ontologyService || !this.coreAPI) {
-            console.log('llm', content, this.llmService, this.coreAPI);
             console.warn("Parser: LLM parsing skipped, content or LLMService/OntologyService/CoreAPI missing.");
             this.coreAPI?.showGlobalStatus("Cannot parse with AI: Services missing.", "warning");
             return [];
         }
 
         // --- Construct Prompt ---
-        const ontologyData = this.ontologyService.getRawData(); // Assuming this doesn't throw
+        const ontologyData = this.ontologyService.getRawData();
         let ontologyContext = "Ontology Context:\n";
         ontologyContext += "Defined Properties (Key: Type - Description):\n";
         if (ontologyData?.properties) {
@@ -628,67 +635,58 @@ Instructions:
 5. Ignore vague or incomplete information unless it clearly implies a property.
 6. Output the results ONLY as a JSON array of objects. Each object MUST have the structure: {"key": "...", "value": ...}. You MAY optionally include a "confidence": float (0.0-1.0) field if you are unsure.
 7. If no properties are found, output an empty JSON array: [].
+8. **DO NOT** include any explanatory text, greetings, or conversational filler before or after the JSON array. The response MUST start with '[' and end with ']'.
 
 JSON Output:
 `;
 
         try {
-            this.coreAPI.showGlobalStatus("Parsing with AI...", "info", 3000); // Show temp status
+            this.coreAPI.showGlobalStatus("Parsing with AI...", "info", 3000);
 
-            // Call LLM Service - this might throw errors (e.g., config, network)
-            // Fix typo: llMService -> llmService
             let responsePayload = await this.llmService.prompt(prompt);
 
             // --- Parse LLM Response ---
             if (!responsePayload?.choices?.[0]?.message?.content) {
-                // Handle cases where the response structure is unexpected or content is missing
                 console.warn("Parser: LLM response structure invalid or content missing.", responsePayload);
                 throw new Error("LLM response was empty or malformed.");
             }
-            this.coreAPI.showGlobalStatus("AI Parsing complete.", "success", 1500); // Update status only on success
+            this.coreAPI.showGlobalStatus("AI Parsing complete.", "success", 1500);
 
             let responseText = responsePayload.choices[0].message.content;
-
-            // Attempt to extract JSON from the response (more robustly)
             let parsedJson;
+
             try {
-                // 1. Look for JSON within markdown code blocks
+                // 1. Look for JSON within markdown code blocks first
                 const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
                 if (jsonMatch && jsonMatch[1]) {
                     parsedJson = JSON.parse(jsonMatch[1]);
                 } else {
                     // 2. If no code block, try parsing the whole response (trimmed)
+                    //    Only attempt if it looks like JSON (starts/ends with [] or {})
                     const trimmedResponse = responseText.trim();
-                    // Basic check if it looks like JSON before attempting parse
                     if ((trimmedResponse.startsWith('[') && trimmedResponse.endsWith(']')) || (trimmedResponse.startsWith('{') && trimmedResponse.endsWith('}'))) {
-                        parsedJson = JSON.parse(trimmedResponse);
+                         parsedJson = JSON.parse(trimmedResponse);
+                         // If it was a single object, wrap it in an array
+                         if (!Array.isArray(parsedJson)) {
+                             parsedJson = [parsedJson];
+                         }
                     } else {
-                        // 3. Attempt to handle single JSON object responses
-                        try {
-                            parsedJson = [JSON.parse(trimmedResponse)]; // Wrap in array
-                        } catch (singleJsonError) {
-                            // 4. If all else fails, treat the entire response as a plain text value
-                            console.warn("Parser: LLM response did not contain a JSON code block or a direct JSON array/object structure. Treating as plain text.", { response: trimmedResponse });
-                            // Create a single suggestion with the entire response as the value
-                            return [{
-                                id: utils.generateUUID(),
-                                source: 'llm',
-                                property: { key: 'llm_response', value: trimmedResponse, type: 'text' }, // Using a generic key
-                                status: 'pending',
-                                confidence: 0.5, // Lower confidence for plain text
-                                location: null
-                            }];
-                        }
+                        // 3. If it doesn't look like JSON, throw the specific error
+                        console.warn("Parser: LLM response did not contain a JSON code block or a direct JSON array/object structure.", { response: trimmedResponse });
+                        throw new Error("LLM response did not contain recognizable JSON output.");
                     }
                 }
             } catch (jsonError) {
-                console.error("Parser: Failed to parse JSON from LLM response.", { responseText, jsonError });
-                throw new Error(`LLM response contained invalid JSON: ${jsonError.message}`);
+                 // Catch errors from JSON.parse or the explicit throw above
+                console.error("Parser: Failed to parse JSON from LLM response.", { responseText, error: jsonError.message });
+                // Re-throw a consistent error message
+                throw new Error(`LLM response could not be parsed as JSON: ${jsonError.message}`);
             }
 
 
             if (!Array.isArray(parsedJson)) {
-                console.warn("Parser: LLM response was valid JSON but not an array.", parsedJson);
+                // This case should be less likely now due to the wrapping logic above, but keep as a safeguard
+                console.warn("Parser: LLM response was parsed but is not an array.", parsedJson);
                 return []; // Expecting an array
             }
 
@@ -704,26 +702,17 @@ JSON Output:
                         source: 'llm',
                         property: {key, value, type: inferredType},
                         status: 'pending',
-                        // Assign confidence: use LLM's if provided, otherwise default (e.g., 0.8)
                         confidence: typeof item.confidence === 'number' ? Math.max(0, Math.min(1, item.confidence)) : 0.8,
-                        // TODO: Location info is hard to get accurately from LLM without specific instructions/model support.
-                        // Need to instruct the LLM to *also* return the exact start/end character indices of the *value* in the original text.
-                        location: null // Placeholder - decorations won't work for LLM suggestions yet
+                        location: null // LLM location finding is not implemented
                     };
                 });
 
             console.log(`Parser: LLM found ${suggestions.length} potential suggestions.`);
-            // --- Location Handling ---
-            // LLM currently doesn't provide location. We return suggestions without it.
-            // The SuggestionPlugin in editor.js will only create decorations for suggestions *with* location.
-            // Future enhancement: Instruct LLM to return character indices.
-            console.log(`Parser: LLM found ${suggestions.length} potential suggestions.`);
-            return suggestions; // Return all suggestions, even without location
+            return suggestions;
 
         } catch (error) {
-            // Catch errors from LLM call or JSON parsing
+            // Catch errors from LLM call or JSON parsing/validation
             console.error("Parser: Error during LLM parsing or processing.", error);
-            // Show specific error message from the caught error
             this.coreAPI.showGlobalStatus(`AI Parsing Error: ${error.message}`, "error", 8000);
             // Re-throw the error so _triggerParse can catch it and clear suggestions
             throw error;
@@ -784,4 +773,3 @@ JSON Output:
         }
     }
 };
-
