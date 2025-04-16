@@ -506,7 +506,7 @@ export const RichTextEditorPlugin = {
                         this._currentContentCache = '';
                         // Clear the mount point content manually ONLY if we are sure no editor should exist
                         if (!editorShouldExist) {
-                            mountPoint.innerHTML = ''; // Clear previous editor content
+                            // mountPoint.innerHTML = ''; // Clear previous editor content
                         }
                         // Update toolbar state (will show 'loading' or similar)
                         this._updateToolbarUI('destroy');
@@ -516,7 +516,7 @@ export const RichTextEditorPlugin = {
                     if (editorShouldExist && (!this._editorInstance || this._editorInstance.inactive())) {
                         // console.log(`Editor Lifecycle: Creating editor for note ${noteId}`);
                         // Clear mount point before creating to ensure clean slate
-                        mountPoint.innerHTML = '';
+                        // mountPoint.innerHTML = '';
                         try {
                             this._editorInstance = new TiptapEditor(mountPoint, {
                                 content: note.content || '',
