@@ -663,19 +663,28 @@ JSON Output:
                     if ((trimmedResponse.startsWith('[') && trimmedResponse.endsWith(']')) || (trimmedResponse.startsWith('{') && trimmedResponse.endsWith('}'))) {
                         parsedJson = JSON.parse(trimmedResponse);
                     } else {
-                         // 3. Attempt to handle single JSON object responses
-                         try {
-                             parsedJson = [JSON.parse(trimmedResponse)]; // Wrap in array
-                         } catch (singleJsonError) {
-                             console.warn("Parser: LLM response did not contain a JSON code block or a direct JSON array/object structure.", { response: trimmedResponse });
-                             throw new Error("LLM response did not contain recognizable JSON output.");
-                         }
-                     }
-                 }
-             } catch (jsonError) {
-                 console.error("Parser: Failed to parse JSON from LLM response.", { responseText, jsonError });
-                 throw new Error(`LLM response contained invalid JSON: ${jsonError.message}`);
-             }
+                        // 3. Attempt to handle single JSON object responses
+                        try {
+                            parsedJson = [JSON.parse(trimmedResponse)]; // Wrap in array
+                        } catch (singleJsonError) {
+                            // 4. If all else fails, treat the entire response as a plain text value
+                            console.warn("Parser: LLM response did not contain a JSON code block or a direct JSON array/object structure. Treating as plain text.", { response: trimmedResponse });
+                            // Create a single suggestion with the entire response as the value
+                            return [{
+                                id: utils.generateUUID(),
+                                source: 'llm',
+                                property: { key: 'llm_response', value: trimmedResponse, type: 'text' }, // Using a generic key
+                                status: 'pending',
+                                confidence: 0.5, // Lower confidence for plain text
+                                location: null
+                            }];
+                        }
+                    }
+                }
+            } catch (jsonError) {
+                console.error("Parser: Failed to parse JSON from LLM response.", { responseText, jsonError });
+                throw new Error(`LLM response contained invalid JSON: ${jsonError.message}`);
+            }
 
 
             if (!Array.isArray(parsedJson)) {

@@ -480,21 +480,19 @@ export const RichTextEditorPlugin = {
                             this._destroyEditor();
                         }
                     }
-                    // 3. UPDATE - Moved syncSuggestionPlugin call here
+                    // 3. UPDATE
                     else if (editorShouldExist && this._editorInstance && !this._editorInstance.inactive() && !noteChanged) {
                         // Check if the content has actually changed before updating
                         if (note.content !== this._currentContentCache && !this._editorInstance.hasFocus()) {
                             this._isUpdatingInternally = true;
                             try {
-                                // Use Tiptap's `update` method instead of `setContent` to preserve editor state
-                                this._editorInstance._tiptapInstance.commands.updateContent(note.content || '', true);
+                                // Use Tiptap's `commands.setContent` method instead of `updateContent` to preserve editor state
+                                this._editorInstance._tiptapInstance.commands.setContent(note.content || '', false);
                                 this._currentContentCache = note.content || '';
                             } finally {
                                 this._isUpdatingInternally = false;
                             }
                         }
-                        // Sync suggestion plugin defensively
-                        this._syncSuggestionPlugin(noteId);
                     }
                     // 4. CLEANUP
                     else if (!editorShouldExist) {

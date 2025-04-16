@@ -310,9 +310,12 @@ class UIRenderer {
         this._saveScrollPositions();
 
         try {
+            // Use a try-catch block around the render call
             render(this._renderMainVdomTree(state), this._rootElement);
         } catch (error) {
+            // Log the error to the console
             console.error("UIRenderer: CRITICAL ERROR during renderApp!", error);
+            // Render an error message in the root element
             render(html`
                 <div class="error-display">
                     <h1>Application Render Error</h1>
@@ -321,6 +324,7 @@ class UIRenderer {
                     <p>Please check the console for details. You may need to reload or clear application data.</p>
                 </div>`, this._rootElement);
         } finally {
+            // Restore scroll positions after rendering, even if there was an error
             this._restoreScrollPositions();
         }
     }
