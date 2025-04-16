@@ -490,15 +490,8 @@ export const RichTextEditorPlugin = {
                                 this._isUpdatingInternally = false;
                             }
                         }
-                        if (this._editorInstance?._tiptapInstance?.state) { // Sync suggestion plugin defensively
-                            const suggestionState = suggestionPluginKey.getState(this._editorInstance._tiptapInstance.state);
-                            if (suggestionState?.noteId !== noteId && suggestionState?.noteId != null) {
-                                console.warn(`Correcting sugg plugin noteId. Expected ${noteId}, got ${suggestionState?.noteId}`);
-                                if (this._editorInstance._tiptapInstance.view) this._editorInstance._tiptapInstance.view.dispatch(this._editorInstance._tiptapInstance.state.tr.setMeta(suggestionPluginKey, { noteId: noteId }));
-                            } else if (suggestionState?.noteId === null && noteId) {
-                                if (this._editorInstance._tiptapInstance.view) this._editorInstance._tiptapInstance.view.dispatch(this._editorInstance._tiptapInstance.state.tr.setMeta(suggestionPluginKey, { noteId: noteId }));
-                            }
-                        }
+                        // Sync suggestion plugin defensively
+                        this._syncSuggestionPlugin(noteId);
                     }
                     // 4. CLEANUP
                     else if (!editorShouldExist) {
