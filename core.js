@@ -479,54 +479,54 @@ class UIRenderer {
         return html`
             <div class="editor-header" data-note-id=${note.id}>
                 <input
-                        type="text"
-                        class="editor-title-input"
-                        .value=${note.name}
-                        placeholder="Note Title"
-                        aria-label="Note Title"
-                        @input=${this._handleTitleInput(note.id)}
+                    type="text"
+                    class="editor-title-input"
+                    .value=${note.name}
+                    placeholder="Note Title"
+                    aria-label="Note Title"
+                    @input=${this._handleTitleInput(note.id)}
                 >
                 <div class="editor-header-actions" data-slot="${SLOT_EDITOR_HEADER_ACTIONS}" data-note-id=${note.id}>
                     <button class="core-archive-note" @click=${this._handleArchiveNote(note.id)}
-                            title="Archive Note" aria-label="Archive Note">Archive
+                        title="Archive Note" aria-label="Archive Note">Archive
                     </button>
                     <button class="core-delete-note" @click=${this._handleDeleteNote(note.id, note.name)}
-                            title="Delete Note" aria-label="Delete Note">Delete
+                        title="Delete Note" aria-label="Delete Note">Delete
                     </button>
                     ${this._renderSlot(state, SLOT_EDITOR_HEADER_ACTIONS, note.id)}
                     <button class="editor-header-button llm-action-button"
-                            @click=${() => this._handleLlmSummarize(note.id)} title="Summarize selection or note">
+                        @click=${() => this._handleLlmSummarize(note.id)} title="Summarize selection or note">
                         Summarize
                     </button>
                     <button class="editor-header-button llm-action-button"
-                            @click=${() => this._handleLlmAskQuestion(note.id)} title="Ask question about note content">
+                        @click=${() => this._handleLlmAskQuestion(note.id)} title="Ask question about note content">
                         Ask
                     </button>
                     <button class="editor-header-button llm-action-button"
-                            @click=${() => this._handleLlmGetActions(note.id)}
-                            title="Suggest actions based on note content">Actions
+                        @click=${() => this._handleLlmGetActions(note.id)}
+                        title="Suggest actions based on note content">Actions
                     </button>
                 </div>
             </div>
             <div class="editor-content-wrapper"
-                 style="flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;">
+                style="flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;">
                 ${hasPluginContent ? html`
-                    <div class="editor-content-area plugin-controlled" data-slot="${SLOT_EDITOR_CONTENT_AREA}"
-                         data-note-id=${note.id}
-                         style="flex-grow: 1; display: flex; flex-direction: column; overflow-y: auto;">
-                        ${slotContent}
-                    </div>` : html`
-                    <div class="editor-content-area core-controlled"
-                         style="flex-grow: 1; display: flex; flex-direction: column;">
-                        <textarea
-                                class="core-content-editor"
-                                aria-label="Note Content"
-                                placeholder="Start writing..."
-                                .value=${note.content}
-                                @input=${this._handleContentInput(note.id)}
-                                style="flex-grow: 1; width: 100%; border: none; padding: 10px; font-family: inherit; font-size: inherit; resize: none; outline: none;"
-                        ></textarea>
-                    </div>`}
+                <div class="editor-content-area plugin-controlled" data-slot="${SLOT_EDITOR_CONTENT_AREA}"
+                    data-note-id=${note.id}
+                    style="flex-grow: 1; display: flex; flex-direction: column; overflow-y: auto;">
+                    ${slotContent}
+                </div>` : html`
+                <div class="editor-content-area core-controlled"
+                    style="flex-grow: 1; display: flex; flex-direction: column;">
+                    <textarea
+                        class="core-content-editor"
+                        aria-label="Note Content"
+                        placeholder="Start writing..."
+                        .value=${note.content}
+                        @input=${this._handleContentInput(note.id)}
+                        style="flex-grow: 1; width: 100%; border: none; padding: 10px; font-family: inherit; font-size: inherit; resize: none; outline: none;"
+                    ></textarea>
+                </div>`}
             </div>
             <div class="editor-below-content" data-slot="${SLOT_EDITOR_BELOW_CONTENT}" data-note-id=${note.id}>
                 ${this._renderSlot(state, SLOT_EDITOR_BELOW_CONTENT, note.id)}

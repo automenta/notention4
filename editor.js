@@ -480,21 +480,31 @@ export const RichTextEditorPlugin = {
                     // 3. UPDATE
                     else if (editorShouldExist && this._editorInstance && !this._editorInstance.inactive() && !noteChanged) {
                         if (note.content !== this._currentContentCache && !this._editorInstance.hasFocus()) {
-                            this._editorInstance.setContent(note.content || ''); this._currentContentCache = note.content || '';
+                            this._isUpdatingInternally = true;
+                            try {
+                                this._editorInstance.setContent(note.content || '');
+                                this._currentContentCache = note.content || '';
+                            } finally {
+                                this._isUpdatingInternally = false;
+                            }
                         }
                         if (this._editorInstance?._tiptapInstance?.state) { // Sync suggestion plugin defensively
                             const suggestionState = suggestionPluginKey.getState(this._editorInstance._tiptapInstance.state);
                             if (suggestionState?.noteId !== noteId && suggestionState?.noteId != null) {
                                 console.warn(`Correcting sugg plugin noteId. Expected ${noteId}, got ${suggestionState?.noteId}`);
-                                if(this._editorInstance._tiptapInstance.view) this._editorInstance._tiptapInstance.view.dispatch(this._editorInstance._tiptapInstance.state.tr.setMeta(suggestionPluginKey, { noteId: noteId }));
+                                if (this._editorInstance._tiptapInstance.view) this._editorInstance._tiptapInstance.view.dispatch(this._editorInstance._tiptapInstance.state.tr.setMeta(suggestionPluginKey, { noteId: noteId }));
                             } else if (suggestionState?.noteId === null && noteId) {
-                                if(this._editorInstance._tiptapInstance.view) this._editorInstance._tiptapInstance.view.dispatch(this._editorInstance._tiptapInstance.state.tr.setMeta(suggestionPluginKey, { noteId: noteId }));
+                                if (this._editorInstance._tiptapInstance.view) this._editorInstance._tiptapInstance.view.dispatch(this._editorInstance._tiptapInstance.state.tr.setMeta(suggestionPluginKey, { noteId: noteId }));
                             }
                         }
                     }
                     // 4. CLEANUP
-                    else if (!editorShouldExist && (!this._editorInstance || this._editorInstance.inactive())) {
-                        if (mountPoint.innerHTML !== '') { mountPoint.innerHTML = ''; delete mountPoint.dataset.noteId; }
+                    else if (!editorShouldExist) {
+                        this._destroyEditor();
+                        mountPoint.innerHTML = '';
+                        delete mountPoint.dataset.noteId;
+                        this._currentNoteId = null;
+                        this._currentContentCache = '';
                         this._updateToolbarUI('noEditorCleanup');
                     }
                 }); // End rAF
@@ -506,13 +516,11 @@ export const RichTextEditorPlugin = {
                             <!-- Toolbar content rendered dynamically -->
                         </div>
                         <div id="editor-mount-point"
-                             style="flex-grow: 1; overflow-y: auto; border: 1px solid var(--border-color, #ccc); border-top: none; border-radius: 0 0 4px 4px; padding: 10px;"
-                             class="tiptap-editor-content" data-note-id=${noteId || ''}>
-                            ${ // Correctly formatted conditional placeholder logic:
-                                    !note && (!this._editorInstance || this._editorInstance.inactive())
-                                            ? html`<div style="color: var(--secondary-text-color); padding: 10px;">Select or create a note.</div>`
-                                            : '' // Render empty string if condition is false
-                            }
+                            style="flex-grow: 1; overflow-y: auto; border: 1px solid var(--border-color, #ccc); border-top: none; border-radius: 0 0 4px 4px; padding: 10px;"
+                            class="tiptap-editor-content" data-note-id=${noteId || ''}>
+                            ${!note && (!this._editorInstance || this._editorInstance.inactive())
+                                ? html`<div style="color: var(--secondary-text-color); padding: 10px;">Select or create a note.</div>`
+                                : ''}
                         </div>
                     </div>
                     <style>
